@@ -79,19 +79,115 @@ export function VaultUnlockDialog({
 	const pinLength =
 		queryClient.getQueryData<HomeData>(homeKey)?.vault.pinLength;
 	const attempt = useVaultUnlock(onUnlocked);
+	// The reset option lives here because vault settings stay hidden until
+	// the vault is open, and a forgotten PIN means it can't be opened.
+	const [forgot, setForgot] = useState(false);
+	if (forgot)
+		return (
+			<ResetPrompt
+				what={pinLength ? "PIN" : "password"}
+				onBack={() => setForgot(false)}
+				onDone={onClose}
+			/>
+		);
 	return pinLength ? (
-		<PinPad length={pinLength} onSubmit={attempt} onClose={onClose} />
+		<PinPad
+			length={pinLength}
+			onSubmit={attempt}
+			onClose={onClose}
+			onForgot={() => setForgot(true)}
+		/>
 	) : (
-		<PasswordPrompt onSubmit={attempt} onClose={onClose} />
+		<PasswordPrompt
+			onSubmit={attempt}
+			onClose={onClose}
+			onForgot={() => setForgot(true)}
+		/>
+	);
+}
+
+/** Forgot the PIN/password: wipe the vault (and everything in it) to start over. */
+function ResetPrompt({
+	what,
+	onBack,
+	onDone,
+}: {
+	what: string;
+	onBack: () => void;
+	onDone: () => void;
+}) {
+	const queryClient = useQueryClient();
+	const [text, setText] = useState("");
+	const [pending, setPending] = useState(false);
+	return createPortal(
+		<div className="fixed inset-0 z-[80] flex items-start justify-center p-4 pt-[18dvh] sm:items-center sm:pt-4">
+			<button
+				type="button"
+				aria-label="Close"
+				className="absolute inset-0 bg-black/60 backdrop-blur-xl"
+				onClick={onDone}
+			/>
+			<div className="glass animate-pop relative w-full max-w-xs rounded-[2rem] p-7 text-center shadow-2xl">
+				<div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-red-500/15 text-red-500">
+					<ShieldAlert className="size-6" />
+				</div>
+				<h2 className="text-lg font-semibold">Forgot your {what}?</h2>
+				<p className="mt-2 text-sm text-muted">
+					It can't be recovered: the vault is encrypted with it. Resetting
+					permanently deletes every vault board and everything in it, so you can
+					set up a new one.
+				</p>
+				<input
+					className="field mt-5 text-center"
+					placeholder="Type RESET"
+					value={text}
+					onChange={(event) => setText(event.target.value)}
+					autoCapitalize="characters"
+					autoComplete="off"
+				/>
+				<button
+					type="button"
+					className="btn mt-4 w-full bg-red-500 text-white"
+					disabled={text !== "RESET" || pending}
+					onClick={async () => {
+						setPending(true);
+						try {
+							await run(call(resetVault, { confirm: "RESET" }));
+							clearVaultKey();
+							await queryClient.invalidateQueries({ queryKey: homeKey });
+							toast("Vault reset. Set up a new one in Customize → Vault.");
+							onDone();
+						} catch (cause) {
+							toast.error(
+								cause instanceof Error ? cause.message : "Couldn't reset",
+							);
+							setPending(false);
+						}
+					}}
+				>
+					{pending && <Loader2 className="size-4 animate-spin" />} Reset vault
+				</button>
+				<button
+					type="button"
+					className="btn-ghost mt-2 w-full"
+					onClick={onBack}
+				>
+					Back
+				</button>
+			</div>
+		</div>,
+		document.body,
 	);
 }
 
 function PasswordPrompt({
 	onSubmit,
 	onClose,
+	onForgot,
 }: {
 	onSubmit: (secret: string) => Promise<string | null>;
 	onClose: () => void;
+	onForgot: () => void;
 }) {
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -156,6 +252,13 @@ function PasswordPrompt({
 					)}{" "}
 					Unlock
 				</button>
+				<button
+					type="button"
+					className="mt-3 text-xs text-muted hover:text-ink"
+					onClick={onForgot}
+				>
+					Forgot password?
+				</button>
 			</form>
 		</div>,
 		document.body,
@@ -169,10 +272,12 @@ function PinPad({
 	length,
 	onSubmit,
 	onClose,
+	onForgot,
 }: {
 	length: number;
 	onSubmit: (pin: string) => Promise<string | null>;
 	onClose: () => void;
+	onForgot: () => void;
 }) {
 	const [pin, setPin] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -275,6 +380,13 @@ function PinPad({
 					),
 				)}
 			</div>
+			<button
+				type="button"
+				onClick={onForgot}
+				className="mt-6 text-sm text-white/60 hover:text-white"
+			>
+				Forgot PIN?
+			</button>
 		</div>,
 		document.body,
 	);

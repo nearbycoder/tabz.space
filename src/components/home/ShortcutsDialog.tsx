@@ -20,7 +20,14 @@ function Keys({ keys }: { keys: string[] }) {
 }
 
 /** Every keyboard shortcut on the home page (opened with "?"). */
-export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
+export function ShortcutsDialog({
+	showVault,
+	onClose,
+}: {
+	/** False once a vault exists and is locked: don't hint that it's there. */
+	showVault: boolean;
+	onClose: () => void;
+}) {
 	const mod = isMac() ? "⌘" : "Ctrl";
 	const sections: { title: string; rows: [string, string[]][] }[] = [
 		{
@@ -72,10 +79,12 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 						</ul>
 					</section>
 				))}
-				<p className="text-xs text-muted">
-					Typing your vault's secret code (or tapping the clock 5 times) opens
-					the vault.
-				</p>
+				{showVault && (
+					<p className="text-xs text-muted">
+						Typing your vault's secret code (or tapping the clock 5 times) opens
+						the vault.
+					</p>
+				)}
 			</div>
 		</Modal>
 	);

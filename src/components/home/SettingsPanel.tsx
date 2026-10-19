@@ -186,8 +186,13 @@ export function SettingsPanel({
 	onClose,
 }: Props) {
 	const { openDialog } = useHomeContext();
+	// Once a vault exists, its settings only show while it's open, so nothing
+	// on screen hints that it's there.
+	const tabs = TABS.filter(
+		(t) => t.id !== "vault" || !vault.configured || vault.unlocked,
+	);
 	const [tab, setTab] = useState<TabId>(
-		(TABS.find((t) => t.id === initialTab)?.id ?? "look") as TabId,
+		(tabs.find((t) => t.id === initialTab)?.id ?? "look") as TabId,
 	);
 	const queryClient = useQueryClient();
 	const save = useSaveSettings();
@@ -269,7 +274,7 @@ export function SettingsPanel({
 	return (
 		<Modal open onClose={onClose} title="Customize" side>
 			<div className="sticky top-0 z-10 -mx-6 mb-5 flex gap-1 border-b border-line bg-surface-2 px-6 pb-3">
-				{TABS.map(({ id, label, icon: Icon }) => (
+				{tabs.map(({ id, label, icon: Icon }) => (
 					<button
 						key={id}
 						type="button"
@@ -927,7 +932,9 @@ export function SettingsPanel({
 				</div>
 			)}
 
-			{tab === "vault" && <VaultSettings vault={vault} settings={settings} />}
+			{tab === "vault" && tabs.some((t) => t.id === "vault") && (
+				<VaultSettings vault={vault} settings={settings} />
+			)}
 
 			{tab === "connect" && (
 				<div className="space-y-6">

@@ -829,7 +829,12 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				)}
 				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
 				{dialog?.type === "link-health" && <LinkHealthDialog onClose={close} />}
-				{dialog?.type === "shortcuts" && <ShortcutsDialog onClose={close} />}
+				{dialog?.type === "shortcuts" && (
+					<ShortcutsDialog
+						showVault={!vault.configured || vault.unlocked}
+						onClose={close}
+					/>
+				)}
 				{dialog?.type === "report" && (
 					<MonthlyReportDialog month={dialog.month} onClose={close} />
 				)}
