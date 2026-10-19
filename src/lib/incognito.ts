@@ -85,7 +85,10 @@ export function connectExtension() {
 	});
 }
 
-function request(type: "open-incognito" | "open-tabs", urls: string[]) {
+function request(
+	type: "open-incognito" | "open-tabs" | "open-settings",
+	urls: string[] = [],
+) {
 	const id = crypto.randomUUID();
 	return new Promise<boolean>((resolve) => {
 		pending.set(id, resolve);
@@ -118,21 +121,54 @@ export async function openTabs(urls: string[]) {
 	return false;
 }
 
+/** Where this browser keeps the extension's private-window switch. */
+function incognitoSwitch() {
+	const agent = navigator.userAgent;
+	if (agent.includes("Firefox"))
+		return "Firefox: Add-ons → tabz → Run in Private Windows → Allow.";
+	const browser = agent.includes("Edg/")
+		? "Edge"
+		: (navigator as { brave?: unknown }).brave
+			? "Brave"
+			: "Chrome";
+	return `${browser}: Extensions → tabz → Details → “Allow in Incognito”.`;
+}
+
 /** Opens links privately; never falls back to a normal tab, so nothing leaks into history. */
 export async function openIncognito(urls: string[]) {
 	if (await requestIncognito(urls)) return true;
 	const shortcut = /Mac|iPhone|iPad/.test(navigator.platform)
 		? "⌘⇧N"
 		: "Ctrl+Shift+N";
+	const copy = {
+		label: urls.length > 1 ? "Copy links" : "Copy link",
+		onClick: () => navigator.clipboard.writeText(urls.join("\n")),
+	};
+	const firefox = navigator.userAgent.includes("Firefox");
+	if (status.installed) {
+		toast("Allow private windows", {
+			icon: "🕶️",
+			description: firefox
+				? `${incognitoSwitch()} Or copy the link and press ${shortcut}.`
+				: incognitoSwitch(),
+			// Chromium browsers: the extension can open its own details page.
+			action: firefox
+				? copy
+				: {
+						label: "Open settings",
+						onClick: () => {
+							void request("open-settings");
+						},
+					},
+			cancel: firefox ? undefined : copy,
+			duration: 15_000,
+		});
+		return false;
+	}
 	toast("Open this privately", {
 		icon: "🕶️",
-		description: status.installed
-			? `Turn on "Allow in Incognito" for the tabz extension, or copy the link and press ${shortcut}.`
-			: `Install the tabz extension to open private links in one click, or copy the link and press ${shortcut}.`,
-		action: {
-			label: urls.length > 1 ? "Copy links" : "Copy link",
-			onClick: () => navigator.clipboard.writeText(urls.join("\n")),
-		},
+		description: `Install the tabz extension to open private links in one click, or copy the link and press ${shortcut}.`,
+		action: copy,
 		duration: 10_000,
 	});
 	return false;

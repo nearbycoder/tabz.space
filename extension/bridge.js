@@ -62,6 +62,11 @@ window.addEventListener("message", async (event) => {
 			});
 			return announce();
 		}
+		if (type === "open-settings") {
+			const result = await chrome.runtime.sendMessage({ type });
+			post({ type: "opened", id, ok: result?.ok === true });
+			return;
+		}
 		if (type === "open-incognito" || type === "open-tabs") {
 			const result = await chrome.runtime.sendMessage({
 				type,

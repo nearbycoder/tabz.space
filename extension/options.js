@@ -19,6 +19,24 @@ $("baseUrl").value = stored.baseUrl || DEFAULT_BASE_URL;
 $("newTab").checked = stored.newTab ?? true;
 $("focusPage").checked = stored.focusPage ?? true;
 $("syncBookmarks").checked = stored.syncBookmarks ?? false;
+// Private links need the browser's own per-extension switch.
+const firefox = navigator.userAgent.includes("Firefox");
+if (await chrome.extension.isAllowedIncognitoAccess()) {
+	$("incognito").textContent = "🕶️ Private links open in an incognito window.";
+} else {
+	$("incognito").textContent = firefox
+		? "🕶️ To open private links, go to Add-ons → tabz → “Run in Private Windows” → Allow."
+		: "🕶️ To open private links, turn on “Allow in Incognito” on this extension's details page.";
+	if (!firefox) {
+		$("incognitoSettings").hidden = false;
+		$("incognitoSettings").addEventListener("click", () =>
+			chrome.tabs.create({
+				url: `chrome://extensions/?id=${chrome.runtime.id}`,
+			}),
+		);
+	}
+}
+
 $("connection").textContent = (await getToken())
 	? "Connected to your tabz account."
 	: "Not connected yet. Open tabz.space while signed in.";

@@ -137,6 +137,19 @@ chrome.runtime.onStartup.addListener(() => scheduleSync(10_000));
 /* ------------------------------ private windows ------------------------------ */
 
 /** Opens URLs as tabs in an existing incognito window, or a new one. */
+/**
+ * The browser's page for this extension, where "Allow in Incognito" lives.
+ * Web pages can't open chrome:// URLs, but the extension can. Firefox keeps
+ * the switch in about:addons, which extensions can't open.
+ */
+async function openExtensionSettings() {
+	if (navigator.userAgent.includes("Firefox")) return false;
+	await chrome.tabs.create({
+		url: `chrome://extensions/?id=${chrome.runtime.id}`,
+	});
+	return true;
+}
+
 async function openIncognito(urls) {
 	const safe = (Array.isArray(urls) ? urls : []).filter(isWebUrl).slice(0, 50);
 	if (safe.length === 0 || !(await chrome.extension.isAllowedIncognitoAccess()))
@@ -208,6 +221,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return reply(openIncognito(message.urls).then((ok) => ({ ok })));
 		case "open-tabs":
 			return reply(openTabs(message.urls).then((ok) => ({ ok })));
+		case "open-settings":
+			return reply(openExtensionSettings().then((ok) => ({ ok })));
 		case "save-page":
 			return reply(
 				api("/bookmarks", {
