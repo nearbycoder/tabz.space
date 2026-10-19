@@ -46,7 +46,8 @@ claude mcp add --transport http tabz https://tabz.space/api/mcp
 A per-user hidden space for links you don't want anyone snooping on.
 
 - Vault boards (`boards.vault = 1`) are filtered out on the server unless the request carries a valid unlock cookie, so they never reach the browser, search, ⌘K, the most-visited strip, exports or MCP while locked. MCP never gets vault access.
-- Open it by typing your secret code anywhere on the home page (default `vault`; change it in Customize → Vault), then entering the vault password.
+- Open it by tapping the clock 5 times quickly (any device; an invisible tap zone stays if the clock is hidden) or typing your secret code anywhere on the home page (default `vault`; change it in Customize → Vault).
+- Unlock with a password or a 4/6-digit PIN (`vaults.pin_length`). PIN vaults get a full-screen keypad that unlocks on the last digit and also takes keyboard digits. Obvious PINs (1234, 000000, straight runs) are refused. A PIN still goes through the browser-side key derivation, but it's far easier to brute-force than a long password if someone gets the database, so the UI says so.
 - The password is separate from the account password, hashed with scrypt (`vaults` table), and unlock attempts are throttled.
 - Unlocking issues a short-lived `tabz_vault` cookie (httpOnly, SameSite=Strict, HMAC-signed with `BETTER_AUTH_SECRET`). Auto-lock happens after 5 min to 4 h, or immediately with the lock button.
 - Code: `src/server/vault.ts`, `src/server/vault-token.ts`, and the `VaultAccess` Effect reference in `src/server/vault-access.ts` (consumed by `library.ts`).

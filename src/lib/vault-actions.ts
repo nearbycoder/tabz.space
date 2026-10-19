@@ -76,15 +76,24 @@ export async function unlockWithPassword(
 	return result;
 }
 
+/** 4 or 6 for a numeric PIN (keypad unlock), null for a password. */
+export type PinLength = 4 | 6 | null;
+
 export async function createVault(
 	password: string,
 	userId: string,
 	autoLockMinutes: number,
+	pinLength: PinLength = null,
 ) {
 	const salt = newSalt();
 	const keys = await deriveVaultKeys(password, salt);
 	const result = await run(
-		call(setupVault, { authKey: keys.authKey, salt, autoLockMinutes }),
+		call(setupVault, {
+			authKey: keys.authKey,
+			salt,
+			autoLockMinutes,
+			pinLength,
+		}),
 	);
 	await setVaultKey(userId, keys.encryptionKey, result.expiresAt);
 	return result;
@@ -95,6 +104,7 @@ export async function changeVaultPassword(options: {
 	currentPassword: string;
 	newPassword: string;
 	autoLockMinutes: number;
+	pinLength: PinLength;
 	queryClient: QueryClient;
 }) {
 	const raw = options.queryClient.getQueryData<HomeData>(homeKey);
@@ -132,6 +142,7 @@ export async function changeVaultPassword(options: {
 			currentAuthKey,
 			autoLockMinutes: options.autoLockMinutes,
 			resealed,
+			pinLength: options.pinLength,
 		}),
 	);
 	await setVaultKey(raw.userId, next.encryptionKey, result.expiresAt);

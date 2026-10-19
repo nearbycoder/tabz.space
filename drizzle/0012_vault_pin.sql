@@ -1,0 +1,1 @@
+ALTER TABLE `vaults` ADD `pin_length` integer;

@@ -543,6 +543,8 @@ export const loadHome = (userId: string) =>
 				unlocked: Boolean(access),
 				/** Contents are end-to-end encrypted in the browser. */
 				encrypted: Boolean(vault?.kdfSalt),
+				/** Opens with a 4- or 6-digit PIN keypad instead of a password. */
+				pinLength: (vault?.pinLength ?? null) as 4 | 6 | null,
 				expiresAt: access?.expiresAt ?? null,
 				autoLockMinutes: vault?.autoLockMinutes ?? 15,
 			},

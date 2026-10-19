@@ -95,6 +95,8 @@ export const vaults = sqliteTable("vaults", {
 	kdfSalt: text("kdf_salt"),
 	/** Optional decoy password: opens a separate, harmless set of boards. */
 	decoyHash: text("decoy_hash"),
+	/** 4 or 6 when the vault opens with a numeric PIN (keypad); null = password. */
+	pinLength: integer("pin_length"),
 	autoLockMinutes: integer("auto_lock_minutes").default(15).notNull(),
 	...timestamps,
 });

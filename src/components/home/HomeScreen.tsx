@@ -622,7 +622,15 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
 						{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
 						{/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users open the vault by typing the code */}
-						<div onClick={onClockTap} className="select-none" data-clock>
+						<div
+							onClick={onClockTap}
+							className={cn(
+								"select-none",
+								// Keep a tap target for the vault even with the clock hidden.
+								!settings.showClock && !settings.showGreeting && "min-h-16",
+							)}
+							data-clock
+						>
 							<Clock
 								name={settings.greetingName || session.name}
 								showClock={settings.showClock}

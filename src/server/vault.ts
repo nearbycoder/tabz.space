@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { deleteCookie, setCookie } from "@tanstack/react-start/server";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import { boards, bookmarks, groups, vaults } from "#/db/schema";
@@ -181,6 +181,7 @@ export const getVaultInfo = createServerFn().handler(() =>
 				salt: vault?.kdfSalt ?? null,
 				legacy: Boolean(vault && !vault.kdfSalt),
 				hasDecoy: Boolean(vault?.decoyHash),
+				pinLength: (vault?.pinLength ?? null) as 4 | 6 | null,
 			})),
 		),
 	),
@@ -198,6 +199,11 @@ export const setupVault = createServerFn({ method: "POST" })
 			currentAuthKey: z.string().max(128).optional(),
 			autoLockMinutes: autoLockSchema.optional(),
 			resealed: resealSchema.optional(),
+			/** Unlock with a 4- or 6-digit PIN instead of a password. */
+			pinLength: z
+				.union([z.literal(4), z.literal(6)])
+				.nullable()
+				.optional(),
 		}),
 	)
 	.handler(async ({ data }) => {
@@ -208,6 +214,33 @@ export const setupVault = createServerFn({ method: "POST" })
 					const { slot } = yield* verify(user.id, data.currentAuthKey ?? "");
 					if (slot !== "main")
 						return yield* new Unauthorized({ message: "Wrong vault password" });
+				}
+				// A new key must come with every sealed item re-encrypted, or those
+				// items could never be opened again.
+				if (existing?.kdfSalt) {
+					const sealedIds = yield* query((db) =>
+						db
+							.select({ id: bookmarks.id })
+							.from(bookmarks)
+							.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+							.innerJoin(boards, eq(boards.id, groups.boardId))
+							.where(
+								and(
+									eq(boards.userId, user.id),
+									eq(boards.vault, true),
+									eq(boards.decoy, false),
+									sql`json_extract(${bookmarks.meta}, '$.sealed') IS NOT NULL`,
+								),
+							),
+					);
+					const resealed = new Set(
+						(data.resealed ?? []).map((item) => item.id),
+					);
+					if (sealedIds.some((row) => !resealed.has(row.id)))
+						return yield* new InvalidInput({
+							message:
+								"Unlock your vault first so everything in it can be re-encrypted",
+						});
 				}
 				const passwordHash = yield* Effect.promise(() =>
 					hashPassword(data.authKey),
@@ -223,6 +256,7 @@ export const setupVault = createServerFn({ method: "POST" })
 							passwordHash,
 							kdfSalt: data.salt,
 							autoLockMinutes,
+							pinLength: data.pinLength ?? null,
 						})
 						.onConflictDoUpdate({
 							target: vaults.userId,
@@ -230,6 +264,7 @@ export const setupVault = createServerFn({ method: "POST" })
 								passwordHash,
 								kdfSalt: data.salt,
 								autoLockMinutes,
+								pinLength: data.pinLength ?? null,
 								// A new salt changes the decoy's keys too; set it again.
 								decoyHash: null,
 								updatedAt: new Date(),

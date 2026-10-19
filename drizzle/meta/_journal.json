@@ -85,6 +85,13 @@
       "when": 1792388407826,
       "tag": "0011_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792389401296,
+      "tag": "0012_vault_pin",
+      "breakpoints": true
     }
   ]
 }
