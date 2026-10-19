@@ -6,32 +6,31 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, GripVertical, Plus, Settings2 } from "lucide-react";
+import {
+	ChevronDown,
+	FolderPlus,
+	GripVertical,
+	Plus,
+	Settings2,
+} from "lucide-react";
 import { cn } from "#/lib/cn";
-import type { BoardLayout } from "#/lib/preferences";
+import type { BoardLayout, TileStyle } from "#/lib/preferences";
 import { BookmarkTile } from "./BookmarkTile";
-import type { HomeBookmark, HomeGroup } from "./types";
+import { useHomeContext } from "./context";
+import type { HomeGroup } from "./types";
 
 type Props = {
 	group: HomeGroup;
 	layout: BoardLayout;
-	editing: boolean;
-	openInNewTab: boolean;
-	onAdd: () => void;
-	onEditGroup: () => void;
 	onToggle: () => void;
-	onEditBookmark: (bookmark: HomeBookmark) => void;
-	onVisit: (bookmark: HomeBookmark) => void;
 };
 
-const gridFor = (
-	style: BoardLayout["tileStyle"],
-	size: BoardLayout["tileSize"],
-) => {
+export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 	const min = {
 		tile: { sm: "3.75rem", md: "4.5rem", lg: "5.75rem" },
 		icon: { sm: "2.75rem", md: "3.25rem", lg: "4rem" },
 		card: { sm: "11rem", md: "13rem", lg: "15rem" },
+		gallery: { sm: "8rem", md: "10rem", lg: "13rem" },
 		list: { sm: "100%", md: "100%", lg: "100%" },
 	}[style][size];
 	return {
@@ -39,17 +38,8 @@ const gridFor = (
 	};
 };
 
-export function GroupCard({
-	group,
-	layout,
-	editing,
-	openInNewTab,
-	onAdd,
-	onEditGroup,
-	onToggle,
-	onEditBookmark,
-	onVisit,
-}: Props) {
+export function GroupCard({ group, layout, onToggle }: Props) {
+	const { editing, openDialog } = useHomeContext();
 	const style = group.options.tileStyle ?? layout.tileStyle;
 	const span = Math.min(group.options.span ?? 1, layout.columns);
 	const sortable = useSortable({
@@ -60,6 +50,11 @@ export function GroupCard({
 		id: `drop:${group.id}`,
 		data: { type: "drop", groupId: group.id },
 	});
+	const total = group.bookmarks.reduce(
+		(sum, item) => sum + (item.kind === "folder" ? item.children.length : 1),
+		0,
+	);
+	const square = style === "tile" || style === "icon";
 
 	return (
 		<section
@@ -95,7 +90,7 @@ export function GroupCard({
 						style={{ background: group.color ?? "var(--muted)" }}
 					/>
 					<h2 className="truncate text-sm font-semibold">{group.name}</h2>
-					<span className="text-xs text-muted">{group.bookmarks.length}</span>
+					<span className="text-xs text-muted">{total}</span>
 					<div
 						className={cn(
 							"ml-auto flex items-center transition",
@@ -107,15 +102,32 @@ export function GroupCard({
 							type="button"
 							className="icon-btn size-7"
 							aria-label="Add bookmark"
-							onClick={onAdd}
+							title="Add bookmark"
+							onClick={() =>
+								openDialog({ type: "bookmark", groupId: group.id })
+							}
 						>
 							<Plus className="size-4" />
 						</button>
 						<button
 							type="button"
 							className="icon-btn size-7"
+							aria-label="New folder"
+							title="New folder"
+							onClick={() =>
+								openDialog({ type: "new-folder", groupId: group.id })
+							}
+						>
+							<FolderPlus className="size-3.5" />
+						</button>
+						<button
+							type="button"
+							className="icon-btn size-7"
 							aria-label="Group settings"
-							onClick={onEditGroup}
+							title="Group settings"
+							onClick={() =>
+								openDialog({ type: "group", boardId: group.boardId, group })
+							}
 						>
 							<Settings2 className="size-3.5" />
 						</button>
@@ -146,7 +158,7 @@ export function GroupCard({
 					)}
 				>
 					<SortableContext
-						items={group.bookmarks.map((bookmark) => bookmark.id)}
+						items={group.bookmarks.map((item) => item.id)}
 						strategy={
 							style === "list"
 								? verticalListSortingStrategy
@@ -157,31 +169,31 @@ export function GroupCard({
 							className={cn("grid", style === "list" ? "gap-0.5" : "gap-3")}
 							style={gridFor(style, layout.tileSize)}
 						>
-							{group.bookmarks.map((bookmark) => (
+							{group.bookmarks.map((item) => (
 								<BookmarkTile
-									key={bookmark.id}
-									bookmark={bookmark}
+									key={item.id}
+									item={item}
 									style={style}
 									size={layout.tileSize}
-									editing={editing}
-									openInNewTab={openInNewTab}
-									onEdit={() => onEditBookmark(bookmark)}
-									onVisit={() => onVisit(bookmark)}
 								/>
 							))}
 							{(editing || group.bookmarks.length === 0) && (
 								<button
 									type="button"
-									onClick={onAdd}
+									onClick={() =>
+										openDialog({ type: "bookmark", groupId: group.id })
+									}
 									className={cn(
 										"focus-ring flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line text-sm text-muted transition hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:text-ink",
-										style === "tile" || style === "icon"
+										square
 											? "aspect-square"
-											: "px-3 py-2.5",
+											: style === "gallery"
+												? "aspect-[16/12]"
+												: "px-3 py-2.5",
 									)}
 								>
 									<Plus className="size-4" />
-									{style !== "tile" && style !== "icon" && "Add bookmark"}
+									{!square && "Add bookmark"}
 								</button>
 							)}
 						</div>

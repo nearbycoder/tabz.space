@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	type AnySQLiteColumn,
+	index,
+	integer,
+	sqliteTable,
+	text,
+} from "drizzle-orm/sqlite-core";
 import {
 	type BoardLayout,
 	type BookmarkMeta,
@@ -95,6 +101,15 @@ export const bookmarks = sqliteTable(
 		groupId: text("group_id")
 			.notNull()
 			.references(() => groups.id, { onDelete: "cascade" }),
+		// Folders are bookmark rows of kind "folder" (url is empty); their
+		// children point at them via parentId. One level deep.
+		kind: text("kind", { enum: ["link", "folder"] })
+			.default("link")
+			.notNull(),
+		parentId: text("parent_id").references(
+			(): AnySQLiteColumn => bookmarks.id,
+			{ onDelete: "cascade" },
+		),
 		title: text("title").notNull(),
 		url: text("url").notNull(),
 		description: text("description"),
@@ -109,6 +124,7 @@ export const bookmarks = sqliteTable(
 	},
 	(table) => [
 		index("bookmarks_group_idx").on(table.groupId, table.position),
+		index("bookmarks_parent_idx").on(table.parentId, table.position),
 		index("bookmarks_user_idx").on(table.userId),
 	],
 );

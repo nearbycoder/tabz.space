@@ -1,6 +1,6 @@
 # tabz.space
 
-A fast, customizable start page: boards → groups → bookmarks in a drag-and-drop grid, a search box that searches the web *and* your bookmarks, and a browser extension to save pages in one click.
+A fast, customizable start page: boards → groups → folders → bookmarks in a drag-and-drop grid, a ⌘K palette to jump anywhere, hover previews of every site, deep theming (presets, fonts, corners, glass/solid/outline panels, gradients, patterns, photo wallpapers), a browser extension to save pages in one click, and an OAuth MCP server for AI assistants.
 
 **Stack:** TanStack Start (React 19, SSR, server functions) · Drizzle ORM on SQLite (libSQL) · Effect for server/network code · Better Auth (username/email + password, optional GitHub) · Tailwind CSS v4 · dnd-kit.
 
@@ -43,7 +43,7 @@ claude mcp add --transport http tabz https://tabz.space/api/mcp
 
 ## Data model
 
-`user → boards → groups → bookmarks` are relational tables (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
+`user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links point at them via `parent_id`, one level deep) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
 
 ## Where things live
 

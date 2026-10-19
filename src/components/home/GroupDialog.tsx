@@ -94,6 +94,7 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 									{ value: "card", label: "Cards" },
 									{ value: "list", label: "List" },
 									{ value: "icon", label: "Icons" },
+									{ value: "gallery", label: "Previews" },
 								]}
 							/>
 						</Field>

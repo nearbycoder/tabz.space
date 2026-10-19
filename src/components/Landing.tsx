@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	Bot,
+	Eye,
 	LayoutGrid,
 	Puzzle,
 	Search,
@@ -41,12 +42,12 @@ const features = [
 	{
 		icon: LayoutGrid,
 		title: "Your grid, your way",
-		body: "Boards, groups, tiles, cards or lists. Drag anything anywhere.",
+		body: "Boards, groups and folders. Tiles, cards, lists or live previews. Drag anything anywhere, even into folders.",
 	},
 	{
 		icon: Search,
-		title: "Search + jump",
-		body: "One box searches the web or your bookmarks. Press / from anywhere.",
+		title: "⌘K to anywhere",
+		body: "Jump to any link, folder or board, run actions, or search the web, all from the keyboard.",
 	},
 	{
 		icon: Puzzle,
@@ -56,12 +57,17 @@ const features = [
 	{
 		icon: Sparkles,
 		title: "Make it yours",
-		body: "Themes, accents, backgrounds, clock, greeting — all optional.",
+		body: "Eight one-click themes, fonts, corners, glass panels, gradients, patterns and photo wallpapers.",
 	},
 	{
 		icon: Bot,
 		title: "Works with your AI",
 		body: "Connect Claude, Cursor or any MCP client. Sign in once, no API keys.",
+	},
+	{
+		icon: Eye,
+		title: "See before you click",
+		body: "Hover any link for a preview of the page. Your most-visited sites float to the top.",
 	},
 ];
 

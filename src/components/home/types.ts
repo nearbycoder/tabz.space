@@ -1,10 +1,22 @@
+import type { Bookmark } from "#/db/schema";
 import type { HomeBoard, HomeBookmark, HomeGroup } from "#/server/home";
 
 export type { HomeBoard, HomeBookmark, HomeGroup };
 
+/** Any single link or folder row (top-level items additionally carry `children`). */
+export type LinkItem = Bookmark;
+
 export type DialogState =
-	| { type: "bookmark"; groupId: string; bookmark?: HomeBookmark }
+	| {
+			type: "bookmark";
+			groupId: string;
+			bookmark?: LinkItem;
+			parentId?: string | null;
+			url?: string;
+	  }
+	| { type: "folder"; folderId: string }
+	| { type: "new-folder"; groupId: string }
 	| { type: "group"; boardId: string; group?: HomeGroup }
 	| { type: "board"; board?: HomeBoard }
-	| { type: "settings" }
+	| { type: "settings"; tab?: string }
 	| null;

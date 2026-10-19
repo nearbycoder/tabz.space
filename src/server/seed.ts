@@ -1,7 +1,17 @@
 import { DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
 
+type StarterLink = { title: string; url: string };
+export type StarterItem =
+	| StarterLink
+	| { folder: string; icon: string; bookmarks: StarterLink[] };
+
 /** Starter content so a brand-new account lands on a useful page. */
-export const STARTER_BOARD = {
+export const STARTER_BOARD: {
+	name: string;
+	icon: string;
+	layout: typeof DEFAULT_BOARD_LAYOUT;
+	groups: { name: string; color: string; bookmarks: StarterItem[] }[];
+} = {
 	name: "Home",
 	icon: "🏠",
 	layout: DEFAULT_BOARD_LAYOUT,
@@ -13,7 +23,16 @@ export const STARTER_BOARD = {
 				{ title: "Gmail", url: "https://mail.google.com" },
 				{ title: "Calendar", url: "https://calendar.google.com" },
 				{ title: "YouTube", url: "https://www.youtube.com" },
-				{ title: "Reddit", url: "https://www.reddit.com" },
+				{
+					folder: "Social",
+					icon: "💬",
+					bookmarks: [
+						{ title: "Reddit", url: "https://www.reddit.com" },
+						{ title: "X", url: "https://x.com" },
+						{ title: "Instagram", url: "https://www.instagram.com" },
+						{ title: "LinkedIn", url: "https://www.linkedin.com" },
+					],
+				},
 			],
 		},
 		{

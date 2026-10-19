@@ -22,60 +22,56 @@ import {
 import { FolderPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useHomeAction } from "#/lib/home-query";
-import { arrangeBookmarks, reorderGroups, updateGroup } from "#/server/home";
+import {
+	arrangeBookmarks,
+	arrangeFolder,
+	reorderGroups,
+	updateGroup,
+} from "#/server/home";
 import { TileBody } from "./BookmarkTile";
+import { useHomeContext } from "./context";
 import { GroupCard } from "./GroupCard";
-import type { DialogState, HomeBoard, HomeBookmark, HomeGroup } from "./types";
-
-type Props = {
-	board: HomeBoard;
-	editing: boolean;
-	openInNewTab: boolean;
-	openDialog: (dialog: DialogState) => void;
-	onVisit: (bookmark: HomeBookmark) => void;
-};
+import type { HomeBoard, HomeGroup } from "./types";
 
 const groupKey = (id: string) => `group:${id}`;
 const isGroupKey = (id: string) => id.startsWith("group:");
+const isIntoKey = (id: string) => id.startsWith("into:");
 
-export function BoardGrid({
-	board,
-	editing,
-	openInNewTab,
-	openDialog,
-	onVisit,
-}: Props) {
+export function BoardGrid({ board }: { board: HomeBoard }) {
+	const { editing, openDialog } = useHomeContext();
 	const [items, setItems] = useState<HomeGroup[]>(board.groups);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const dragOrigin = useRef<string | null>(null);
+	const itemsRef = useRef(items);
+	itemsRef.current = items;
 
 	// Follow server data whenever we're not mid-drag.
 	useEffect(() => {
 		if (!activeId) setItems(board.groups);
 	}, [board.groups, activeId]);
 
+	const withBoardGroups = <T extends { boards: HomeBoard[] }>(
+		data: T,
+		groups: HomeGroup[],
+	) => ({
+		...data,
+		boards: data.boards.map((b) => (b.id === board.id ? { ...b, groups } : b)),
+	});
+
 	const persistGroups = useHomeAction(reorderGroups, {
-		optimistic: (data, input) => ({
-			...data,
-			boards: data.boards.map((b) =>
-				b.id === board.id
-					? {
-							...b,
-							groups: input.ids
-								.map((id) => b.groups.find((g) => g.id === id))
-								.filter((g): g is HomeGroup => Boolean(g)),
-						}
-					: b,
+		optimistic: (data, input) =>
+			withBoardGroups(
+				data,
+				input.ids
+					.map((id) => board.groups.find((g) => g.id === id))
+					.filter((g): g is HomeGroup => Boolean(g)),
 			),
-		}),
 	});
 	const persistBookmarks = useHomeAction(arrangeBookmarks, {
-		optimistic: (data) => ({
-			...data,
-			boards: data.boards.map((b) =>
-				b.id === board.id ? { ...b, groups: itemsRef.current } : b,
-			),
-		}),
+		optimistic: (data) => withBoardGroups(data, itemsRef.current),
+	});
+	const moveIntoFolder = useHomeAction(arrangeFolder, {
+		optimistic: (data) => withBoardGroups(data, itemsRef.current),
 	});
 	const toggleGroup = useHomeAction(updateGroup, {
 		optimistic: (data, input) => ({
@@ -91,9 +87,6 @@ export function BoardGrid({
 		}),
 	});
 
-	const itemsRef = useRef(items);
-	itemsRef.current = items;
-
 	const sensors = useSensors(
 		useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
 		useSensor(KeyboardSensor, {
@@ -104,23 +97,40 @@ export function BoardGrid({
 	const findGroupOf = (id: string) => {
 		if (id.startsWith("drop:")) return id.slice(5);
 		return itemsRef.current.find((group) =>
-			group.bookmarks.some((bookmark) => bookmark.id === id),
+			group.bookmarks.some((item) => item.id === id),
 		)?.id;
 	};
+	const findItem = (id: string) =>
+		itemsRef.current.flatMap((g) => g.bookmarks).find((item) => item.id === id);
 
-	// Groups only collide with groups; bookmarks with bookmarks or group drop zones.
+	// Groups collide with groups. Links prefer a folder's drop zone when the pointer
+	// is right over it, then tiles, then group drop areas.
 	const collisionDetection: CollisionDetection = (args) => {
-		const activeIsGroup = isGroupKey(String(args.active.id));
-		const droppableContainers = args.droppableContainers.filter(
-			(container) => isGroupKey(String(container.id)) === activeIsGroup,
+		const activeKey = String(args.active.id);
+		const activeIsGroup = isGroupKey(activeKey);
+		const candidates = args.droppableContainers.filter(
+			(c) => isGroupKey(String(c.id)) === activeIsGroup,
 		);
-		if (activeIsGroup) return closestCenter({ ...args, droppableContainers });
-		const within = pointerWithin({ ...args, droppableContainers });
-		const tiles = within.filter((hit) => !String(hit.id).startsWith("drop:"));
+		if (activeIsGroup)
+			return closestCenter({ ...args, droppableContainers: candidates });
+		const draggingFolder = findItem(activeKey)?.kind === "folder";
+		const within = pointerWithin({ ...args, droppableContainers: candidates });
+		const folderHit =
+			!draggingFolder &&
+			within.find(
+				(hit) => isIntoKey(String(hit.id)) && hit.id !== `into:${activeKey}`,
+			);
+		if (folderHit) return [folderHit];
+		const sortable = candidates.filter((c) => !isIntoKey(String(c.id)));
+		const tiles = within.filter(
+			(hit) =>
+				!String(hit.id).startsWith("drop:") && !isIntoKey(String(hit.id)),
+		);
 		if (tiles.length) return tiles;
-		return within.length
-			? within
-			: closestCorners({ ...args, droppableContainers });
+		const zones = within.filter((hit) => String(hit.id).startsWith("drop:"));
+		return zones.length
+			? zones
+			: closestCorners({ ...args, droppableContainers: sortable });
 	};
 
 	const onDragStart = ({ active }: DragStartEvent) => {
@@ -133,7 +143,7 @@ export function BoardGrid({
 	// Moving across groups happens live so the destination opens up a slot.
 	const onDragOver = ({ active, over }: DragOverEvent) => {
 		const activeKey = String(active.id);
-		if (!over || isGroupKey(activeKey)) return;
+		if (!over || isGroupKey(activeKey) || isIntoKey(String(over.id))) return;
 		const from = findGroupOf(activeKey);
 		const to = findGroupOf(String(over.id));
 		if (!from || !to || from === to) return;
@@ -167,22 +177,56 @@ export function BoardGrid({
 			setItems(board.groups);
 			return;
 		}
+		const overKey = String(over.id);
+
 		if (isGroupKey(activeKey)) {
 			const from = items.findIndex((g) => groupKey(g.id) === activeKey);
-			const to = items.findIndex((g) => groupKey(g.id) === over.id);
+			const to = items.findIndex((g) => groupKey(g.id) === overKey);
 			if (from < 0 || to < 0 || from === to) return;
 			const next = arrayMove(items, from, to);
 			setItems(next);
 			persistGroups.mutate({ ids: next.map((g) => g.id) });
 			return;
 		}
+
+		// Dropped onto a folder: move the link inside it.
+		if (isIntoKey(overKey)) {
+			const folderId = overKey.slice(5);
+			const moving = findItem(activeKey);
+			const folder = findItem(folderId);
+			if (!moving || !folder || moving.kind === "folder") return;
+			const next = items.map((g) => ({
+				...g,
+				bookmarks: g.bookmarks
+					.filter((b) => b.id !== activeKey)
+					.map((b) =>
+						b.id === folderId
+							? {
+									...b,
+									children: [
+										...b.children,
+										{ ...moving, parentId: folderId, groupId: b.groupId },
+									],
+								}
+							: b,
+					),
+			}));
+			setItems(next);
+			itemsRef.current = next;
+			moveIntoFolder.mutate({
+				folderId,
+				ids: [...folder.children.map((c) => c.id), activeKey],
+			});
+			return;
+		}
+
 		const groupId = findGroupOf(activeKey);
 		if (!groupId) return;
 		let next = items;
 		const group = items.find((g) => g.id === groupId);
 		if (group) {
 			const from = group.bookmarks.findIndex((b) => b.id === activeKey);
-			const to = group.bookmarks.findIndex((b) => b.id === over.id);
+			const to = group.bookmarks.findIndex((b) => b.id === overKey);
 			if (from >= 0 && to >= 0 && from !== to) {
 				next = items.map((g) =>
 					g.id === groupId
@@ -213,14 +257,13 @@ export function BoardGrid({
 		});
 	};
 
-	const activeBookmark =
+	const activeItem =
 		activeId && !isGroupKey(activeId)
 			? items.flatMap((g) => g.bookmarks).find((b) => b.id === activeId)
 			: undefined;
-	const activeGroup = activeBookmark
-		? items.find((g) => g.id === activeBookmark.groupId)
+	const activeGroup = activeItem
+		? items.find((g) => g.id === activeItem.groupId)
 		: undefined;
-
 	const columns = board.layout.columns;
 
 	return (
@@ -254,22 +297,12 @@ export function BoardGrid({
 							key={group.id}
 							group={group}
 							layout={board.layout}
-							editing={editing}
-							openInNewTab={openInNewTab}
-							onAdd={() => openDialog({ type: "bookmark", groupId: group.id })}
-							onEditGroup={() =>
-								openDialog({ type: "group", boardId: board.id, group })
-							}
 							onToggle={() =>
 								toggleGroup.mutate({
 									id: group.id,
 									collapsed: !group.collapsed,
 								})
 							}
-							onEditBookmark={(bookmark) =>
-								openDialog({ type: "bookmark", groupId: group.id, bookmark })
-							}
-							onVisit={onVisit}
 						/>
 					))}
 					{(editing || items.length === 0) && (
@@ -289,16 +322,12 @@ export function BoardGrid({
 					easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 				}}
 			>
-				{activeBookmark && (
-					<div className="relative rotate-2 scale-105 drop-shadow-xl">
+				{activeItem && (
+					<div className="relative rotate-3 scale-110 drop-shadow-2xl">
 						<TileBody
-							bookmark={activeBookmark}
+							item={activeItem}
 							style={activeGroup?.options.tileStyle ?? board.layout.tileStyle}
 							size={board.layout.tileSize}
-							editing={false}
-							openInNewTab={false}
-							onEdit={() => {}}
-							onVisit={() => {}}
 							overlay
 						/>
 					</div>

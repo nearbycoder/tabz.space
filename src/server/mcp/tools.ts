@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { Effect } from "effect";
 import { z } from "zod";
+import type { Bookmark } from "#/db/schema";
 import type { AppError } from "#/lib/effect/errors";
 import { NotFound } from "#/lib/effect/errors";
 import {
@@ -18,8 +19,8 @@ import { runServer } from "../runtime";
  * ever touch that user's data.
  */
 
-const INSTRUCTIONS = `tabz.space is the user's browser start page: boards (pages) contain groups (sections) that contain bookmarks.
-Call get_library first to learn board/group ids. add_bookmark can target a group by name and creates it if missing.
+const INSTRUCTIONS = `tabz.space is the user's browser start page: boards (pages) contain groups (sections) that contain bookmarks and folders (one level deep).
+Call get_library first to learn board/group/folder ids. add_bookmark can target a group or folder by name and creates it if missing.
 Changes show up on the user's start page immediately.`;
 
 type Home = Effect.Success<ReturnType<typeof library.loadHome>>;
@@ -48,9 +49,7 @@ async function run<A>(
 	}
 }
 
-const compactBookmark = (
-	bookmark: Home["boards"][number]["groups"][number]["bookmarks"][number],
-) => ({
+const compactBookmark = (bookmark: Bookmark) => ({
 	id: bookmark.id,
 	title: bookmark.title,
 	url: bookmark.url,
@@ -72,7 +71,16 @@ const compactLibrary = (home: Home, boardId?: string) => ({
 				id: group.id,
 				name: group.name,
 				color: group.color,
-				bookmarks: group.bookmarks.map(compactBookmark),
+				items: group.bookmarks.map((item) =>
+					item.kind === "folder"
+						? {
+								folderId: item.id,
+								folder: item.title,
+								icon: item.icon,
+								bookmarks: item.children.map(compactBookmark),
+							}
+						: compactBookmark(item),
+				),
 			})),
 		})),
 });
@@ -132,10 +140,11 @@ export function createTabzMcpServer(userId: string) {
 		},
 		(input) =>
 			run(library.searchBookmarks(userId, input), (results) =>
-				results.map(({ bookmark, board, group }) => ({
+				results.map(({ bookmark, board, group, folder }) => ({
 					...compactBookmark(bookmark),
 					board,
 					group,
+					...(folder ? { folder, folderId: bookmark.parentId } : {}),
 					groupId: bookmark.groupId,
 				})),
 			),
@@ -146,7 +155,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Add bookmark",
 			description:
-				"Save a URL. Target a group by groupId, or by group name (created if missing) on a board (id or name; defaults to the active board). Title/description are fetched from the page when omitted.",
+				"Save a URL. Target a group by groupId or by group name (created if missing) on a board (id or name; defaults to the active board). Optionally put it in a folder by folderId or folder name (created in that group if missing). Title, description and preview image are fetched from the page when omitted.",
 			inputSchema: z.object({
 				url: z.string().max(2048),
 				title: z.string().max(200).optional(),
@@ -159,10 +168,16 @@ export function createTabzMcpServer(userId: string) {
 					.optional()
 					.describe("Group name, e.g. 'Reading list'"),
 				board: z.string().optional().describe("Board id or name"),
+				folderId: z.string().optional(),
+				folder: z
+					.string()
+					.max(60)
+					.optional()
+					.describe("Folder name, e.g. 'Recipes'"),
 			}),
 			annotations: { openWorldHint: true },
 		},
-		({ groupId, group, board, ...fields }) =>
+		({ groupId, group, board, folderId, folder, ...fields }) =>
 			run(
 				Effect.gen(function* () {
 					let targetGroupId = groupId;
@@ -182,9 +197,28 @@ export function createTabzMcpServer(userId: string) {
 								name: group ?? "Bookmarks",
 							})).id;
 					}
+					let parentId = folderId;
+					if (!parentId && folder) {
+						const home = yield* library.loadHome(userId);
+						const existing = home.boards
+							.flatMap((b) => b.groups)
+							.find((g) => g.id === targetGroupId)
+							?.bookmarks.find(
+								(item) =>
+									item.kind === "folder" &&
+									item.title.toLowerCase() === folder.toLowerCase(),
+							);
+						parentId =
+							existing?.id ??
+							(yield* library.createFolder(userId, {
+								groupId: targetGroupId,
+								title: folder,
+							})).id;
+					}
 					return yield* library.createBookmark(userId, {
 						...fields,
 						groupId: targetGroupId,
+						parentId,
 					});
 				}),
 				(bookmark) => ({
@@ -199,7 +233,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Update bookmark",
 			description:
-				"Edit a bookmark's URL, title, description, tags, color or icon, or move it to another group.",
+				"Edit a bookmark's URL, title, description, tags, color or icon, or move it to another group or into/out of a folder.",
 			inputSchema: z.object({
 				id: z.string(),
 				url: z.string().max(2048).optional(),
@@ -207,6 +241,11 @@ export function createTabzMcpServer(userId: string) {
 				description: z.string().max(500).nullable().optional(),
 				tags: z.array(z.string().max(32)).max(20).optional(),
 				groupId: z.string().optional().describe("Move to this group"),
+				parentId: z
+					.string()
+					.nullable()
+					.optional()
+					.describe("Move into this folder; null moves it out of its folder"),
 				color: colorInput.nullable(),
 				icon: z
 					.string()
@@ -227,9 +266,10 @@ export function createTabzMcpServer(userId: string) {
 	server.registerTool(
 		"delete_bookmark",
 		{
-			title: "Delete bookmark",
-			description: "Permanently delete a bookmark.",
-			inputSchema: library.idInput,
+			title: "Delete bookmark or folder",
+			description:
+				"Permanently delete a bookmark or folder. Deleting a folder keeps its links (moved back into the group) unless withContents is true.",
+			inputSchema: library.deleteBookmarkInput,
 			annotations: { destructiveHint: true },
 		},
 		(input) => run(library.deleteBookmark(userId, input)),
@@ -249,6 +289,34 @@ export function createTabzMcpServer(userId: string) {
 		},
 		({ groupId, ids }) =>
 			run(library.arrangeBookmarks(userId, { groups: [{ groupId, ids }] })),
+	);
+
+	server.registerTool(
+		"create_folder",
+		{
+			title: "Create folder",
+			description:
+				"Create a folder inside a group, optionally moving existing bookmarks into it.",
+			inputSchema: library.createFolderInput,
+		},
+		(input) =>
+			run(library.createFolder(userId, input), (folder) => ({
+				folderId: folder.id,
+				title: folder.title,
+				groupId: folder.groupId,
+			})),
+	);
+
+	server.registerTool(
+		"arrange_folder",
+		{
+			title: "Arrange folder",
+			description:
+				"Set the exact order of bookmarks inside a folder. Bookmark ids from elsewhere are moved in.",
+			inputSchema: library.arrangeFolderInput,
+			annotations: { idempotentHint: true },
+		},
+		(input) => run(library.arrangeFolder(userId, input)),
 	);
 
 	server.registerTool(

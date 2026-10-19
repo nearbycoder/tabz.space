@@ -4,21 +4,21 @@ import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
-import type { HomeBookmark } from "./types";
+import type { LinkItem } from "./types";
 
 type Result =
-	| { kind: "bookmark"; bookmark: HomeBookmark; group: string }
+	| { kind: "bookmark"; bookmark: LinkItem; group: string }
 	| { kind: "url"; url: string }
 	| { kind: "search"; query: string };
 
 type Props = {
-	bookmarks: { bookmark: HomeBookmark; group: string }[];
+	bookmarks: { bookmark: LinkItem; group: string }[];
 	engine: SearchEngine;
 	openInNewTab: boolean;
-	onVisit: (bookmark: HomeBookmark) => void;
+	onVisit: (bookmark: LinkItem) => void;
 };
 
-const score = (bookmark: HomeBookmark, terms: string[]) => {
+const score = (bookmark: LinkItem, terms: string[]) => {
 	const title = bookmark.title.toLowerCase();
 	const haystack = `${title} ${bookmark.url.toLowerCase()} ${bookmark.tags.join(" ").toLowerCase()}`;
 	if (!terms.every((term) => haystack.includes(term))) return 0;

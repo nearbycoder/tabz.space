@@ -26,53 +26,310 @@ export const ACCENTS = [
 	"#64748b",
 ] as const;
 
+/** Gradient backgrounds. `animate` slowly drifts them. */
 export const BACKGROUNDS = {
 	none: "",
 	aurora:
 		"radial-gradient(at 20% 10%, #6366f155 0, transparent 50%), radial-gradient(at 80% 0%, #ec489944 0, transparent 50%), radial-gradient(at 50% 100%, #0ea5e933 0, transparent 50%)",
-	sunset: "linear-gradient(135deg, #f9731633, #ec489933 50%, #8b5cf633)",
-	ocean: "linear-gradient(160deg, #0ea5e933, #10b98122 60%, transparent)",
+	sunset: "linear-gradient(135deg, #f9731640, #ec489940 50%, #8b5cf640)",
+	ocean: "linear-gradient(160deg, #0ea5e940, #10b98128 60%, transparent)",
 	forest:
-		"radial-gradient(at 0% 0%, #10b98144 0, transparent 55%), radial-gradient(at 100% 100%, #84cc1633 0, transparent 55%)",
+		"radial-gradient(at 0% 0%, #10b98150 0, transparent 55%), radial-gradient(at 100% 100%, #84cc1640 0, transparent 55%)",
+	nebula:
+		"radial-gradient(at 15% 20%, #7c3aed66 0, transparent 45%), radial-gradient(at 85% 30%, #db277755 0, transparent 45%), radial-gradient(at 50% 90%, #2563eb55 0, transparent 50%)",
+	candy:
+		"radial-gradient(at 0% 0%, #f472b655 0, transparent 50%), radial-gradient(at 100% 0%, #facc1544 0, transparent 50%), radial-gradient(at 50% 100%, #34d39944 0, transparent 55%)",
+	peach: "linear-gradient(180deg, #fed7aa66, #fecdd366 60%, transparent)",
 	mono: "radial-gradient(circle at 50% 0%, #64748b33, transparent 60%)",
 } as const;
+
+export type GradientKey = keyof typeof BACKGROUNDS;
+
+export const PATTERNS = ["dots", "grid", "diagonal", "plus", "waves"] as const;
+export type PatternKey = (typeof PATTERNS)[number];
+
+/** Curated wallpapers (Unsplash). */
+export const WALLPAPERS = [
+	{ id: "1506744038136-46273834b3fb", label: "Valley lake" },
+	{ id: "1519681393784-d120267933ba", label: "Starry peaks" },
+	{ id: "1470071459604-3b5ec3a7fe05", label: "Misty hills" },
+	{ id: "1507525428034-b723cf961d3e", label: "Beach" },
+	{ id: "1501785888041-af3ef285b470", label: "Lakeside" },
+	{ id: "1469474968028-56623f02e42e", label: "Sunbeams" },
+	{ id: "1477346611705-65d1883cee1e", label: "Mountains" },
+	{ id: "1534796636912-3b95b3ab5986", label: "Nebula" },
+	{ id: "1557682250-33bd709cbe85", label: "Violet blur" },
+	{ id: "1579546929518-9e396f3cc809", label: "Gradient" },
+	{ id: "1493246507139-91e8fad9978e", label: "Alpine" },
+	{ id: "1500530855697-b586d89ba3ee", label: "Road trip" },
+].map((wallpaper) => ({
+	...wallpaper,
+	url: `https://images.unsplash.com/photo-${wallpaper.id}?auto=format&fit=crop&w=2400&q=80`,
+	thumb: `https://images.unsplash.com/photo-${wallpaper.id}?auto=format&fit=crop&w=320&q=60`,
+}));
+
+export const FONTS = {
+	geist: {
+		label: "Modern",
+		family: "'Geist', ui-sans-serif, system-ui, sans-serif",
+		google: "Geist:wght@400..700",
+	},
+	grotesk: {
+		label: "Bold",
+		family: "'Space Grotesk', ui-sans-serif, sans-serif",
+		google: "Space+Grotesk:wght@400..700",
+	},
+	rounded: {
+		label: "Friendly",
+		family: "'Nunito', ui-rounded, ui-sans-serif, sans-serif",
+		google: "Nunito:wght@400..800",
+	},
+	serif: {
+		label: "Editorial",
+		family: "'Fraunces', Georgia, serif",
+		google: "Fraunces:opsz,wght@9..144,400..700",
+	},
+	mono: {
+		label: "Hacker",
+		family: "'JetBrains Mono', ui-monospace, monospace",
+		google: "JetBrains+Mono:wght@400..700",
+	},
+} as const;
+
+export type FontKey = keyof typeof FONTS;
 
 const searchEngineSchema = z.enum(
 	Object.keys(SEARCH_ENGINES) as [SearchEngine, ...SearchEngine[]],
 );
 
+const hex = z.string().regex(/^#[0-9a-f]{6}$/i);
+
+export const backgroundSchema = z.object({
+	type: z.enum(["preset", "pattern", "color", "image"]),
+	value: z.string().max(2048),
+	/** Darken/lighten overlay strength, 0–90 (%). */
+	dim: z.number().min(0).max(90).default(0),
+	/** Image blur in px. */
+	blur: z.number().min(0).max(30).default(0),
+	/** Slowly drift gradients. */
+	animate: z.boolean().default(false),
+});
+
 export const userSettingsSchema = z.object({
 	theme: z.enum(["system", "light", "dark"]),
-	accent: z.string().regex(/^#[0-9a-f]{6}$/i),
-	background: z.object({
-		type: z.enum(["preset", "image"]),
-		value: z.string().max(2048),
-	}),
+	accent: hex,
+	background: backgroundSchema,
+	font: z.enum(Object.keys(FONTS) as [FontKey, ...FontKey[]]).default("geist"),
+	radius: z.enum(["sharp", "soft", "round"]).default("soft"),
+	surface: z.enum(["glass", "solid", "outline"]).default("glass"),
 	searchEngine: searchEngineSchema,
 	showSearch: z.boolean(),
 	showClock: z.boolean(),
 	showGreeting: z.boolean(),
 	clockFormat: z.enum(["12h", "24h"]),
+	greetingName: z.string().max(40).default(""),
+	showTopSites: z.boolean().default(true),
 	openInNewTab: z.boolean(),
+	linkPreviews: z.boolean().default(true),
+	celebrate: z.boolean().default(true),
+	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
 });
 
-export type UserSettings = z.infer<typeof userSettingsSchema>;
+export type UserSettings = z.output<typeof userSettingsSchema>;
 
 export const DEFAULT_SETTINGS: UserSettings = {
 	theme: "system",
 	accent: "#6366f1",
-	background: { type: "preset", value: "aurora" },
+	background: {
+		type: "preset",
+		value: "aurora",
+		dim: 0,
+		blur: 0,
+		animate: true,
+	},
+	font: "geist",
+	radius: "soft",
+	surface: "glass",
 	searchEngine: "google",
 	showSearch: true,
 	showClock: true,
 	showGreeting: true,
 	clockFormat: "12h",
+	greetingName: "",
+	showTopSites: true,
 	openInNewTab: false,
+	linkPreviews: true,
+	celebrate: true,
+	tilt: true,
 	activeBoardId: null,
 };
 
-export const TILE_STYLES = ["tile", "card", "list", "icon"] as const;
+/** One-click looks: each sets several appearance settings at once. */
+export const THEME_PRESETS: {
+	id: string;
+	label: string;
+	emoji: string;
+	settings: Pick<
+		UserSettings,
+		"theme" | "accent" | "background" | "font" | "radius" | "surface"
+	>;
+}[] = [
+	{
+		id: "default",
+		label: "Aurora",
+		emoji: "🌌",
+		settings: {
+			theme: "system",
+			accent: "#6366f1",
+			background: {
+				type: "preset",
+				value: "aurora",
+				dim: 0,
+				blur: 0,
+				animate: true,
+			},
+			font: "geist",
+			radius: "soft",
+			surface: "glass",
+		},
+	},
+	{
+		id: "midnight",
+		label: "Midnight",
+		emoji: "🌙",
+		settings: {
+			theme: "dark",
+			accent: "#8b5cf6",
+			background: {
+				type: "preset",
+				value: "nebula",
+				dim: 0,
+				blur: 0,
+				animate: true,
+			},
+			font: "grotesk",
+			radius: "round",
+			surface: "glass",
+		},
+	},
+	{
+		id: "paper",
+		label: "Paper",
+		emoji: "📜",
+		settings: {
+			theme: "light",
+			accent: "#b45309",
+			background: {
+				type: "color",
+				value: "#f4efe6",
+				dim: 0,
+				blur: 0,
+				animate: false,
+			},
+			font: "serif",
+			radius: "sharp",
+			surface: "outline",
+		},
+	},
+	{
+		id: "terminal",
+		label: "Terminal",
+		emoji: "💾",
+		settings: {
+			theme: "dark",
+			accent: "#22c55e",
+			background: {
+				type: "pattern",
+				value: "grid",
+				dim: 0,
+				blur: 0,
+				animate: false,
+			},
+			font: "mono",
+			radius: "sharp",
+			surface: "outline",
+		},
+	},
+	{
+		id: "sakura",
+		label: "Sakura",
+		emoji: "🌸",
+		settings: {
+			theme: "light",
+			accent: "#ec4899",
+			background: {
+				type: "preset",
+				value: "candy",
+				dim: 0,
+				blur: 0,
+				animate: true,
+			},
+			font: "rounded",
+			radius: "round",
+			surface: "glass",
+		},
+	},
+	{
+		id: "alpine",
+		label: "Alpine",
+		emoji: "🏔️",
+		settings: {
+			theme: "dark",
+			accent: "#0ea5e9",
+			background: {
+				type: "image",
+				value: WALLPAPERS[1].url,
+				dim: 35,
+				blur: 0,
+				animate: false,
+			},
+			font: "geist",
+			radius: "soft",
+			surface: "glass",
+		},
+	},
+	{
+		id: "beach",
+		label: "Beach",
+		emoji: "🏖️",
+		settings: {
+			theme: "light",
+			accent: "#0891b2",
+			background: {
+				type: "image",
+				value: WALLPAPERS[3].url,
+				dim: 15,
+				blur: 6,
+				animate: false,
+			},
+			font: "rounded",
+			radius: "round",
+			surface: "glass",
+		},
+	},
+	{
+		id: "studio",
+		label: "Studio",
+		emoji: "🎛️",
+		settings: {
+			theme: "light",
+			accent: "#0f172a",
+			background: {
+				type: "pattern",
+				value: "dots",
+				dim: 0,
+				blur: 0,
+				animate: false,
+			},
+			font: "grotesk",
+			radius: "soft",
+			surface: "solid",
+		},
+	},
+];
+
+export const TILE_STYLES = ["tile", "card", "list", "icon", "gallery"] as const;
 export type TileStyle = (typeof TILE_STYLES)[number];
 
 export const boardLayoutSchema = z.object({
@@ -104,11 +361,18 @@ export type BookmarkMeta = {
 	favicon?: string;
 	siteName?: string;
 	image?: string;
+	/** When page metadata was last fetched (ms); unset = never looked up. */
+	fetchedAt?: number;
 };
 
 /** Merges stored (possibly older-shaped) JSON with current defaults. */
 export function resolveSettings(stored: unknown): UserSettings {
-	const merged = { ...DEFAULT_SETTINGS, ...(stored as object) };
+	const value = (stored ?? {}) as Partial<UserSettings>;
+	const merged = {
+		...DEFAULT_SETTINGS,
+		...value,
+		background: { ...DEFAULT_SETTINGS.background, ...value.background },
+	};
 	const parsed = userSettingsSchema.safeParse(merged);
 	return parsed.success ? parsed.data : DEFAULT_SETTINGS;
 }

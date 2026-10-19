@@ -1,6 +1,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BookmarkForm } from "#/components/home/BookmarkDialog";
+import { applyAppearance } from "#/lib/appearance";
 import { useHome } from "#/lib/home-query";
 import { applyTheme } from "#/lib/theme";
 import { Logo } from "./Logo";
@@ -22,8 +23,8 @@ export function QuickAdd({
 
 	useEffect(() => {
 		applyTheme(settings.theme);
-		document.documentElement.style.setProperty("--accent", settings.accent);
-	}, [settings.theme, settings.accent]);
+		applyAppearance(settings);
+	}, [settings]);
 
 	const close = () => {
 		if (popup) window.close();
@@ -52,6 +53,7 @@ export function QuickAdd({
 				</div>
 			) : groupId ? (
 				<BookmarkForm
+					festive={settings.celebrate}
 					boards={boards}
 					groupId={groupId}
 					initialUrl={url}

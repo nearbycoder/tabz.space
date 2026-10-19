@@ -127,3 +127,42 @@ export function ColorSwatches({
 		</div>
 	);
 }
+
+export function Slider({
+	label,
+	value,
+	min,
+	max,
+	step = 1,
+	suffix = "",
+	onChange,
+}: {
+	label: string;
+	value: number;
+	min: number;
+	max: number;
+	step?: number;
+	suffix?: string;
+	onChange: (value: number) => void;
+}) {
+	return (
+		<label className="block space-y-1.5">
+			<span className="flex justify-between text-xs font-medium text-muted">
+				{label}
+				<span className="tabular-nums">
+					{value}
+					{suffix}
+				</span>
+			</span>
+			<input
+				type="range"
+				min={min}
+				max={max}
+				step={step}
+				value={value}
+				onChange={(event) => onChange(Number(event.target.value))}
+				className="w-full accent-[var(--accent)]"
+			/>
+		</label>
+	);
+}

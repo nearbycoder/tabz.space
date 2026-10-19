@@ -3,10 +3,16 @@
  * to a user id, shared by the web app's server functions (home.ts) and the
  * MCP tools (mcp/tools.ts), so both surfaces enforce the same ownership rules.
  */
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
-import { boards, bookmarks, groups, userSettings } from "#/db/schema";
+import {
+	type Bookmark,
+	boards,
+	bookmarks,
+	groups,
+	userSettings,
+} from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
 import {
 	boardLayoutSchema,
@@ -19,7 +25,7 @@ import {
 import { faviconFor, normalizeUrl, titleFromUrl } from "#/lib/url";
 import { fetchPageMetadata } from "./metadata";
 import { query } from "./runtime";
-import { STARTER_BOARD } from "./seed";
+import { STARTER_BOARD, type StarterItem } from "./seed";
 
 export const idSchema = z.string().min(1).max(64);
 export const colorSchema = z
@@ -81,16 +87,39 @@ const seedStarterBoard = (userId: string) =>
 						position: groupIndex,
 					})
 					.returning();
-				await tx.insert(bookmarks).values(
-					group.bookmarks.map((bookmark, index) => ({
-						userId,
-						groupId: created.id,
-						title: bookmark.title,
-						url: bookmark.url,
-						position: index,
-						meta: { favicon: faviconFor(bookmark.url) },
-					})),
-				);
+				const insertItems = async (
+					items: StarterItem[],
+					parentId: string | null,
+				) => {
+					for (const [index, item] of items.entries()) {
+						if ("folder" in item) {
+							const [folder] = await tx
+								.insert(bookmarks)
+								.values({
+									userId,
+									groupId: created.id,
+									kind: "folder",
+									title: item.folder,
+									icon: item.icon,
+									url: "",
+									position: index,
+								})
+								.returning();
+							await insertItems(item.bookmarks, folder.id);
+						} else {
+							await tx.insert(bookmarks).values({
+								userId,
+								groupId: created.id,
+								parentId,
+								title: item.title,
+								url: item.url,
+								position: index,
+								meta: { favicon: faviconFor(item.url) },
+							});
+						}
+					}
+				};
+				await insertItems(group.bookmarks, null);
 			}
 		}),
 	);
@@ -121,6 +150,15 @@ export const loadHome = (userId: string) =>
 			yield* seedStarterBoard(userId);
 			[boardRows, groupRows, bookmarkRows, settingsRow] = yield* load;
 		}
+		// Top-level items per group; folders carry their children.
+		const children = new Map<string, Bookmark[]>();
+		for (const row of bookmarkRows) {
+			if (!row.parentId) continue;
+			children.set(row.parentId, [...(children.get(row.parentId) ?? []), row]);
+		}
+		const tree: (Bookmark & { children: Bookmark[] })[] = bookmarkRows
+			.filter((row) => !row.parentId)
+			.map((row) => ({ ...row, children: children.get(row.id) ?? [] }));
 		return {
 			settings: resolveSettings(settingsRow?.settings),
 			boards: boardRows.map((board) => ({
@@ -130,9 +168,7 @@ export const loadHome = (userId: string) =>
 					.filter((group) => group.boardId === board.id)
 					.map((group) => ({
 						...group,
-						bookmarks: bookmarkRows.filter(
-							(bookmark) => bookmark.groupId === group.id,
-						),
+						bookmarks: tree.filter((item) => item.groupId === group.id),
 					})),
 			})),
 		};
@@ -398,17 +434,50 @@ export const lookupUrl = (data: z.infer<typeof lookupUrlInput>) =>
 			title: meta.title ?? titleFromUrl(url),
 			description: meta.description ?? null,
 			favicon: meta.favicon ?? faviconFor(url),
+			image: meta.image ?? null,
+			siteName: meta.siteName ?? null,
 		};
 	});
+
+const ownedBookmark = (userId: string, id: string) =>
+	query((db) =>
+		db.query.bookmarks.findFirst({
+			where: and(eq(bookmarks.id, id), eq(bookmarks.userId, userId)),
+		}),
+	).pipe(Effect.flatMap((row) => owned("Bookmark", row)));
+
+const ownedFolder = (userId: string, id: string) =>
+	ownedBookmark(userId, id).pipe(
+		Effect.flatMap((row) =>
+			row.kind === "folder"
+				? Effect.succeed(row)
+				: Effect.fail(new NotFound({ entity: "Folder" })),
+		),
+	);
+
+/** Next slot at the top level of a group, or inside a folder. */
+const nextSlot = (groupId: string, parentId: string | null) =>
+	nextPosition(
+		bookmarks,
+		parentId
+			? eq(bookmarks.parentId, parentId)
+			: (and(
+					eq(bookmarks.groupId, groupId),
+					isNull(bookmarks.parentId),
+				) as ReturnType<typeof eq>),
+	);
+
+const httpUrl = z.url({ protocol: /^https?$/ }).max(2048);
 
 export const createBookmarkInput = z.object({
 	groupId: idSchema,
 	url: z.string().max(2048),
-	// Favicon already discovered by a prior `lookupUrl` call.
-	favicon: z
-		.url({ protocol: /^https?$/ })
-		.max(2048)
-		.optional(),
+	/** Put it inside this folder (must be in the user's library). */
+	parentId: idSchema.nullish(),
+	// Preview data already discovered by a prior `lookupUrl` call.
+	favicon: httpUrl.optional(),
+	image: httpUrl.nullish(),
+	siteName: z.string().max(200).nullish(),
 	...bookmarkFields,
 });
 
@@ -417,31 +486,33 @@ export const createBookmark = (
 	data: z.infer<typeof createBookmarkInput>,
 ) =>
 	Effect.gen(function* () {
-		yield* ownedGroup(userId, data.groupId);
+		let groupId = data.groupId;
+		if (data.parentId)
+			groupId = (yield* ownedFolder(userId, data.parentId)).groupId;
+		else yield* ownedGroup(userId, groupId);
 		const url = yield* requireUrl(data.url);
 		// Only hit the network when the caller didn't already supply a title.
-		const meta = data.title ? {} : yield* fetchPageMetadata(url);
-		const position = yield* nextPosition(
-			bookmarks,
-			eq(bookmarks.groupId, data.groupId),
-		);
+		const fetched = data.title ? null : yield* fetchPageMetadata(url);
+		const position = yield* nextSlot(groupId, data.parentId ?? null);
 		const [bookmark] = yield* query((db) =>
 			db
 				.insert(bookmarks)
 				.values({
-					userId: userId,
-					groupId: data.groupId,
+					userId,
+					groupId,
+					parentId: data.parentId ?? null,
 					url,
-					title: data.title || meta.title || titleFromUrl(url),
-					description: data.description ?? meta.description ?? null,
+					title: data.title || fetched?.title || titleFromUrl(url),
+					description: data.description ?? fetched?.description ?? null,
 					icon: data.icon ?? null,
 					color: data.color ?? null,
 					tags: data.tags ?? [],
 					position,
 					meta: {
-						favicon: data.favicon ?? meta.favicon ?? faviconFor(url),
-						siteName: meta.siteName,
-						image: meta.image,
+						favicon: data.favicon ?? fetched?.favicon ?? faviconFor(url),
+						siteName: data.siteName ?? fetched?.siteName,
+						image: data.image ?? fetched?.image,
+						...(fetched || data.favicon ? { fetchedAt: Date.now() } : {}),
 					},
 				})
 				.returning(),
@@ -449,10 +520,52 @@ export const createBookmark = (
 		return bookmark;
 	});
 
+export const createFolderInput = z.object({
+	groupId: idSchema,
+	title: z.string().trim().min(1).max(60),
+	icon: z.string().max(16).nullish(),
+	color: colorSchema,
+	/** Existing bookmarks to move into the new folder. */
+	bookmarkIds: z.array(idSchema).max(200).optional(),
+});
+
+export const createFolder = (
+	userId: string,
+	data: z.infer<typeof createFolderInput>,
+) =>
+	Effect.gen(function* () {
+		yield* ownedGroup(userId, data.groupId);
+		const position = yield* nextSlot(data.groupId, null);
+		const [folder] = yield* query((db) =>
+			db
+				.insert(bookmarks)
+				.values({
+					userId,
+					groupId: data.groupId,
+					kind: "folder",
+					title: data.title,
+					url: "",
+					icon: data.icon ?? null,
+					color: data.color ?? null,
+					position,
+				})
+				.returning(),
+		);
+		if (data.bookmarkIds?.length) {
+			yield* arrangeFolder(userId, {
+				folderId: folder.id,
+				ids: data.bookmarkIds,
+			});
+		}
+		return folder;
+	});
+
 export const updateBookmarkInput = z.object({
 	id: idSchema,
 	url: z.string().max(2048).optional(),
 	groupId: idSchema.optional(),
+	/** Folder to move into, or null to move out to the group's top level. */
+	parentId: idSchema.nullish(),
 	...bookmarkFields,
 });
 
@@ -461,52 +574,109 @@ export const updateBookmark = (
 	data: z.infer<typeof updateBookmarkInput>,
 ) =>
 	Effect.gen(function* () {
-		const bookmark = yield* query((db) =>
-			db.query.bookmarks.findFirst({
-				where: and(eq(bookmarks.id, data.id), eq(bookmarks.userId, userId)),
-			}),
-		).pipe(Effect.flatMap((row) => owned("Bookmark", row)));
-		const url = data.url ? yield* requireUrl(data.url) : bookmark.url;
+		const bookmark = yield* ownedBookmark(userId, data.id);
+		const isFolder = bookmark.kind === "folder";
+		const url =
+			data.url && !isFolder ? yield* requireUrl(data.url) : bookmark.url;
 		let groupId = bookmark.groupId;
-		let position = bookmark.position;
-		if (data.groupId && data.groupId !== bookmark.groupId) {
+		let parentId = bookmark.parentId;
+		if (
+			data.parentId !== undefined &&
+			data.parentId !== bookmark.parentId &&
+			!isFolder
+		) {
+			parentId = data.parentId;
+			if (parentId) groupId = (yield* ownedFolder(userId, parentId)).groupId;
+		}
+		if (data.groupId && data.groupId !== groupId && !parentId) {
 			yield* ownedGroup(userId, data.groupId);
 			groupId = data.groupId;
-			position = yield* nextPosition(bookmarks, eq(bookmarks.groupId, groupId));
 		}
+		const moved =
+			groupId !== bookmark.groupId || parentId !== bookmark.parentId;
+		const position = moved
+			? yield* nextSlot(groupId, parentId)
+			: bookmark.position;
 		const [updated] = yield* query((db) =>
-			db
-				.update(bookmarks)
-				.set({
-					url,
-					groupId,
-					position,
-					title: data.title || bookmark.title,
-					description:
-						data.description === undefined
-							? bookmark.description
-							: data.description,
-					icon: data.icon === undefined ? bookmark.icon : data.icon,
-					color: data.color === undefined ? bookmark.color : data.color,
-					tags: data.tags ?? bookmark.tags,
-					meta:
-						url === bookmark.url ? bookmark.meta : { favicon: faviconFor(url) },
-				})
-				.where(eq(bookmarks.id, bookmark.id))
-				.returning(),
+			db.transaction(async (tx) => {
+				// A folder's contents travel with it.
+				if (isFolder && groupId !== bookmark.groupId) {
+					await tx
+						.update(bookmarks)
+						.set({ groupId })
+						.where(eq(bookmarks.parentId, bookmark.id));
+				}
+				return tx
+					.update(bookmarks)
+					.set({
+						url,
+						groupId,
+						parentId,
+						position,
+						title: data.title || bookmark.title,
+						description:
+							data.description === undefined
+								? bookmark.description
+								: data.description,
+						icon: data.icon === undefined ? bookmark.icon : data.icon,
+						color: data.color === undefined ? bookmark.color : data.color,
+						tags: data.tags ?? bookmark.tags,
+						meta:
+							url === bookmark.url
+								? bookmark.meta
+								: { favicon: faviconFor(url) },
+					})
+					.where(eq(bookmarks.id, bookmark.id))
+					.returning();
+			}),
 		);
 		return updated;
 	});
 
-export const deleteBookmark = (userId: string, data: z.infer<typeof idInput>) =>
-	query((db) =>
-		db
-			.delete(bookmarks)
-			.where(and(eq(bookmarks.id, data.id), eq(bookmarks.userId, userId)))
-			.returning({ id: bookmarks.id }),
-	).pipe(Effect.flatMap(deletedOne("Bookmark")));
+export const deleteBookmarkInput = z.object({
+	id: idSchema,
+	/** For folders: also delete everything inside (default keeps the links). */
+	withContents: z.boolean().optional(),
+});
 
-/** Applies the result of a drag: each listed group gets exactly these bookmarks, in order. */
+export const deleteBookmark = (
+	userId: string,
+	data: z.infer<typeof deleteBookmarkInput>,
+) =>
+	Effect.gen(function* () {
+		const bookmark = yield* ownedBookmark(userId, data.id);
+		if (bookmark.kind === "folder" && !data.withContents) {
+			// Release the folder's links back into its group before removing it.
+			const start = yield* nextSlot(bookmark.groupId, null);
+			yield* query((db) =>
+				db.transaction(async (tx) => {
+					const inside = await tx
+						.select({ id: bookmarks.id })
+						.from(bookmarks)
+						.where(eq(bookmarks.parentId, bookmark.id))
+						.orderBy(asc(bookmarks.position));
+					for (const [offset, child] of inside.entries()) {
+						await tx
+							.update(bookmarks)
+							.set({ parentId: null, position: start + offset })
+							.where(eq(bookmarks.id, child.id));
+					}
+				}),
+			);
+		}
+		return yield* query((db) =>
+			db
+				.delete(bookmarks)
+				.where(and(eq(bookmarks.id, data.id), eq(bookmarks.userId, userId)))
+				.returning({ id: bookmarks.id }),
+		).pipe(
+			Effect.flatMap(
+				deletedOne(bookmark.kind === "folder" ? "Folder" : "Bookmark"),
+			),
+		);
+	});
+
+/** Applies the result of a drag: each listed group gets exactly these top-level items, in order. */
 export const arrangeBookmarksInput = z.object({
 	groups: z
 		.array(z.object({ groupId: idSchema, ids: z.array(idSchema).max(500) }))
@@ -534,13 +704,78 @@ export const arrangeBookmarks = (
 					for (const [position, id] of group.ids.entries()) {
 						await tx
 							.update(bookmarks)
-							.set({ groupId: group.groupId, position })
+							.set({ groupId: group.groupId, parentId: null, position })
 							.where(and(eq(bookmarks.id, id), eq(bookmarks.userId, userId)));
+						// Keep folder contents in the same group as the folder.
+						await tx
+							.update(bookmarks)
+							.set({ groupId: group.groupId })
+							.where(
+								and(eq(bookmarks.parentId, id), eq(bookmarks.userId, userId)),
+							);
 					}
 				}
 			}),
 		);
 		return { ok: true };
+	});
+
+/** Sets a folder's exact contents order; ids from elsewhere are moved in. Folders can't nest. */
+export const arrangeFolderInput = z.object({
+	folderId: idSchema,
+	ids: z.array(idSchema).max(500),
+});
+
+export const arrangeFolder = (
+	userId: string,
+	data: z.infer<typeof arrangeFolderInput>,
+) =>
+	Effect.gen(function* () {
+		const folder = yield* ownedFolder(userId, data.folderId);
+		yield* query((db) =>
+			db.transaction(async (tx) => {
+				for (const [position, id] of data.ids.entries()) {
+					await tx
+						.update(bookmarks)
+						.set({ groupId: folder.groupId, parentId: folder.id, position })
+						.where(
+							and(
+								eq(bookmarks.id, id),
+								eq(bookmarks.userId, userId),
+								eq(bookmarks.kind, "link"),
+							),
+						);
+				}
+			}),
+		);
+		return { ok: true };
+	});
+
+/** Re-fetches a link's title/description/preview image, e.g. for the hover preview. */
+export const refreshPreview = (userId: string, data: z.infer<typeof idInput>) =>
+	Effect.gen(function* () {
+		const bookmark = yield* ownedBookmark(userId, data.id);
+		if (bookmark.kind === "folder") return bookmark;
+		const meta = yield* fetchPageMetadata(bookmark.url);
+		const [updated] = yield* query((db) =>
+			db
+				.update(bookmarks)
+				.set({
+					description: bookmark.description ?? meta.description ?? null,
+					meta: {
+						...bookmark.meta,
+						favicon:
+							meta.favicon ?? bookmark.meta.favicon ?? faviconFor(bookmark.url),
+						siteName: meta.siteName ?? bookmark.meta.siteName,
+						image: meta.image ?? bookmark.meta.image,
+						fetchedAt: Date.now(),
+					},
+					updatedAt: sql`${bookmarks.updatedAt}`,
+				})
+				.where(eq(bookmarks.id, bookmark.id))
+				.returning(),
+		);
+		return updated;
 	});
 
 export const recordVisit = (userId: string, data: z.infer<typeof idInput>) =>
@@ -658,11 +893,23 @@ export const searchBookmarks = (
 		return home.boards
 			.flatMap((board) =>
 				board.groups.flatMap((group) =>
-					group.bookmarks.map((bookmark) => ({
-						bookmark,
-						board: board.name,
-						group: group.name,
-					})),
+					group.bookmarks.flatMap((item) =>
+						item.kind === "folder"
+							? item.children.map((bookmark) => ({
+									bookmark,
+									board: board.name,
+									group: group.name,
+									folder: item.title as string | null,
+								}))
+							: [
+									{
+										bookmark: item as Bookmark,
+										board: board.name,
+										group: group.name,
+										folder: null,
+									},
+								],
+					),
 				),
 			)
 			.filter(({ bookmark }) => {

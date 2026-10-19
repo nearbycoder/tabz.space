@@ -84,7 +84,7 @@ export const updateBookmark = createServerFn({ method: "POST" })
 	);
 
 export const deleteBookmark = createServerFn({ method: "POST" })
-	.validator(library.idInput)
+	.validator(library.deleteBookmarkInput)
 	.handler(({ data }) =>
 		runAuthed((user) => library.deleteBookmark(user.id, data)),
 	);
@@ -105,4 +105,22 @@ export const importBookmarks = createServerFn({ method: "POST" })
 	.validator(library.importBookmarksInput)
 	.handler(({ data }) =>
 		runAuthed((user) => library.importBookmarks(user.id, data)),
+	);
+
+export const createFolder = createServerFn({ method: "POST" })
+	.validator(library.createFolderInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.createFolder(user.id, data)),
+	);
+
+export const arrangeFolder = createServerFn({ method: "POST" })
+	.validator(library.arrangeFolderInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.arrangeFolder(user.id, data)),
+	);
+
+export const refreshPreview = createServerFn({ method: "POST" })
+	.validator(library.idInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.refreshPreview(user.id, data)),
 	);

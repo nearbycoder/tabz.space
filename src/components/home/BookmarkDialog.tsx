@@ -1,9 +1,10 @@
 import { Loader2, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ColorSwatches, Field } from "#/components/ui/controls";
 import { Favicon } from "#/components/ui/Favicon";
 import { Modal } from "#/components/ui/Modal";
 import { call, run } from "#/lib/api";
+import { celebrate } from "#/lib/celebrate";
 import { useHomeAction } from "#/lib/home-query";
 import { ACCENTS } from "#/lib/preferences";
 import { faviconFor, normalizeUrl } from "#/lib/url";
@@ -13,12 +14,16 @@ import {
 	lookupUrl,
 	updateBookmark,
 } from "#/server/home";
-import type { HomeBoard, HomeBookmark } from "./types";
+import type { HomeBoard, LinkItem } from "./types";
 
 type Props = {
 	boards: HomeBoard[];
 	groupId: string;
-	bookmark?: HomeBookmark;
+	bookmark?: LinkItem;
+	/** Folder to save into (new bookmarks). */
+	parentId?: string | null;
+	/** Fire confetti when a bookmark is added. */
+	festive?: boolean;
 	initialUrl?: string;
 	initialTitle?: string;
 	onClose: () => void;
@@ -30,6 +35,8 @@ export function BookmarkForm({
 	boards,
 	groupId,
 	bookmark,
+	parentId,
+	festive,
 	initialUrl,
 	initialTitle,
 	onClose,
@@ -41,16 +48,34 @@ export function BookmarkForm({
 	const [icon, setIcon] = useState(bookmark?.icon ?? "");
 	const [color, setColor] = useState<string | null>(bookmark?.color ?? null);
 	const [targetGroup, setTargetGroup] = useState(bookmark?.groupId ?? groupId);
+	const [targetFolder, setTargetFolder] = useState<string | null>(
+		bookmark?.parentId ?? parentId ?? null,
+	);
 	const [favicon, setFavicon] = useState<string | undefined>(
 		bookmark?.meta.favicon,
 	);
+	const [image, setImage] = useState<string | null>(
+		bookmark?.meta.image ?? null,
+	);
+	const [siteName, setSiteName] = useState<string | null>(
+		bookmark?.meta.siteName ?? null,
+	);
 	const [looking, setLooking] = useState(false);
 	const [lookedUp, setLookedUp] = useState(bookmark?.url ?? "");
+	const submitButton = useRef<HTMLButtonElement>(null);
+	const folders =
+		boards
+			.flatMap((b) => b.groups)
+			.find((g) => g.id === targetGroup)
+			?.bookmarks.filter((item) => item.kind === "folder") ?? [];
 
 	const done = () => (onSaved ? onSaved() : onClose());
 	const create = useHomeAction(createBookmark, {
 		success: "Bookmark added",
-		onSuccess: done,
+		onSuccess: () => {
+			if (festive) celebrate(submitButton.current);
+			done();
+		},
 	});
 	const update = useHomeAction(updateBookmark, { onSuccess: done });
 	const remove = useHomeAction(deleteBookmark, {
@@ -60,7 +85,12 @@ export function BookmarkForm({
 				...b,
 				groups: b.groups.map((g) => ({
 					...g,
-					bookmarks: g.bookmarks.filter((x) => x.id !== input.id),
+					bookmarks: g.bookmarks
+						.filter((x) => x.id !== input.id)
+						.map((x) => ({
+							...x,
+							children: x.children.filter((c) => c.id !== input.id),
+						})),
 				})),
 			})),
 		}),
@@ -79,12 +109,20 @@ export function BookmarkForm({
 			setTitle((current) => current || meta.title);
 			setDescription((current) => current || meta.description || "");
 			setFavicon(meta.favicon);
+			setImage(meta.image);
+			setSiteName(meta.siteName);
 		} catch {
 			// Metadata is a nice-to-have; saving still works without it.
 		} finally {
 			setLooking(false);
 		}
 	};
+
+	// Prefilled links (extension, ⌘K "save") get their details right away.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
+	useEffect(() => {
+		if (initialUrl && !bookmark) lookup();
+	}, []);
 
 	const pending = create.isPending || update.isPending;
 	const submit = () => {
@@ -96,8 +134,21 @@ export function BookmarkForm({
 			color,
 		};
 		if (bookmark)
-			update.mutate({ id: bookmark.id, groupId: targetGroup, ...fields });
-		else create.mutate({ groupId: targetGroup, favicon, ...fields });
+			update.mutate({
+				id: bookmark.id,
+				groupId: targetGroup,
+				parentId: targetFolder,
+				...fields,
+			});
+		else
+			create.mutate({
+				groupId: targetGroup,
+				parentId: targetFolder,
+				favicon,
+				image,
+				siteName,
+				...fields,
+			});
 	};
 
 	return (
@@ -108,6 +159,17 @@ export function BookmarkForm({
 				submit();
 			}}
 		>
+			{image && (
+				<div className="animate-pop -mt-1 aspect-[2/1] overflow-hidden rounded-2xl bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]">
+					<img
+						src={image}
+						alt=""
+						referrerPolicy="no-referrer"
+						onError={() => setImage(null)}
+						className="size-full object-cover"
+					/>
+				</div>
+			)}
 			<div className="flex items-center gap-3 rounded-2xl bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] p-3">
 				<div className="grid size-12 shrink-0 place-items-center rounded-xl bg-surface-2">
 					{normalizeUrl(url) ? (
@@ -194,6 +256,22 @@ export function BookmarkForm({
 					/>
 				</Field>
 			</div>
+			{folders.length > 0 && bookmark?.kind !== "folder" && (
+				<Field label="Folder">
+					<select
+						className="field"
+						value={targetFolder ?? ""}
+						onChange={(event) => setTargetFolder(event.target.value || null)}
+					>
+						<option value="">No folder</option>
+						{folders.map((folder) => (
+							<option key={folder.id} value={folder.id}>
+								{`${folder.icon ?? "📁"} ${folder.title}`}
+							</option>
+						))}
+					</select>
+				</Field>
+			)}
 			<Field label="Tint">
 				<ColorSwatches
 					value={color}
@@ -217,6 +295,7 @@ export function BookmarkForm({
 					Cancel
 				</button>
 				<button
+					ref={submitButton}
 					type="submit"
 					className="btn-primary"
 					disabled={pending || !url.trim()}
