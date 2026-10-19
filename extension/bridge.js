@@ -16,6 +16,33 @@ async function announce() {
 	}
 }
 
+/**
+ * The page's background, for the new tab page to paint while tabz loads.
+ * Values end up in CSS, so only plain colors, gradients and https images pass.
+ */
+function rememberLook(look) {
+	if (!look || typeof look !== "object") return;
+	const color = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i;
+	const gradient = /^[\w\s#%(),.-]+$/;
+	const clean = {
+		canvas: color.test(look.canvas ?? "") ? look.canvas : "#0b0c10",
+		gradient:
+			typeof look.gradient === "string" &&
+			look.gradient.length < 600 &&
+			gradient.test(look.gradient)
+				? look.gradient
+				: undefined,
+		image:
+			typeof look.image === "string" &&
+			/^https:\/\/[^\s"'()\\]+$/.test(look.image) &&
+			look.image.length < 2048
+				? look.image
+				: undefined,
+		dim: Number.isFinite(look.dim) ? Math.min(90, Math.max(0, look.dim)) : 0,
+	};
+	chrome.storage.local.set({ look: clean }).catch(() => {});
+}
+
 window.addEventListener("message", async (event) => {
 	if (
 		event.source !== window ||
@@ -25,6 +52,7 @@ window.addEventListener("message", async (event) => {
 		return;
 	const { type, id } = event.data;
 	if (type === "hello") return announce();
+	if (type === "look") return rememberLook(event.data.look);
 	try {
 		if (type === "set-token") {
 			await chrome.runtime.sendMessage({

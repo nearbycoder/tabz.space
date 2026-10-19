@@ -24,9 +24,15 @@ import { call, run } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
 import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
-import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
+import {
+	connectExtension,
+	openIncognito,
+	openTabs,
+	shareLookWithExtension,
+} from "#/lib/incognito";
 import { lazyNamed, whenIdle } from "#/lib/lazy";
 import { showLeaving } from "#/lib/leaving";
+import { BACKGROUNDS, type GradientKey } from "#/lib/preferences";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
@@ -366,6 +372,26 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
+
+	// Let the extension's new tab page paint this background while tabz loads.
+	const background = settings.background;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-share when the theme changes too
+	useEffect(() => {
+		const canvas = getComputedStyle(document.documentElement)
+			.getPropertyValue("--canvas")
+			.trim();
+		shareLookWithExtension({
+			canvas,
+			gradient:
+				background.type === "preset" && background.value in BACKGROUNDS
+					? BACKGROUNDS[background.value as GradientKey]
+					: background.type === "color"
+						? background.value
+						: undefined,
+			image: background.type === "image" ? background.value : undefined,
+			dim: background.dim,
+		});
+	}, [background, settings.theme]);
 
 	const selectBoard = useCallback(
 		(id: string) => {

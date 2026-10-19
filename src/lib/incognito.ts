@@ -137,3 +137,22 @@ export async function openIncognito(urls: string[]) {
 	});
 	return false;
 }
+
+/** What the page looks like, so the extension's new tab page can match it. */
+export type PageLook = {
+	canvas: string;
+	gradient?: string;
+	image?: string;
+	dim?: number;
+};
+
+/**
+ * Hands the extension this page's background. While a new tab loads, the
+ * extension shows it instead of a blank page, so tabz appears without a flash.
+ */
+export function shareLookWithExtension(look: PageLook) {
+	window.postMessage(
+		{ source: "tabz-page", type: "look", look },
+		location.origin,
+	);
+}
