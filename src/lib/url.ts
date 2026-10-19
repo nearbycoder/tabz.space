@@ -69,3 +69,28 @@ export function extractUrls(text: string): string[] {
 	const all = [...found, ...bare].map((url) => url.replace(/[.,;:!?]+$/, ""));
 	return [...new Set(all)];
 }
+
+/**
+ * Hosts where each first path segment is its own site: GitHub/GitLab/Codeberg
+ * Pages project sites, and Google's Docs/Sites apps (Sheets vs Docs icons).
+ */
+const PATH_SCOPED =
+	/(^|\.)(github\.io|gitlab\.io|codeberg\.page|bitbucket\.io)$|^(docs|sites)\.google\.com$/i;
+
+/**
+ * The part of a URL that shares one icon: the site's origin, or origin + first
+ * path segment on hosts like *.github.io where every project is its own site.
+ */
+export function iconScope(url: string): string | null {
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+			return null;
+		const segment = parsed.pathname.split("/").filter(Boolean)[0];
+		return segment && PATH_SCOPED.test(parsed.hostname)
+			? `${parsed.origin}/${segment}/`
+			: `${parsed.origin}/`;
+	} catch {
+		return null;
+	}
+}

@@ -53,8 +53,26 @@ export function sniffImage(body: Uint8Array): string | null {
 	return null;
 }
 
-const tryIcon = (url: string) =>
-	fetchBytes(new URL(url), IMAGE).pipe(
+/** An inline icon (data:image/svg+xml,… or data:image/png;base64,…). */
+function decodeDataUrl(url: string): Uint8Array | null {
+	const match = url.match(/^data:([^,]*?)(;base64)?,(.*)$/s);
+	if (!match || url.length > 400_000) return null;
+	try {
+		return match[2]
+			? new Uint8Array(Buffer.from(match[3], "base64"))
+			: new TextEncoder().encode(decodeURIComponent(match[3]));
+	} catch {
+		return null;
+	}
+}
+
+const tryIcon = (url: string) => {
+	if (url.startsWith("data:")) {
+		const body = decodeDataUrl(url);
+		const type = body ? sniffImage(body) : null;
+		return Effect.succeed(body && type ? { body, type } : null);
+	}
+	return fetchBytes(new URL(url), IMAGE).pipe(
 		Effect.timeout("5 seconds"),
 		Effect.map(({ body }) => {
 			const type = sniffImage(body);
@@ -62,16 +80,16 @@ const tryIcon = (url: string) =>
 		}),
 		Effect.catch(() => Effect.succeed(null)),
 	);
+};
 
 const isThirdPartyService = (url: string) =>
 	/(^|\.)google\.com\/s2\/|gstatic\.com\/favicon|icons\.duckduckgo\.com/i.test(
 		url,
 	);
 
-const resolve = (origin: URL, hint?: string) =>
+const resolve = (scope: URL, hint?: string) =>
 	Effect.gen(function* () {
-		const candidates: string[] = [];
-		const page = yield* fetchText(new URL("/", origin), HTML, /html/i).pipe(
+		const page = yield* fetchText(scope, HTML, /html/i).pipe(
 			Effect.timeout("5 seconds"),
 			Effect.catch(() => Effect.succeed(null)),
 		);
@@ -84,21 +102,47 @@ const resolve = (origin: URL, hint?: string) =>
 					return [];
 				}
 			});
-		// Opaque touch icons first (declared, then the conventional path most
-		// sites have even when undeclared): they read on light and dark themes,
-		// unlike black SVG favicons made for a light tab bar.
-		candidates.push(
-			...declared.filter((icon) => icon.touch).map((icon) => icon.url),
-			new URL("/apple-touch-icon.png", origin).toString(),
-			// What the link's own page declared when it was saved.
-			...(hint && /^https?:\/\//i.test(hint) && !isThirdPartyService(hint)
+		const touchIcons = declared
+			.filter((icon) => icon.touch)
+			.map((icon) => icon.url);
+		const otherIcons = declared
+			.filter((icon) => !icon.touch)
+			.map((icon) => icon.url);
+		const savedHint =
+			hint && /^https?:\/\//i.test(hint) && !isThirdPartyService(hint)
 				? [hint]
-				: []),
-			...declared.filter((icon) => !icon.touch).map((icon) => icon.url),
-			new URL("/favicon.ico", origin).toString(),
-			`https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=${encodeURIComponent(origin.origin)}`,
-			`https://icons.duckduckgo.com/ip3/${origin.hostname}.ico`,
-		);
+				: [];
+		const at = (path: string, base: URL) => new URL(path, base).toString();
+		const root = new URL("/", scope);
+		const services = [
+			`https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=128&url=${encodeURIComponent(scope.toString())}`,
+			`https://icons.duckduckgo.com/ip3/${scope.hostname}.ico`,
+		];
+		const candidates =
+			scope.pathname === "/"
+				? [
+						// Opaque touch icons first (declared, then the conventional path
+						// most sites have even when undeclared): they read on light and
+						// dark themes, unlike black SVG favicons made for a light tab bar.
+						...touchIcons,
+						at("apple-touch-icon.png", root),
+						...savedHint,
+						...otherIcons,
+						at("favicon.ico", root),
+						...services,
+					]
+				: [
+						// A project site under a shared host (you.github.io/Game/): its
+						// own icons come first, the host's root ones only as a fallback.
+						...touchIcons,
+						...otherIcons,
+						...savedHint,
+						at("apple-touch-icon.png", scope),
+						at("favicon.ico", scope),
+						at("apple-touch-icon.png", root),
+						at("favicon.ico", root),
+						...services,
+					];
 		for (const url of [...new Set(candidates)]) {
 			const icon = yield* tryIcon(url);
 			if (icon) return icon;
@@ -117,7 +161,10 @@ function remember(host: string, icon: Icon | null) {
 
 /** The icon for a site (by origin), from cache or freshly found. */
 export async function siteIcon(origin: URL, hint?: string) {
-	const host = origin.host.toLowerCase();
+	// `origin` is an icon scope: an origin, or origin + project path.
+	// The scope: origin (lowercased host) plus any project path, e.g.
+	// "you.github.io/Game/" (paths are case-sensitive on GitHub Pages).
+	const host = `${origin.host.toLowerCase()}${origin.pathname}`;
 	const hit = cache.get(host);
 	if (hit && Date.now() - hit.at < (hit.icon ? FOUND_FOR : MISSING_FOR))
 		return { icon: hit.icon, cached: true };
@@ -138,7 +185,7 @@ const recent = new Map<string, number[]>();
 const LOOKUPS_PER_MINUTE = 120;
 
 export function allowLookup(client: string, origin: URL) {
-	const hit = cache.get(origin.host.toLowerCase());
+	const hit = cache.get(`${origin.host.toLowerCase()}${origin.pathname}`);
 	if (hit) return true;
 	const now = Date.now();
 	const times = (recent.get(client) ?? []).filter((at) => now - at < 60_000);

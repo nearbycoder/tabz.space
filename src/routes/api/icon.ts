@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { iconScope } from "#/lib/url";
 import { allowLookup, siteIcon } from "#/server/favicons";
 
 /**
- * GET /api/icon?url=<site origin>[&hint=<icon url seen when saving>]
+ * GET /api/icon?url=<site>[&hint=<icon url seen when saving>]
+ * <site> is normalized to its icon scope: the origin, or origin + first path
+ * segment on hosts like *.github.io (see iconScope).
  * A site's icon, found and served by tabz (see src/server/favicons.ts).
  */
 export const Route = createFileRoute("/api/icon")({
@@ -10,13 +13,9 @@ export const Route = createFileRoute("/api/icon")({
 		handlers: {
 			GET: async ({ request }) => {
 				const params = new URL(request.url).searchParams;
-				let origin: URL;
-				try {
-					origin = new URL(params.get("url") ?? "");
-					if (!/^https?:$/.test(origin.protocol)) throw new Error();
-				} catch {
-					return new Response("Bad url", { status: 400 });
-				}
+				const scope = iconScope(params.get("url") ?? "");
+				if (!scope) return new Response("Bad url", { status: 400 });
+				const origin = new URL(scope);
 				const client =
 					request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
 					"local";

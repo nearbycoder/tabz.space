@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "#/lib/cn";
-import { faviconFor, hostnameOf } from "#/lib/url";
+import { faviconFor, hostnameOf, iconScope } from "#/lib/url";
 
 type Props = {
 	url: string;
@@ -16,13 +16,13 @@ type Props = {
 	sealed?: boolean;
 };
 
-/** tabz's own icon lookup (src/routes/api/icon.ts), by site origin. */
+/** tabz's own icon lookup (src/routes/api/icon.ts), by site (see iconScope). */
 function iconUrl(url: string, hint?: string) {
 	try {
-		const { origin, protocol } = new URL(url);
-		if (protocol !== "https:" && protocol !== "http:") return null;
+		const scope = iconScope(url);
+		if (!scope) return null;
 		// Bump v when the lookup improves, so browsers drop week-old answers.
-		const params = new URLSearchParams({ url: origin, v: "2" });
+		const params = new URLSearchParams({ url: scope, v: "3" });
 		if (
 			hint &&
 			/^https?:\/\//.test(hint) &&
