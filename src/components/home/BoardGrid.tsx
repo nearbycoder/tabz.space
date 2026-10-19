@@ -7,20 +7,16 @@ import {
 	type DragOverEvent,
 	DragOverlay,
 	type DragStartEvent,
-	KeyboardSensor,
-	PointerSensor,
 	pointerWithin,
-	useSensor,
-	useSensors,
 } from "@dnd-kit/core";
 import {
 	arrayMove,
 	rectSortingStrategy,
 	SortableContext,
-	sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { FolderPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { buzz, useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
 import {
 	arrangeBookmarks,
@@ -87,12 +83,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 		}),
 	});
 
-	const sensors = useSensors(
-		useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
-	);
+	const sensors = useDragSensors();
 
 	const findGroupOf = (id: string) => {
 		if (id.startsWith("drop:")) return id.slice(5);
@@ -134,6 +125,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 	};
 
 	const onDragStart = ({ active }: DragStartEvent) => {
+		buzz();
 		setActiveId(String(active.id));
 		dragOrigin.current = isGroupKey(String(active.id))
 			? null
@@ -170,9 +162,22 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 		});
 	};
 
-	const onDragEnd = ({ active, over }: DragEndEvent) => {
+	const onDragEnd = ({ active, over, delta }: DragEndEvent) => {
 		const activeKey = String(active.id);
 		setActiveId(null);
+		// Press-and-hold released in place (the touch "long press"): open the item instead.
+		if (
+			!isGroupKey(activeKey) &&
+			over?.id === active.id &&
+			Math.hypot(delta.x, delta.y) < 8
+		) {
+			const item = findItem(activeKey);
+			if (item?.kind === "folder")
+				openDialog({ type: "folder", folderId: item.id });
+			else if (item)
+				openDialog({ type: "bookmark", groupId: item.groupId, bookmark: item });
+			return;
+		}
 		if (!over) {
 			setItems(board.groups);
 			return;

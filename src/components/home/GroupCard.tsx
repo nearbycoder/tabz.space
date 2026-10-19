@@ -95,12 +95,12 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 						className={cn(
 							"ml-auto flex items-center transition",
 							!editing &&
-								"opacity-0 group-hover/card:opacity-100 focus-within:opacity-100",
+								"opacity-0 group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
 						)}
 					>
 						<button
 							type="button"
-							className="icon-btn size-7"
+							className="icon-btn size-7 pointer-coarse:size-9"
 							aria-label="Add bookmark"
 							title="Add bookmark"
 							onClick={() =>
@@ -111,7 +111,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 						</button>
 						<button
 							type="button"
-							className="icon-btn size-7"
+							className="icon-btn size-7 pointer-coarse:size-9"
 							aria-label="New folder"
 							title="New folder"
 							onClick={() =>
@@ -122,7 +122,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 						</button>
 						<button
 							type="button"
-							className="icon-btn size-7"
+							className="icon-btn size-7 pointer-coarse:size-9"
 							aria-label="Group settings"
 							title="Group settings"
 							onClick={() =>
@@ -133,7 +133,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 						</button>
 						<button
 							type="button"
-							className="icon-btn size-7"
+							className="icon-btn size-7 pointer-coarse:size-9"
 							aria-label={group.collapsed ? "Expand" : "Collapse"}
 							onClick={onToggle}
 						>

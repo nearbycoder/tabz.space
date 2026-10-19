@@ -9,6 +9,8 @@ export const Route = createFileRoute("/add")({
 	validateSearch: z.object({
 		url: z.string().optional(),
 		title: z.string().optional(),
+		// Android's share sheet often puts the link inside "text".
+		text: z.string().optional(),
 		popup: z.coerce.boolean().optional(),
 	}),
 	loaderDeps: ({ search }) => search,
@@ -20,9 +22,10 @@ export const Route = createFileRoute("/add")({
 	},
 	component: () => {
 		const search = Route.useSearch();
+		const url = search.url || search.text?.match(/https?:\/\/\S+/)?.[0] || "";
 		return (
 			<QuickAdd
-				url={search.url ?? ""}
+				url={url}
 				title={search.title ?? ""}
 				popup={search.popup ?? false}
 			/>

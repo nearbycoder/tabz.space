@@ -73,7 +73,7 @@ export function VaultUnlockDialog({
 	};
 
 	return createPortal(
-		<div className="fixed inset-0 z-[80] grid place-items-center p-4">
+		<div className="fixed inset-0 z-[80] flex items-start justify-center p-4 pt-[18dvh] sm:items-center sm:pt-4">
 			<button
 				type="button"
 				aria-label="Close"
@@ -189,7 +189,8 @@ export function VaultSettings({
 				<p className="mt-1 text-muted">
 					Vault boards never load until you unlock them. They stay out of
 					search, ⌘K, the most-visited strip, exports and AI assistants. Type
-					your secret code anywhere on your home page to open it.
+					your secret code anywhere on your home page to open it. On a phone,
+					tap the clock 5 times quickly.
 				</p>
 			</div>
 

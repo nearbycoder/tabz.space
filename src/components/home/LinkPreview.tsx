@@ -48,7 +48,9 @@ export function LinkPreview({
 	};
 
 	const onEnter = () => {
-		if (!enabled) return;
+		// Touch screens fire mouseenter on tap; previews are for real hover only.
+		if (!enabled || !matchMedia("(hover: hover) and (pointer: fine)").matches)
+			return;
 		clearTimeout(timer.current);
 		timer.current = setTimeout(show, 550);
 	};

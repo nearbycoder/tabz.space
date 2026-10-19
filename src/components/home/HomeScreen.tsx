@@ -3,9 +3,12 @@ import {
 	Check,
 	Command,
 	Lock,
+	Moon,
 	Pencil,
 	Plus,
+	Search,
 	SlidersHorizontal,
+	Sun,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "#/components/Logo";
@@ -31,6 +34,88 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
 import type { DialogState, HomeBoard, LinkItem } from "./types";
 import { useLockVault, VaultUnlockDialog } from "./Vault";
+
+/** Thumb-reach actions for phones; the header holds these on larger screens. */
+function MobileDock(props: {
+	editing: boolean;
+	vaultUnlocked: boolean;
+	onSearch: () => void;
+	onAdd: () => void;
+	onEdit: () => void;
+	onCustomize: () => void;
+	onLock: () => void;
+	dark: boolean;
+	onToggleTheme: () => void;
+}) {
+	const item =
+		"focus-ring grid size-12 place-items-center rounded-2xl text-muted transition active:scale-90 active:text-ink";
+	return (
+		<nav
+			aria-label="Quick actions"
+			className="glass fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-sm items-center justify-around rounded-3xl p-1.5 shadow-2xl shadow-black/20 sm:hidden"
+		>
+			<button
+				type="button"
+				className={item}
+				aria-label="Search"
+				onClick={props.onSearch}
+			>
+				<Search className="size-5" />
+			</button>
+			<button
+				type="button"
+				className={cn(item, props.editing && "bg-accent text-white")}
+				aria-label={props.editing ? "Done editing" : "Edit layout"}
+				onClick={props.onEdit}
+			>
+				{props.editing ? (
+					<Check className="size-5" />
+				) : (
+					<Pencil className="size-5" />
+				)}
+			</button>
+			<button
+				type="button"
+				className="focus-ring grid size-14 place-items-center rounded-2xl bg-accent text-white shadow-lg transition active:scale-90"
+				aria-label="Add bookmark"
+				onClick={props.onAdd}
+			>
+				<Plus className="size-6" />
+			</button>
+			{props.vaultUnlocked ? (
+				<button
+					type="button"
+					className={cn(item, "text-accent")}
+					aria-label="Lock vault"
+					onClick={props.onLock}
+				>
+					<Lock className="size-5" />
+				</button>
+			) : (
+				<button
+					type="button"
+					className={item}
+					aria-label={props.dark ? "Light mode" : "Dark mode"}
+					onClick={props.onToggleTheme}
+				>
+					{props.dark ? (
+						<Sun className="size-5" />
+					) : (
+						<Moon className="size-5" />
+					)}
+				</button>
+			)}
+			<button
+				type="button"
+				className={item}
+				aria-label="Customize"
+				onClick={props.onCustomize}
+			>
+				<SlidersHorizontal className="size-5" />
+			</button>
+		</nav>
+	);
+}
 
 const widths = {
 	narrow: "max-w-4xl",
@@ -69,6 +154,24 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[board?.id, saveSettings],
 	);
 
+	/** Secret entrance: the typed code (desktop) or 5 quick taps on the clock (phones). */
+	const openVault = useCallback(() => {
+		if (!vault.configured) return;
+		const firstVaultBoard = boards.find((b) => b.vault);
+		if (vault.unlocked && firstVaultBoard) selectBoard(firstVaultBoard.id);
+		else setDialog({ type: "vault-unlock" });
+	}, [boards, selectBoard, vault.configured, vault.unlocked]);
+
+	const taps = useRef<number[]>([]);
+	const onClockTap = () => {
+		const now = Date.now();
+		taps.current = [...taps.current.filter((t) => now - t < 2000), now];
+		if (taps.current.length >= 5) {
+			taps.current = [];
+			openVault();
+		}
+	};
+
 	// Keyboard: e = edit mode, n = new bookmark, 1–9 = switch board (⌘K lives in the palette).
 	// Typing the secret vault code anywhere opens the vault prompt.
 	useEffect(() => {
@@ -93,10 +196,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				if (vault.configured && typed.current.endsWith(code)) {
 					typed.current = "";
 					event.preventDefault();
-					const firstVaultBoard = boards.find((b) => b.vault);
-					if (vault.unlocked && firstVaultBoard)
-						selectBoard(firstVaultBoard.id);
-					else setDialog({ type: "vault-unlock" });
+					openVault();
 					return;
 				}
 				// Mid-code keystrokes shouldn't trigger single-key shortcuts.
@@ -124,7 +224,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		selectBoard,
 		settings.vaultCode,
 		vault.configured,
-		vault.unlocked,
+		openVault,
 	]);
 
 	// Auto-lock: the cookie expires server-side; drop the boards client-side at the same moment.
@@ -214,6 +314,11 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	if (!board) return null;
 	const close = () => setDialog(null);
+	const isDark =
+		settings.theme === "dark" ||
+		(settings.theme === "system" &&
+			typeof window !== "undefined" &&
+			matchMedia("(prefers-color-scheme: dark)").matches);
 
 	return (
 		<HomeContext.Provider value={context}>
@@ -271,7 +376,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								<Plus className="size-4" />
 							</button>
 						</nav>
-						<div className="ml-auto flex items-center gap-1">
+						<div className="ml-auto hidden items-center gap-1 sm:flex">
 							{vault.unlocked && (
 								<button
 									type="button"
@@ -344,17 +449,21 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 				<main
 					className={cn(
-						"relative mx-auto px-4 pb-24 sm:px-6",
+						"relative mx-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-24",
 						widths[board.layout.width],
 					)}
 				>
 					<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
-						<Clock
-							name={settings.greetingName || session.name}
-							showClock={settings.showClock}
-							showGreeting={settings.showGreeting}
-							format={settings.clockFormat}
-						/>
+						{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
+						{/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users open the vault by typing the code */}
+						<div onClick={onClockTap} className="select-none">
+							<Clock
+								name={settings.greetingName || session.name}
+								showClock={settings.showClock}
+								showGreeting={settings.showGreeting}
+								format={settings.clockFormat}
+							/>
+						</div>
 						{settings.showSearch && (
 							<SearchBar
 								bookmarks={links}
@@ -366,6 +475,23 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					</div>
 					<BoardGrid board={board} />
 				</main>
+
+				<MobileDock
+					editing={editing}
+					vaultUnlocked={vault.unlocked}
+					onSearch={() => setPaletteOpen(true)}
+					onAdd={() =>
+						board.groups[0] &&
+						setDialog({ type: "bookmark", groupId: board.groups[0].id })
+					}
+					onEdit={() => setEditing((value) => !value)}
+					onCustomize={() => setDialog({ type: "settings" })}
+					onLock={() => lockVault()}
+					dark={isDark}
+					onToggleTheme={() =>
+						saveSettings.mutate({ theme: isDark ? "light" : "dark" })
+					}
+				/>
 
 				<CommandPalette
 					open={paletteOpen}

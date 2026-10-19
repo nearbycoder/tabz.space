@@ -1,4 +1,4 @@
-import { Loader2, Trash2 } from "lucide-react";
+import { ClipboardPaste, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ColorSwatches, Field, Toggle } from "#/components/ui/controls";
 import { Favicon } from "#/components/ui/Favicon";
@@ -99,8 +99,9 @@ export function BookmarkForm({
 	});
 
 	// Fill in title/description from the page itself, without clobbering user edits.
-	const lookup = async () => {
-		const normalized = normalizeUrl(url);
+	const lookup = () => lookupUrlValue(url);
+	async function lookupUrlValue(value: string) {
+		const normalized = normalizeUrl(value);
 		if (!normalized || normalized === lookedUp) return;
 		setLookedUp(normalized);
 		setFavicon(faviconFor(normalized, 128));
@@ -117,7 +118,7 @@ export function BookmarkForm({
 		} finally {
 			setLooking(false);
 		}
-	};
+	}
 
 	// Prefilled links (extension, ⌘K "save") get their details right away.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
@@ -198,17 +199,41 @@ export function BookmarkForm({
 				</div>
 			</div>
 			<Field label="URL">
-				<input
-					className="field"
-					value={url}
-					onChange={(event) => setUrl(event.target.value)}
-					onBlur={lookup}
-					onPaste={() => setTimeout(lookup, 0)}
-					placeholder="github.com"
-					required
-					autoFocus={!bookmark}
-					inputMode="url"
-				/>
+				<div className="flex gap-2">
+					<input
+						className="field"
+						value={url}
+						onChange={(event) => setUrl(event.target.value)}
+						onBlur={lookup}
+						onPaste={() => setTimeout(lookup, 0)}
+						placeholder="github.com"
+						required
+						autoFocus={!bookmark && !initialUrl}
+						inputMode="url"
+						autoCapitalize="none"
+						autoCorrect="off"
+						spellCheck={false}
+						enterKeyHint="next"
+					/>
+					{!url &&
+						typeof navigator !== "undefined" &&
+						"clipboard" in navigator && (
+							<button
+								type="button"
+								className="btn-outline shrink-0"
+								onClick={async () => {
+									const text = (
+										await navigator.clipboard.readText().catch(() => "")
+									).trim();
+									if (!text) return;
+									setUrl(text);
+									setTimeout(() => lookupUrlValue(text), 0);
+								}}
+							>
+								<ClipboardPaste className="size-4" /> Paste
+							</button>
+						)}
+				</div>
 			</Field>
 			<Field label="Title">
 				<input

@@ -150,7 +150,7 @@ export function CommandPalette({
 	const engine = SEARCH_ENGINES[settings.searchEngine];
 
 	return createPortal(
-		<div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh]">
+		<div className="fixed inset-0 z-[70] flex items-start justify-center p-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:p-4 sm:pt-[12vh]">
 			<button
 				type="button"
 				aria-label="Close"
@@ -176,11 +176,18 @@ export function CommandPalette({
 						placeholder="Search links, folders, boards, actions…"
 						className="h-14 w-full bg-transparent text-base outline-none placeholder:text-muted"
 					/>
-					<kbd className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted">
+					<kbd className="hidden rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted sm:block">
 						esc
 					</kbd>
+					<button
+						type="button"
+						onClick={close}
+						className="shrink-0 text-sm font-medium text-accent sm:hidden"
+					>
+						Cancel
+					</button>
 				</div>
-				<Command.List className="max-h-[55vh] overflow-y-auto p-2 [scrollbar-width:thin]">
+				<Command.List className="max-h-[48dvh] overflow-y-auto overscroll-contain p-2 [scrollbar-width:thin] sm:max-h-[55vh]">
 					<Command.Empty className="px-3 py-8 text-center text-sm text-muted">
 						Nothing matches. Press ↵ to search the web.
 					</Command.Empty>
@@ -477,7 +484,7 @@ export function CommandPalette({
 						</Command.Item>
 					</Command.Group>
 				</Command.List>
-				<div className="flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-muted">
+				<div className="hidden items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-muted sm:flex">
 					<span>↵ open</span>
 					<span>⌘↵ new tab</span>
 					<span>↑↓ navigate</span>

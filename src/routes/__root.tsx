@@ -15,7 +15,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 		head: () => ({
 			meta: [
 				{ charSet: "utf-8" },
-				{ name: "viewport", content: "width=device-width, initial-scale=1" },
+				{
+					name: "viewport",
+					content: "width=device-width, initial-scale=1, viewport-fit=cover",
+				},
+				{ name: "apple-mobile-web-app-capable", content: "yes" },
+				{ name: "mobile-web-app-capable", content: "yes" },
+				{
+					name: "apple-mobile-web-app-status-bar-style",
+					content: "black-translucent",
+				},
+				{ name: "apple-mobile-web-app-title", content: "Tabz" },
 				{ title: "Tabz — your home on the web" },
 				{
 					name: "description",
@@ -36,6 +46,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 			links: [
 				{ rel: "stylesheet", href: appCss },
 				{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+				{ rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+				{ rel: "manifest", href: "/site.webmanifest" },
 				{ rel: "preconnect", href: "https://fonts.googleapis.com" },
 				{
 					rel: "preconnect",
@@ -62,7 +74,14 @@ function RootDocument({ children }: { children: ReactNode }) {
 			</head>
 			<body className="min-h-dvh">
 				{children}
-				<Toaster position="bottom-center" richColors closeButton />
+				<Toaster
+					position="bottom-center"
+					richColors
+					closeButton
+					mobileOffset={{
+						bottom: "calc(5.5rem + env(safe-area-inset-bottom))",
+					}}
+				/>
 				<Scripts />
 			</body>
 		</html>

@@ -56,7 +56,7 @@ export function BookmarkTile({ item, style, size }: Props) {
 				transition: sortable.transition,
 			}}
 			className={cn(
-				"group/tile relative",
+				"group/tile relative select-none [-webkit-touch-callout:none]",
 				sortable.isDragging && "opacity-30",
 				editing && "cursor-grab",
 			)}

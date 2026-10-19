@@ -1,17 +1,8 @@
-import {
-	closestCenter,
-	DndContext,
-	type DragEndEvent,
-	KeyboardSensor,
-	PointerSensor,
-	useSensor,
-	useSensors,
-} from "@dnd-kit/core";
+import { closestCenter, DndContext, type DragEndEvent } from "@dnd-kit/core";
 import {
 	arrayMove,
 	rectSortingStrategy,
 	SortableContext,
-	sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import {
 	ExternalLink,
@@ -25,6 +16,7 @@ import { createPortal } from "react-dom";
 import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
+import { useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
 import { openIncognito } from "#/lib/incognito";
 import type { HomeData } from "#/server/home";
@@ -85,12 +77,7 @@ export function FolderDialog({
 	const rename = useHomeAction(updateBookmark);
 	const arrange = useHomeAction(arrangeFolder);
 	const remove = useHomeAction(deleteBookmark, { onSuccess: onClose });
-	const sensors = useSensors(
-		useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		}),
-	);
+	const sensors = useDragSensors();
 
 	if (!folder) return null;
 
@@ -111,7 +98,7 @@ export function FolderDialog({
 	};
 
 	return createPortal(
-		<div className="fixed inset-0 z-50 grid place-items-center p-4">
+		<div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
 			<button
 				type="button"
 				aria-label="Close"
@@ -121,7 +108,7 @@ export function FolderDialog({
 			<div
 				role="dialog"
 				aria-label={folder.title}
-				className="glass animate-folder relative w-full max-w-xl rounded-[2rem] p-6 shadow-2xl"
+				className="glass animate-folder relative max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-t-[2rem] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[2rem] sm:pb-6"
 			>
 				<div className="mb-5 flex items-center gap-3">
 					<div className="relative">

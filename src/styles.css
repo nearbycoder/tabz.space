@@ -67,7 +67,7 @@ body {
 }
 
 @utility field {
-	@apply focus-ring w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-muted;
+	@apply focus-ring w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-base text-ink placeholder:text-muted sm:py-2 sm:text-sm;
 }
 
 @utility btn {
@@ -304,4 +304,36 @@ body {
 
 .animate-shake {
 	animation: shake 360ms ease-in-out;
+}
+
+/* ------------------------------- Mobile ------------------------------- */
+
+html {
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+}
+
+@keyframes sheet-up {
+	from {
+		transform: translateY(100%);
+	}
+	to {
+		transform: none;
+	}
+}
+
+.animate-sheet {
+	animation: sheet-up 280ms cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+
+@media (min-width: 40rem) {
+	.sm\:animate-pop {
+		animation: pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.animate-sheet {
+		animation: none;
+	}
 }
