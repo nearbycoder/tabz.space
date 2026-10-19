@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+	--font-sans:
+		"Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	--color-canvas: var(--canvas);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-line: var(--line);
+	--color-ink: var(--ink);
+	--color-muted: var(--muted);
+	--color-accent: var(--accent);
+}
+
+:root {
+	--canvas: #f6f6f4;
+	--surface: rgb(255 255 255 / 0.72);
+	--surface-2: rgb(255 255 255 / 0.92);
+	--line: rgb(15 23 42 / 0.08);
+	--ink: #0f172a;
+	--muted: #64748b;
+	--accent: #6366f1;
+	color-scheme: light;
+}
+
+.dark {
+	--canvas: #0b0c10;
+	--surface: rgb(24 25 31 / 0.66);
+	--surface-2: rgb(30 31 38 / 0.94);
+	--line: rgb(255 255 255 / 0.08);
+	--ink: #e8e9ee;
+	--muted: #8b8fa0;
+	color-scheme: dark;
+}
+
+html,
+body {
+	background: var(--canvas);
+	color: var(--ink);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+@utility glass {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	backdrop-filter: blur(18px) saturate(1.4);
+	-webkit-backdrop-filter: blur(18px) saturate(1.4);
+}
+
+@utility focus-ring {
+	@apply outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--accent)_60%,transparent)] focus-visible:ring-offset-0;
+}
+
+@utility field {
+	@apply focus-ring w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-muted;
+}
+
+@utility btn {
+	@apply focus-ring inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+}
+
+@utility btn-primary {
+	@apply btn bg-accent text-white shadow-sm hover:brightness-110;
+}
+
+@utility btn-ghost {
+	@apply btn text-ink hover:bg-[color-mix(in_srgb,var(--ink)_7%,transparent)];
+}
+
+@utility btn-outline {
+	@apply btn border border-line bg-surface-2 text-ink hover:bg-[color-mix(in_srgb,var(--ink)_5%,var(--surface-2))];
+}
+
+@utility icon-btn {
+	@apply focus-ring inline-flex size-9 items-center justify-center rounded-xl text-muted transition hover:bg-[color-mix(in_srgb,var(--ink)_7%,transparent)] hover:text-ink;
+}
+
+@keyframes pop-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px) scale(0.98);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+.animate-pop {
+	animation: pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.animate-pop {
+		animation: none;
+	}
+}
