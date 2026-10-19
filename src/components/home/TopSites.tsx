@@ -1,6 +1,6 @@
 import { Favicon } from "#/components/ui/Favicon";
 import { useHomeContext } from "./context";
-import type { LinkItem } from "./types";
+import { type LinkItem, leavesPage, targetUrl } from "./types";
 
 /** Your most-visited links, learned automatically from clicks. */
 export function TopSites({ links }: { links: LinkItem[] }) {
@@ -19,10 +19,14 @@ export function TopSites({ links }: { links: LinkItem[] }) {
 			{top.map((link) => (
 				<a
 					key={link.id}
-					href={link.url}
+					href={targetUrl(link)}
 					target={settings.openInNewTab ? "_blank" : undefined}
 					rel="noopener noreferrer"
-					onClick={() => onVisit(link)}
+					onClick={(event) =>
+						onVisit(link, {
+							leaving: leavesPage(event, settings.openInNewTab),
+						})
+					}
 					title={link.title}
 					className="glass focus-ring group flex items-center gap-2 rounded-full py-1.5 pr-3.5 pl-1.5 text-xs transition hover:-translate-y-0.5 hover:shadow-md"
 				>

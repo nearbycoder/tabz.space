@@ -2,6 +2,7 @@ import { ArrowUpRight, Globe, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
+import { showLeaving } from "#/lib/leaving";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
 import { useHomeContext } from "./context";
@@ -101,7 +102,10 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 
 	const open = (href: string, newTab: boolean) => {
 		if (newTab) window.open(href, "_blank", "noopener");
-		else window.location.assign(href);
+		else {
+			showLeaving();
+			window.location.assign(href);
+		}
 	};
 
 	const choose = (result: Result | undefined) => {

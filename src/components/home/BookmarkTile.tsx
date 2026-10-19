@@ -14,7 +14,14 @@ import {
 import { hostnameOf } from "#/lib/url";
 import { useHomeContext } from "./context";
 import { LinkPreview } from "./LinkPreview";
-import { flattenTree, type LinkItem, linksIn, type TreeItem } from "./types";
+import {
+	flattenTree,
+	type LinkItem,
+	leavesPage,
+	linksIn,
+	type TreeItem,
+	targetUrl,
+} from "./types";
 
 export type TileItem = LinkItem & { children?: TreeItem[] };
 
@@ -219,7 +226,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			openLink(item);
 			return;
 		}
-		onVisit(item);
+		onVisit(item, { leaving: leavesPage(event, settings.openInNewTab) });
 	};
 
 	const tint = item.color
@@ -406,7 +413,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		</button>
 	) : (
 		<a
-			href={item.url}
+			href={targetUrl(item)}
 			target={settings.openInNewTab ? "_blank" : undefined}
 			rel="noopener noreferrer"
 			draggable={false}

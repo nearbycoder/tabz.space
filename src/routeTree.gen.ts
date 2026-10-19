@@ -17,6 +17,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiIconRouteImport } from './routes/api/icon'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as ApiVisitRouteImport } from './routes/api/visit'
 import { Route as BSlugRouteImport } from './routes/b.$slug'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiChannelsEmailRouteImport } from './routes/api/channels/email'
@@ -64,6 +65,11 @@ const ApiMcpRoute = ApiMcpRouteImport.update({
   path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVisitRoute = ApiVisitRouteImport.update({
+  id: '/api/visit',
+  path: '/api/visit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BSlugRoute = BSlugRouteImport.update({
   id: '/b/$slug',
   path: '/b/$slug',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/icon': typeof ApiIconRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
@@ -120,6 +127,7 @@ export interface FileRoutesByTo {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/icon': typeof ApiIconRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
@@ -137,6 +145,7 @@ export interface FileRoutesById {
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/icon': typeof ApiIconRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
@@ -155,6 +164,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/icon'
     | '/api/mcp'
+    | '/api/visit'
     | '/b/$slug'
     | '/api/auth/$'
     | '/api/channels/email'
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/icon'
     | '/api/mcp'
+    | '/api/visit'
     | '/b/$slug'
     | '/api/auth/$'
     | '/api/channels/email'
@@ -187,6 +198,7 @@ export interface FileRouteTypes {
     | '/.well-known/$'
     | '/api/icon'
     | '/api/mcp'
+    | '/api/visit'
     | '/b/$slug'
     | '/api/auth/$'
     | '/api/channels/email'
@@ -204,6 +216,7 @@ export interface RootRouteChildren {
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiIconRoute: typeof ApiIconRoute
   ApiMcpRoute: typeof ApiMcpRoute
+  ApiVisitRoute: typeof ApiVisitRoute
   BSlugRoute: typeof BSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiChannelsEmailRoute: typeof ApiChannelsEmailRoute
@@ -270,6 +283,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/visit': {
+      id: '/api/visit'
+      path: '/api/visit'
+      fullPath: '/api/visit'
+      preLoaderRoute: typeof ApiVisitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/b/$slug': {
       id: '/b/$slug'
       path: '/b/$slug'
@@ -324,6 +344,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiIconRoute: ApiIconRoute,
   ApiMcpRoute: ApiMcpRoute,
+  ApiVisitRoute: ApiVisitRoute,
   BSlugRoute: BSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiChannelsEmailRoute: ApiChannelsEmailRoute,

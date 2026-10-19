@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { useHomeContext } from "../context";
-import { type LinkItem, linksIn } from "../types";
+import { type LinkItem, linksIn, targetUrl } from "../types";
 
 /**
  * Your saved links for the "Your links" widgets. Vault boards and incognito
@@ -30,7 +30,7 @@ export function LinkRow({
 	const { openLink } = useHomeContext();
 	return (
 		<a
-			href={link.url}
+			href={targetUrl(link)}
 			onClick={(event) => {
 				event.preventDefault();
 				openLink(link, { newTab: event.metaKey || event.ctrlKey });

@@ -59,6 +59,16 @@ export const checkHealth = (link: Candidate) =>
 			};
 		}
 		yield* setMeta(link.id, "health", health);
+		// Remember where permanent redirects lead, so clicks can skip the hop.
+		// Never a sign-in page: those mean "not without your cookies".
+		const go =
+			result.kind === "ok" &&
+			result.permanent &&
+			new URL(result.finalUrl).href !== new URL(link.url).href &&
+			!/(log|sign)[-_]?in|\/auth\b|oauth|sso|\/account/i.test(result.finalUrl)
+				? result.finalUrl
+				: null;
+		if (go !== (link.meta.go ?? null)) yield* setMeta(link.id, "go", go);
 		return { id: link.id, health };
 	});
 

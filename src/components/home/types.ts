@@ -76,3 +76,27 @@ export function findInTree(
 	}
 	return null;
 }
+
+/** The address to open: past any permanent redirects the link checker found. */
+export const targetUrl = (item: {
+	url: string;
+	meta: { go?: string | null };
+}) => item.meta.go || item.url;
+
+/** A plain left click that navigates this tab (no new-tab modifiers). */
+export const leavesPage = (
+	event: {
+		button: number;
+		metaKey: boolean;
+		ctrlKey: boolean;
+		shiftKey: boolean;
+		altKey: boolean;
+	},
+	openInNewTab: boolean,
+) =>
+	!openInNewTab &&
+	event.button === 0 &&
+	!event.metaKey &&
+	!event.ctrlKey &&
+	!event.shiftKey &&
+	!event.altKey;

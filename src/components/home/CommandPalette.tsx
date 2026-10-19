@@ -30,6 +30,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Favicon } from "#/components/ui/Favicon";
 import { call, run as runEffect } from "#/lib/api";
+import { showLeaving } from "#/lib/leaving";
 import {
 	SEARCH_ENGINES,
 	THEME_PRESETS,
@@ -212,7 +213,10 @@ export function CommandPalette({
 	const openUrl = (url: string, forceNewTab = false) => {
 		if (forceNewTab || newTab.current || settings.openInNewTab)
 			window.open(url, "_blank", "noopener");
-		else window.location.assign(url);
+		else {
+			showLeaving();
+			window.location.assign(url);
+		}
 	};
 	const visit = (bookmark: LinkItem) =>
 		run(() => openLink(bookmark, { newTab: newTab.current }));

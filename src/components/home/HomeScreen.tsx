@@ -26,6 +26,7 @@ import { cn } from "#/lib/cn";
 import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
 import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { lazyNamed, whenIdle } from "#/lib/lazy";
+import { showLeaving } from "#/lib/leaving";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
@@ -58,6 +59,7 @@ import {
 	linksIn,
 	mapTree,
 	type TreeItem,
+	targetUrl,
 } from "./types";
 
 /** Thumb-reach actions for phones; the header holds these on larger screens. */
@@ -553,9 +555,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	);
 
 	const onVisit = useCallback(
-		(bookmark: LinkItem) => {
-			// Fire-and-forget; visit counts power search ranking and the most-visited strip.
-			run(call(recordVisit, { id: bookmark.id })).catch(() => {});
+		(bookmark: LinkItem, options?: { leaving?: boolean }) => {
+			// Visit counts power search ranking and the most-visited strip. A beacon
+			// survives this page unloading, however fast the next one arrives.
+			const sent = navigator.sendBeacon?.(
+				"/api/visit",
+				new Blob([JSON.stringify({ id: bookmark.id })], {
+					type: "application/json",
+				}),
+			);
+			if (!sent) run(call(recordVisit, { id: bookmark.id })).catch(() => {});
+			// This tab is leaving: don't spend the moment re-rendering everything.
+			if (options?.leaving) return;
 			// Clear "new posts" badges right away when the link opens in another tab.
 			const visited = <T extends LinkItem>(item: T): T =>
 				item.id === bookmark.id
@@ -614,18 +625,21 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				openIncognito([bookmark.url]);
 				return;
 			}
-			onVisit(bookmark);
-			if (options?.newTab || settings.openInNewTab)
-				window.open(bookmark.url, "_blank", "noopener");
-			else window.location.assign(bookmark.url);
+			const newTab = options?.newTab || settings.openInNewTab;
+			onVisit(bookmark, { leaving: !newTab });
+			if (newTab) window.open(targetUrl(bookmark), "_blank", "noopener");
+			else {
+				showLeaving();
+				window.location.assign(targetUrl(bookmark));
+			}
 		},
 		[isIncognito, onVisit, settings.openInNewTab],
 	);
 
 	const openAll = useCallback(
 		(bookmarks: LinkItem[]) => {
-			const privateUrls = bookmarks.filter(isIncognito).map((b) => b.url);
-			const urls = bookmarks.filter((b) => !isIncognito(b)).map((b) => b.url);
+			const privateUrls = bookmarks.filter(isIncognito).map(targetUrl);
+			const urls = bookmarks.filter((b) => !isIncognito(b)).map(targetUrl);
 			if (privateUrls.length) openIncognito(privateUrls);
 			if (urls.length) openTabs(urls);
 		},

@@ -343,3 +343,33 @@ html {
 		animation: none;
 	}
 }
+
+/* Progress bar while the next page loads (src/lib/leaving.ts). */
+.tabz-leaving {
+	position: fixed;
+	inset: 0 0 auto;
+	z-index: 9999;
+	height: 2px;
+	pointer-events: none;
+	transform-origin: left;
+	background: linear-gradient(90deg, transparent, var(--accent));
+	box-shadow: 0 0 10px var(--accent);
+	animation: tabz-leaving 8s cubic-bezier(0.1, 0.7, 0.2, 1) forwards;
+}
+@keyframes tabz-leaving {
+	from {
+		transform: scaleX(0.04);
+	}
+	8% {
+		transform: scaleX(0.45);
+	}
+	to {
+		transform: scaleX(0.94);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.tabz-leaving {
+		animation: none;
+		transform: scaleX(0.6);
+	}
+}

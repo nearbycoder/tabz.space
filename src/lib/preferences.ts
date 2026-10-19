@@ -353,6 +353,11 @@ export type BookmarkMeta = {
 	feedUrl?: string;
 	/** Last link-health check. */
 	health?: LinkHealth;
+	/**
+	 * Where the link ends up after only permanent redirects (http→https,
+	 * renamed domains…). Opening it directly skips a round trip per click.
+	 */
+	go?: string | null;
 	/** Latest items from `feedUrl`; unread = newer than the last visit. */
 	feed?: { checkedAt: number; items: FeedItem[] };
 	/** When the page text was added to the full-text index (ms). */

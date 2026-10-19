@@ -7,7 +7,8 @@ type HomeContextValue = {
 	boards: HomeBoard[];
 	editing: boolean;
 	openDialog: (dialog: DialogState) => void;
-	onVisit: (bookmark: LinkItem) => void;
+	/** Records a visit; `leaving` = this tab is navigating away (skip UI updates). */
+	onVisit: (bookmark: LinkItem, options?: { leaving?: boolean }) => void;
 	/** Whether a link opens privately (its own flag, its folder's, or the global setting). */
 	isIncognito: (bookmark: LinkItem) => boolean;
 	/** Opens a link the right way: private window, new tab or same tab. */

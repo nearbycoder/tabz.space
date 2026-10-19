@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
 import { Toaster } from "sonner";
+import { watchLeaving } from "#/lib/leaving";
 import { startOffline } from "#/lib/offline";
 import { socialMeta } from "#/lib/site";
 import { splashLinks } from "#/lib/splash";
@@ -73,7 +74,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootDocument({ children }: { children: ReactNode }) {
 	const { theme } = Route.useRouteContext();
-	useEffect(() => startOffline(), []);
+	useEffect(() => {
+		startOffline();
+		watchLeaving();
+	}, []);
 	return (
 		<html
 			lang="en"
