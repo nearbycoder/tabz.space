@@ -1,6 +1,6 @@
 import { Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Field } from "#/components/ui/controls";
+import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useHomeAction, useSaveSettings } from "#/lib/home-query";
@@ -25,13 +25,17 @@ const ICONS = [
 export function BoardDialog({
 	board,
 	canDelete,
+	vaultUnlocked,
 	onClose,
 }: {
 	board?: HomeBoard;
 	canDelete: boolean;
+	/** When the vault is open, boards can be moved into or out of it. */
+	vaultUnlocked: boolean;
 	onClose: () => void;
 }) {
 	const [name, setName] = useState(board?.name ?? "");
+	const [inVault, setInVault] = useState(board?.vault ?? false);
 	const [icon, setIcon] = useState(board?.icon ?? ICONS[1]);
 	const saveSettings = useSaveSettings();
 	const create = useHomeAction(createBoard, {
@@ -50,8 +54,9 @@ export function BoardDialog({
 				className="space-y-4"
 				onSubmit={(event) => {
 					event.preventDefault();
-					if (board) update.mutate({ id: board.id, name, icon });
-					else create.mutate({ name, icon });
+					const vault = vaultUnlocked ? inVault : undefined;
+					if (board) update.mutate({ id: board.id, name, icon, vault });
+					else create.mutate({ name, icon, vault });
 				}}
 			>
 				<Field label="Name">
@@ -90,6 +95,13 @@ export function BoardDialog({
 						/>
 					</div>
 				</Field>
+				{vaultUnlocked && (
+					<Toggle
+						label="🔒 Keep in vault"
+						checked={inVault}
+						onChange={setInVault}
+					/>
+				)}
 				<div className="flex items-center gap-2 pt-2">
 					{board && canDelete && (
 						<button

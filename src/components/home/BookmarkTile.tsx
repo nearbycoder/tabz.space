@@ -197,7 +197,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		drop.isOver &&
 		"ring-2 ring-accent ring-offset-2 ring-offset-transparent scale-105";
 	const subtitle = isFolder
-		? `${item.children?.length ?? 0} links`
+		? `${item.children?.length ?? 0} ${item.children?.length === 1 ? "link" : "links"}`
 		: item.description || hostnameOf(item.url);
 
 	let body: ReactNode;

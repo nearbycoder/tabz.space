@@ -64,10 +64,22 @@ export const boards = sqliteTable(
 		icon: text("icon"),
 		position: integer("position").default(0).notNull(),
 		layout: json<BoardLayout>("layout", DEFAULT_BOARD_LAYOUT),
+		/** Vault boards are only ever returned while the vault is unlocked. */
+		vault: integer("vault", { mode: "boolean" }).default(false).notNull(),
 		...timestamps,
 	},
 	(table) => [index("boards_user_idx").on(table.userId, table.position)],
 );
+
+/** Per-user vault: a separate password guarding hidden boards. */
+export const vaults = sqliteTable("vaults", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => user.id, { onDelete: "cascade" }),
+	passwordHash: text("password_hash").notNull(),
+	autoLockMinutes: integer("auto_lock_minutes").default(15).notNull(),
+	...timestamps,
+});
 
 export const groups = sqliteTable(
 	"groups",

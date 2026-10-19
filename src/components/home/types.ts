@@ -19,4 +19,5 @@ export type DialogState =
 	| { type: "group"; boardId: string; group?: HomeGroup }
 	| { type: "board"; board?: HomeBoard }
 	| { type: "settings"; tab?: string }
+	| { type: "vault-unlock" }
 	| null;

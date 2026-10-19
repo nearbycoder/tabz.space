@@ -7,6 +7,7 @@ import {
 	Home,
 	LayoutList,
 	Loader2,
+	Lock,
 	LogOut,
 	Palette,
 	Rows3,
@@ -47,9 +48,11 @@ import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { ConnectAI } from "./ConnectAI";
 import type { HomeBoard } from "./types";
+import { VaultSettings, type VaultState } from "./Vault";
 
 type Props = {
 	settings: UserSettings;
+	vault: VaultState;
 	board: HomeBoard;
 	boards: HomeBoard[];
 	session: SessionInfo;
@@ -61,6 +64,7 @@ const TABS = [
 	{ id: "look", label: "Look", icon: Palette },
 	{ id: "layout", label: "Layout", icon: Grid2x2 },
 	{ id: "home", label: "Home", icon: Home },
+	{ id: "vault", label: "Vault", icon: Lock },
 	{ id: "data", label: "Data", icon: Download },
 	{ id: "connect", label: "AI", icon: Bot },
 ] as const;
@@ -132,6 +136,7 @@ function BackgroundSwatch({
 
 export function SettingsPanel({
 	settings,
+	vault,
 	board,
 	boards,
 	session,
@@ -785,6 +790,8 @@ export function SettingsPanel({
 					</Section>
 				</div>
 			)}
+
+			{tab === "vault" && <VaultSettings vault={vault} settings={settings} />}
 
 			{tab === "connect" && (
 				<Section title="Connect AI (MCP)">

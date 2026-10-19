@@ -3,7 +3,7 @@
  * to a user id, shared by the web app's server functions (home.ts) and the
  * MCP tools (mcp/tools.ts), so both surfaces enforce the same ownership rules.
  */
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import {
@@ -12,6 +12,7 @@ import {
 	bookmarks,
 	groups,
 	userSettings,
+	vaults,
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
 import {
@@ -26,6 +27,7 @@ import { faviconFor, normalizeUrl, titleFromUrl } from "#/lib/url";
 import { fetchPageMetadata } from "./metadata";
 import { query } from "./runtime";
 import { STARTER_BOARD, type StarterItem } from "./seed";
+import { VaultAccess } from "./vault-access";
 
 export const idSchema = z.string().min(1).max(64);
 export const colorSchema = z
@@ -52,6 +54,34 @@ const deletedOne = (entity: string) => (rows: { id: string }[]) =>
 /** Ensures a row exists and belongs to the user before it is mutated. */
 const owned = <T>(entity: string, row: T | undefined) =>
 	row ? Effect.succeed(row) : Effect.fail(new NotFound({ entity }));
+
+const vaultUnlocked = Effect.map(VaultAccess, (access) => access !== null);
+
+/** A board the caller can see: owned, and not inside a locked vault. */
+const visibleBoard = (userId: string, boardId: string) =>
+	Effect.gen(function* () {
+		const unlocked = yield* vaultUnlocked;
+		const row = yield* query((db) =>
+			db.query.boards.findFirst({
+				where: and(eq(boards.id, boardId), eq(boards.userId, userId)),
+			}),
+		);
+		if (!row || (row.vault && !unlocked))
+			return yield* new NotFound({ entity: "Board" });
+		return row;
+	});
+
+/** A group the caller can see (its board must be visible). */
+const ownedGroup = (userId: string, groupId: string) =>
+	Effect.gen(function* () {
+		const group = yield* query((db) =>
+			db.query.groups.findFirst({
+				where: and(eq(groups.id, groupId), eq(groups.userId, userId)),
+			}),
+		).pipe(Effect.flatMap((row) => owned("Group", row)));
+		yield* visibleBoard(userId, group.boardId);
+		return group;
+	});
 
 const nextPosition = (
 	table: typeof boards | typeof groups | typeof bookmarks,
@@ -145,11 +175,25 @@ export const loadHome = (userId: string) =>
 				}),
 			]),
 		);
-		let [boardRows, groupRows, bookmarkRows, settingsRow] = yield* load;
-		if (boardRows.length === 0) {
+		let [allBoards, allGroups, allBookmarks, settingsRow] = yield* load;
+		if (allBoards.length === 0) {
 			yield* seedStarterBoard(userId);
-			[boardRows, groupRows, bookmarkRows, settingsRow] = yield* load;
+			[allBoards, allGroups, allBookmarks, settingsRow] = yield* load;
 		}
+		// Locked vault boards (and everything in them) never leave the server.
+		const access = yield* VaultAccess;
+		const vault = yield* query((db) =>
+			db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
+		);
+		const boardRows = allBoards.filter((board) => !board.vault || access);
+		const visibleBoardIds = new Set(boardRows.map((board) => board.id));
+		const groupRows = allGroups.filter((group) =>
+			visibleBoardIds.has(group.boardId),
+		);
+		const visibleGroupIds = new Set(groupRows.map((group) => group.id));
+		const bookmarkRows = allBookmarks.filter((bookmark) =>
+			visibleGroupIds.has(bookmark.groupId),
+		);
 		// Top-level items per group; folders carry their children.
 		const children = new Map<string, Bookmark[]>();
 		for (const row of bookmarkRows) {
@@ -160,6 +204,12 @@ export const loadHome = (userId: string) =>
 			.filter((row) => !row.parentId)
 			.map((row) => ({ ...row, children: children.get(row.id) ?? [] }));
 		return {
+			vault: {
+				configured: Boolean(vault),
+				unlocked: Boolean(access),
+				expiresAt: access?.expiresAt ?? null,
+				autoLockMinutes: vault?.autoLockMinutes ?? 15,
+			},
 			settings: resolveSettings(settingsRow?.settings),
 			boards: boardRows.map((board) => ({
 				...board,
@@ -204,6 +254,13 @@ export const saveSettings = (
 export const createBoardInput = z.object({
 	name: z.string().trim().min(1).max(60),
 	icon: z.string().max(16).nullish(),
+	/** Create it inside the vault (requires an unlocked vault). */
+	vault: z.boolean().optional(),
+});
+
+const requireUnlocked = Effect.gen(function* () {
+	if (!(yield* vaultUnlocked))
+		return yield* new InvalidInput({ message: "Unlock your vault first" });
 });
 
 export const createBoard = (
@@ -211,6 +268,7 @@ export const createBoard = (
 	data: z.infer<typeof createBoardInput>,
 ) =>
 	Effect.gen(function* () {
+		if (data.vault) yield* requireUnlocked;
 		const position = yield* nextPosition(boards, eq(boards.userId, userId));
 		const [board] = yield* query((db) =>
 			db
@@ -219,6 +277,7 @@ export const createBoard = (
 					userId: userId,
 					name: data.name,
 					icon: data.icon ?? null,
+					vault: data.vault ?? false,
 					position,
 					layout: DEFAULT_BOARD_LAYOUT,
 				})
@@ -238,22 +297,34 @@ export const updateBoardInput = z.object({
 	name: z.string().trim().min(1).max(60).optional(),
 	icon: z.string().max(16).nullish(),
 	layout: boardLayoutSchema.partial().optional(),
+	/** Move the board into (true) or out of (false) the vault. */
+	vault: z.boolean().optional(),
 });
+
+/** Visible (non-vault) boards; at least one must always remain. */
+const countVisibleBoards = (userId: string) =>
+	query((db) =>
+		db.$count(boards, and(eq(boards.userId, userId), eq(boards.vault, false))),
+	);
 
 export const updateBoard = (
 	userId: string,
 	data: z.infer<typeof updateBoardInput>,
 ) =>
 	Effect.gen(function* () {
-		const board = yield* query((db) =>
-			db.query.boards.findFirst({
-				where: and(eq(boards.id, data.id), eq(boards.userId, userId)),
-			}),
-		).pipe(Effect.flatMap((row) => owned("Board", row)));
+		const board = yield* visibleBoard(userId, data.id);
+		if (data.vault !== undefined && data.vault !== board.vault) {
+			yield* requireUnlocked;
+			if (data.vault && (yield* countVisibleBoards(userId)) <= 1)
+				return yield* new InvalidInput({
+					message: "Keep at least one board outside the vault",
+				});
+		}
 		const [updated] = yield* query((db) =>
 			db
 				.update(boards)
 				.set({
+					vault: data.vault ?? board.vault,
 					name: data.name ?? board.name,
 					icon: data.icon === undefined ? board.icon : data.icon,
 					layout: data.layout
@@ -270,10 +341,8 @@ export const idInput = z.object({ id: idSchema });
 
 export const deleteBoard = (userId: string, data: z.infer<typeof idInput>) =>
 	Effect.gen(function* () {
-		const remaining = yield* query((db) =>
-			db.$count(boards, eq(boards.userId, userId)),
-		);
-		if (remaining <= 1)
+		const board = yield* visibleBoard(userId, data.id);
+		if (!board.vault && (yield* countVisibleBoards(userId)) <= 1)
 			return yield* new InvalidInput({
 				message: "You need at least one board",
 			});
@@ -322,11 +391,7 @@ export const createGroup = (
 	data: z.infer<typeof createGroupInput>,
 ) =>
 	Effect.gen(function* () {
-		yield* query((db) =>
-			db.query.boards.findFirst({
-				where: and(eq(boards.id, data.boardId), eq(boards.userId, userId)),
-			}),
-		).pipe(Effect.flatMap((row) => owned("Board", row)));
+		yield* visibleBoard(userId, data.boardId);
 		const position = yield* nextPosition(
 			groups,
 			eq(groups.boardId, data.boardId),
@@ -360,20 +425,9 @@ export const updateGroup = (
 	data: z.infer<typeof updateGroupInput>,
 ) =>
 	Effect.gen(function* () {
-		const group = yield* query((db) =>
-			db.query.groups.findFirst({
-				where: and(eq(groups.id, data.id), eq(groups.userId, userId)),
-			}),
-		).pipe(Effect.flatMap((row) => owned("Group", row)));
+		const group = yield* ownedGroup(userId, data.id);
 		if (data.boardId && data.boardId !== group.boardId) {
-			yield* query((db) =>
-				db.query.boards.findFirst({
-					where: and(
-						eq(boards.id, data.boardId as string),
-						eq(boards.userId, userId),
-					),
-				}),
-			).pipe(Effect.flatMap((row) => owned("Board", row)));
+			yield* visibleBoard(userId, data.boardId);
 		}
 		const [updated] = yield* query((db) =>
 			db
@@ -394,12 +448,17 @@ export const updateGroup = (
 	});
 
 export const deleteGroup = (userId: string, data: z.infer<typeof idInput>) =>
-	query((db) =>
-		db
-			.delete(groups)
-			.where(and(eq(groups.id, data.id), eq(groups.userId, userId)))
-			.returning({ id: groups.id }),
-	).pipe(Effect.flatMap(deletedOne("Group")));
+	ownedGroup(userId, data.id).pipe(
+		Effect.flatMap(() =>
+			query((db) =>
+				db
+					.delete(groups)
+					.where(and(eq(groups.id, data.id), eq(groups.userId, userId)))
+					.returning({ id: groups.id }),
+			),
+		),
+		Effect.flatMap(deletedOne("Group")),
+	);
 
 export const reorderGroups = (
 	userId: string,
@@ -415,13 +474,6 @@ const bookmarkFields = {
 	color: colorSchema,
 	tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
 };
-
-const ownedGroup = (userId: string, groupId: string) =>
-	query((db) =>
-		db.query.groups.findFirst({
-			where: and(eq(groups.id, groupId), eq(groups.userId, userId)),
-		}),
-	).pipe(Effect.flatMap((row) => owned("Group", row)));
 
 export const lookupUrlInput = z.object({ url: z.string().max(2048) });
 
@@ -440,11 +492,15 @@ export const lookupUrl = (data: z.infer<typeof lookupUrlInput>) =>
 	});
 
 const ownedBookmark = (userId: string, id: string) =>
-	query((db) =>
-		db.query.bookmarks.findFirst({
-			where: and(eq(bookmarks.id, id), eq(bookmarks.userId, userId)),
-		}),
-	).pipe(Effect.flatMap((row) => owned("Bookmark", row)));
+	Effect.gen(function* () {
+		const bookmark = yield* query((db) =>
+			db.query.bookmarks.findFirst({
+				where: and(eq(bookmarks.id, id), eq(bookmarks.userId, userId)),
+			}),
+		).pipe(Effect.flatMap((row) => owned("Bookmark", row)));
+		yield* ownedGroup(userId, bookmark.groupId);
+		return bookmark;
+	});
 
 const ownedFolder = (userId: string, id: string) =>
 	ownedBookmark(userId, id).pipe(
@@ -690,14 +746,7 @@ export const arrangeBookmarks = (
 ) =>
 	Effect.gen(function* () {
 		const groupIds = data.groups.map((group) => group.groupId);
-		const found = yield* query((db) =>
-			db
-				.select({ id: groups.id })
-				.from(groups)
-				.where(and(inArray(groups.id, groupIds), eq(groups.userId, userId))),
-		);
-		if (found.length !== new Set(groupIds).size)
-			return yield* new NotFound({ entity: "Group" });
+		for (const groupId of new Set(groupIds)) yield* ownedGroup(userId, groupId);
 		yield* query((db) =>
 			db.transaction(async (tx) => {
 				for (const group of data.groups) {

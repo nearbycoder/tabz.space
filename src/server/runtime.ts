@@ -7,6 +7,8 @@ import {
 	DatabaseError,
 	Unauthorized,
 } from "#/lib/effect/errors";
+import { VaultAccess } from "./vault-access";
+import { cookieValue, readVaultToken, VAULT_COOKIE } from "./vault-token";
 
 export type SessionUser = typeof auth.$Infer.Session.user;
 
@@ -59,11 +61,24 @@ export async function runServer<A>(program: Effect.Effect<A, AppError>) {
 	throw failure instanceof Error ? failure : new Error("Unexpected error");
 }
 
-/** Same as `runServer`, but resolves the signed-in user first. */
+/**
+ * Same as `runServer`, but resolves the signed-in user first and, when their
+ * vault-unlock cookie is valid, grants vault access to the program.
+ */
 export function runAuthed<A>(
 	program: (user: SessionUser) => Effect.Effect<A, AppError>,
 ) {
 	// Read headers synchronously while still inside the request context.
 	const headers = new Headers(getRequestHeaders() as HeadersInit);
-	return runServer(Effect.flatMap(sessionUser(headers), program));
+	return runServer(
+		Effect.gen(function* () {
+			const user = yield* sessionUser(headers);
+			const access = yield* Effect.promise(() =>
+				readVaultToken(cookieValue(headers, VAULT_COOKIE), user.id),
+			);
+			return yield* program(user).pipe(
+				Effect.provideService(VaultAccess, access),
+			);
+		}),
+	);
 }

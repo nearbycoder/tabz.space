@@ -134,6 +134,11 @@ export const userSettingsSchema = z.object({
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
+	/** Letters typed anywhere on the home page to open the vault. */
+	vaultCode: z
+		.string()
+		.regex(/^[a-z0-9]{3,24}$/i)
+		.default("vault"),
 });
 
 export type UserSettings = z.output<typeof userSettingsSchema>;
@@ -163,6 +168,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	celebrate: true,
 	tilt: true,
 	activeBoardId: null,
+	vaultCode: "vault",
 };
 
 /** One-click looks: each sets several appearance settings at once. */

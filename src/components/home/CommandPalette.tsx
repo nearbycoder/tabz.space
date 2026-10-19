@@ -6,6 +6,7 @@ import {
 	FolderPlus,
 	Globe,
 	LayoutGrid,
+	Lock,
 	Monitor,
 	Moon,
 	Palette,
@@ -35,6 +36,8 @@ type Props = {
 	onSelectBoard: (id: string) => void;
 	onToggleEdit: () => void;
 	onSaveSettings: (patch: Partial<UserSettings>) => void;
+	/** Only passed while the vault is unlocked; the palette never mentions a locked vault. */
+	onLockVault?: () => void;
 };
 
 type Entry = { bookmark: LinkItem; path: string };
@@ -80,6 +83,7 @@ export function CommandPalette({
 	onSelectBoard,
 	onToggleEdit,
 	onSaveSettings,
+	onLockVault,
 }: Props) {
 	const { boards, settings, openDialog, onVisit } = useHomeContext();
 	const [query, setQuery] = useState("");
@@ -319,6 +323,15 @@ export function CommandPalette({
 					</Command.Group>
 
 					<Command.Group heading="Actions">
+						{onLockVault && (
+							<Command.Item
+								value="lock vault"
+								onSelect={() => run(onLockVault)}
+								className={itemClass}
+							>
+								<Row icon={<Lock className="size-4" />}>Lock vault</Row>
+							</Command.Item>
+						)}
 						{firstGroup && (
 							<Command.Item
 								value="add new bookmark"

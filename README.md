@@ -41,6 +41,16 @@ claude mcp add --transport http tabz https://tabz.space/api/mcp
 - Code: `src/routes/api/mcp.ts` (endpoint + token verification), `src/server/mcp/tools.ts` (tools), `src/routes/[.]well-known/$.ts` (OAuth discovery), `src/components/Consent.tsx`.
 - Tools call the same Effect programs in `src/server/library.ts` that the web app's server functions use.
 
+## Vault
+
+A per-user hidden space for links you don't want anyone snooping on.
+
+- Vault boards (`boards.vault = 1`) are filtered out on the server unless the request carries a valid unlock cookie, so they never reach the browser, search, ⌘K, the most-visited strip, exports or MCP while locked. MCP never gets vault access.
+- Open it by typing your secret code anywhere on the home page (default `vault`; change it in Customize → Vault), then entering the vault password.
+- The password is separate from the account password, hashed with scrypt (`vaults` table), and unlock attempts are throttled.
+- Unlocking issues a short-lived `tabz_vault` cookie (httpOnly, SameSite=Strict, HMAC-signed with `BETTER_AUTH_SECRET`). Auto-lock happens after 5 min to 4 h, or immediately with the lock button.
+- Code: `src/server/vault.ts`, `src/server/vault-token.ts`, and the `VaultAccess` Effect reference in `src/server/vault-access.ts` (consumed by `library.ts`).
+
 ## Data model
 
 `user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links point at them via `parent_id`, one level deep) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.

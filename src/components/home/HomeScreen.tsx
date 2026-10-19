@@ -1,6 +1,13 @@
 import { Effect } from "effect";
-import { Check, Command, Pencil, Plus, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+	Check,
+	Command,
+	Lock,
+	Pencil,
+	Plus,
+	SlidersHorizontal,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "#/components/Logo";
 import { call } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
@@ -21,7 +28,8 @@ import { GroupDialog } from "./GroupDialog";
 import { SearchBar } from "./SearchBar";
 import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
-import type { DialogState, LinkItem } from "./types";
+import type { DialogState, HomeBoard, LinkItem } from "./types";
+import { useLockVault, VaultUnlockDialog } from "./Vault";
 
 const widths = {
 	narrow: "max-w-4xl",
@@ -31,13 +39,16 @@ const widths = {
 
 export function HomeScreen({ session }: { session: SessionInfo }) {
 	const data = useHome();
-	const { settings, boards } = data;
+	const { settings, boards, vault } = data;
 	const board =
 		boards.find((b) => b.id === settings.activeBoardId) ?? boards[0];
 	const [editing, setEditing] = useState(false);
 	const [dialog, setDialog] = useState<DialogState>(null);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const saveSettings = useSaveSettings();
+	const lockVault = useLockVault();
+	const typed = useRef("");
+	const [now, setNow] = useState(() => Date.now());
 
 	useEffect(() => {
 		applyTheme(settings.theme);
@@ -58,7 +69,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	);
 
 	// Keyboard: e = edit mode, n = new bookmark, 1–9 = switch board (⌘K lives in the palette).
+	// Typing the secret vault code anywhere opens the vault prompt.
 	useEffect(() => {
+		const code = settings.vaultCode.toLowerCase();
 		const onKey = (event: KeyboardEvent) => {
 			const target = event.target as HTMLElement;
 			if (
@@ -74,6 +87,23 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
 			)
 				return;
+			if (event.key.length === 1) {
+				typed.current = (typed.current + event.key.toLowerCase()).slice(-24);
+				if (vault.configured && typed.current.endsWith(code)) {
+					typed.current = "";
+					event.preventDefault();
+					const firstVaultBoard = boards.find((b) => b.vault);
+					if (vault.unlocked && firstVaultBoard)
+						selectBoard(firstVaultBoard.id);
+					else setDialog({ type: "vault-unlock" });
+					return;
+				}
+				// Mid-code keystrokes shouldn't trigger single-key shortcuts.
+				const midCode = [...Array(code.length).keys()].some(
+					(i) => i >= 1 && typed.current.endsWith(code.slice(0, i + 1)),
+				);
+				if (vault.configured && midCode) return;
+			}
 			if (event.key === "e") setEditing((value) => !value);
 			else if (event.key === "n" && board?.groups[0]) {
 				event.preventDefault();
@@ -85,7 +115,31 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [board, boards, dialog, paletteOpen, selectBoard]);
+	}, [
+		board,
+		boards,
+		dialog,
+		paletteOpen,
+		selectBoard,
+		settings.vaultCode,
+		vault.configured,
+		vault.unlocked,
+	]);
+
+	// Auto-lock: the cookie expires server-side; drop the boards client-side at the same moment.
+	useEffect(() => {
+		if (!vault.unlocked || !vault.expiresAt) return;
+		setNow(Date.now());
+		const tick = setInterval(() => setNow(Date.now()), 30_000);
+		const timer = setTimeout(
+			() => lockVault(),
+			Math.max(0, vault.expiresAt - Date.now()),
+		);
+		return () => {
+			clearInterval(tick);
+			clearTimeout(timer);
+		};
+	}, [vault.unlocked, vault.expiresAt, lockVault]);
 
 	const links = useMemo(
 		() =>
@@ -131,7 +185,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					>
 						<Logo className="mr-2 hidden text-base sm:inline-flex" />
 						<nav className="glass flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]">
-							{boards.map((b) => (
+							{[
+								...boards.filter((b) => !b.vault),
+								...boards.filter((b) => b.vault),
+							].map((b: HomeBoard, index, list) => (
 								<button
 									key={b.id}
 									type="button"
@@ -142,8 +199,12 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 										b.id === board.id
 											? "bg-surface-2 font-medium text-ink shadow-sm"
 											: "text-muted hover:text-ink",
+										b.vault &&
+											"border border-dashed border-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
+										b.vault && !list[index - 1]?.vault && "ml-2",
 									)}
 								>
+									{b.vault && <Lock className="size-3 text-accent" />}
 									{b.icon && <span>{b.icon}</span>}
 									{b.name}
 									{editing && b.id === board.id && (
@@ -167,6 +228,22 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							</button>
 						</nav>
 						<div className="ml-auto flex items-center gap-1">
+							{vault.unlocked && (
+								<button
+									type="button"
+									onClick={() => lockVault()}
+									title="Lock vault"
+									aria-label="Lock vault"
+									className="btn-ghost text-accent"
+								>
+									<Lock className="size-4" />
+									<span className="hidden text-xs tabular-nums sm:inline">
+										{vault.expiresAt
+											? `${Math.max(1, Math.ceil((vault.expiresAt - now) / 60_000))}m`
+											: "Lock"}
+									</span>
+								</button>
+							)}
 							<button
 								type="button"
 								onClick={() => setPaletteOpen(true)}
@@ -254,6 +331,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					onSelectBoard={selectBoard}
 					onToggleEdit={() => setEditing((value) => !value)}
 					onSaveSettings={(patch) => saveSettings.mutate(patch)}
+					onLockVault={vault.unlocked ? () => lockVault() : undefined}
 				/>
 
 				{dialog?.type === "bookmark" && (
@@ -284,13 +362,27 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				{dialog?.type === "board" && (
 					<BoardDialog
 						board={dialog.board}
-						canDelete={boards.length > 1}
+						canDelete={
+							Boolean(dialog.board?.vault) ||
+							boards.filter((b) => !b.vault).length > 1
+						}
+						vaultUnlocked={vault.unlocked}
 						onClose={close}
+					/>
+				)}
+				{dialog?.type === "vault-unlock" && (
+					<VaultUnlockDialog
+						onClose={close}
+						onUnlocked={(boardId) => {
+							close();
+							saveSettings.mutate({ activeBoardId: boardId });
+						}}
 					/>
 				)}
 				{dialog?.type === "settings" && (
 					<SettingsPanel
 						settings={settings}
+						vault={vault}
 						board={board}
 						boards={boards}
 						session={session}
