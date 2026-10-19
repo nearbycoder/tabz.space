@@ -1,17 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { deleteCookie, setCookie } from "@tanstack/react-start/server";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
-import { boards, groups, vaults } from "#/db/schema";
+import { boards, bookmarks, groups, vaults } from "#/db/schema";
 import { InvalidInput, Unauthorized } from "#/lib/effect/errors";
 import { DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
+import { sealedColumns, sealedSchema } from "./library";
 import { query, runAuthed } from "./runtime";
-import { VaultAccess } from "./vault-access";
+import { VaultAccess, type VaultSlot } from "./vault-access";
 import { signVaultToken, VAULT_COOKIE } from "./vault-token";
 
-const passwordSchema = z.string().min(4, "Use at least 4 characters").max(128);
 const autoLockSchema = z
 	.number()
 	.int()
@@ -46,29 +46,48 @@ const findVault = (userId: string) =>
 		db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
 	);
 
+/** Checks a vault secret; returns which slot it opens (main or decoy). */
 const verify = (userId: string, password: string) =>
 	Effect.gen(function* () {
 		yield* checkThrottle(userId);
 		const vault = yield* findVault(userId);
 		if (!vault)
 			return yield* new InvalidInput({ message: "Set up your vault first" });
-		const ok = yield* Effect.promise(() =>
-			verifyPassword({ hash: vault.passwordHash, password }),
-		);
-		if (!ok) {
+		const matches = (hash: string | null) =>
+			hash
+				? Effect.promise(() => verifyPassword({ hash, password }))
+				: Effect.succeed(false);
+		const slot: VaultSlot | null = (yield* matches(vault.passwordHash))
+			? "main"
+			: (yield* matches(vault.decoyHash))
+				? "decoy"
+				: null;
+		if (!slot) {
 			recordFailure(userId);
 			return yield* new Unauthorized({ message: "Wrong vault password" });
 		}
 		failures.delete(userId);
-		return vault;
+		return { vault, slot };
 	});
 
+const requireMain = Effect.gen(function* () {
+	const access = yield* VaultAccess;
+	if (access?.slot !== "main")
+		return yield* new InvalidInput({ message: "Unlock your vault first" });
+	return access;
+});
+
 /** First unlock gets a starter vault board so there's somewhere to put things. */
-const ensureVaultBoard = (userId: string) =>
+const ensureVaultBoard = (userId: string, slot: VaultSlot) =>
 	Effect.gen(function* () {
 		const existing = yield* query((db) =>
 			db.query.boards.findFirst({
-				where: and(eq(boards.userId, userId), eq(boards.vault, true)),
+				where: and(
+					eq(boards.userId, userId),
+					eq(boards.vault, true),
+					eq(boards.decoy, slot === "decoy"),
+					isNull(boards.deletedAt),
+				),
 			}),
 		);
 		if (existing) return existing.id;
@@ -80,6 +99,7 @@ const ensureVaultBoard = (userId: string) =>
 					name: "Private",
 					icon: "🔒",
 					vault: true,
+					decoy: slot === "decoy",
 					position: 999,
 					layout: DEFAULT_BOARD_LAYOUT,
 				})
@@ -91,9 +111,13 @@ const ensureVaultBoard = (userId: string) =>
 		return board.id;
 	});
 
-const issueCookie = async (userId: string, minutes: number) => {
+const issueCookie = async (
+	userId: string,
+	minutes: number,
+	slot: VaultSlot,
+) => {
 	const expiresAt = Date.now() + minutes * 60_000;
-	setCookie(VAULT_COOKIE, await signVaultToken(userId, expiresAt), {
+	setCookie(VAULT_COOKIE, await signVaultToken(userId, expiresAt, slot), {
 		httpOnly: true,
 		secure: process.env.NODE_ENV === "production",
 		sameSite: "strict",
@@ -103,58 +127,227 @@ const issueCookie = async (userId: string, minutes: number) => {
 	return expiresAt;
 };
 
+const saltSchema = z.string().regex(/^[A-Za-z0-9+/=]{16,64}$/);
+/** Hex auth key the browser derives from the vault password. */
+const authKeySchema = z.string().regex(/^[0-9a-f]{64}$/);
+const resealSchema = z
+	.array(z.object({ id: z.string().max(64), sealed: sealedSchema }))
+	.max(5000);
+
+/** Writes re-encrypted contents for items in the caller's main vault boards. */
+const applySealed = (userId: string, items: z.infer<typeof resealSchema>) =>
+	items.length === 0
+		? Effect.void
+		: Effect.gen(function* () {
+				const rows = yield* query((db) =>
+					db
+						.select({ id: bookmarks.id, kind: bookmarks.kind })
+						.from(bookmarks)
+						.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+						.innerJoin(boards, eq(boards.id, groups.boardId))
+						.where(
+							and(
+								eq(boards.userId, userId),
+								eq(boards.vault, true),
+								eq(boards.decoy, false),
+								inArray(
+									bookmarks.id,
+									items.map((item) => item.id),
+								),
+							),
+						),
+				);
+				const kinds = new Map(rows.map((row) => [row.id, row.kind]));
+				yield* query((db) =>
+					db.transaction(async (tx) => {
+						for (const item of items) {
+							const kind = kinds.get(item.id);
+							if (kind)
+								await tx
+									.update(bookmarks)
+									.set(sealedColumns(item.sealed, kind))
+									.where(eq(bookmarks.id, item.id));
+						}
+					}),
+				);
+			});
+
+/** What the browser needs before deriving keys. */
+export const getVaultInfo = createServerFn().handler(() =>
+	runAuthed((user) =>
+		findVault(user.id).pipe(
+			Effect.map((vault) => ({
+				configured: Boolean(vault),
+				salt: vault?.kdfSalt ?? null,
+				legacy: Boolean(vault && !vault.kdfSalt),
+				hasDecoy: Boolean(vault?.decoyHash),
+			})),
+		),
+	),
+);
+
+/**
+ * Creates the vault, or changes its password. The browser sends a new salt and
+ * auth key, plus every vault item re-encrypted with the new key.
+ */
 export const setupVault = createServerFn({ method: "POST" })
 	.validator(
 		z.object({
-			password: passwordSchema,
-			currentPassword: z.string().max(128).optional(),
+			authKey: authKeySchema,
+			salt: saltSchema,
+			currentAuthKey: z.string().max(128).optional(),
 			autoLockMinutes: autoLockSchema.optional(),
+			resealed: resealSchema.optional(),
 		}),
 	)
 	.handler(async ({ data }) => {
 		const result = await runAuthed((user) =>
 			Effect.gen(function* () {
 				const existing = yield* findVault(user.id);
-				if (existing) yield* verify(user.id, data.currentPassword ?? "");
+				if (existing) {
+					const { slot } = yield* verify(user.id, data.currentAuthKey ?? "");
+					if (slot !== "main")
+						return yield* new Unauthorized({ message: "Wrong vault password" });
+				}
 				const passwordHash = yield* Effect.promise(() =>
-					hashPassword(data.password),
+					hashPassword(data.authKey),
 				);
 				const autoLockMinutes =
 					data.autoLockMinutes ?? existing?.autoLockMinutes ?? 15;
+				yield* applySealed(user.id, data.resealed ?? []);
 				yield* query((db) =>
 					db
 						.insert(vaults)
-						.values({ userId: user.id, passwordHash, autoLockMinutes })
+						.values({
+							userId: user.id,
+							passwordHash,
+							kdfSalt: data.salt,
+							autoLockMinutes,
+						})
 						.onConflictDoUpdate({
 							target: vaults.userId,
-							set: { passwordHash, autoLockMinutes, updatedAt: new Date() },
+							set: {
+								passwordHash,
+								kdfSalt: data.salt,
+								autoLockMinutes,
+								// A new salt changes the decoy's keys too; set it again.
+								decoyHash: null,
+								updatedAt: new Date(),
+							},
 						}),
 				);
-				const boardId = yield* ensureVaultBoard(user.id);
+				const boardId = yield* ensureVaultBoard(user.id, "main");
 				return { userId: user.id, autoLockMinutes, boardId };
 			}),
 		);
-		const expiresAt = await issueCookie(result.userId, result.autoLockMinutes);
+		const expiresAt = await issueCookie(
+			result.userId,
+			result.autoLockMinutes,
+			"main",
+		);
 		return { expiresAt, boardId: result.boardId };
 	});
 
+/** `password` is the derived auth key (or the raw password for legacy vaults). */
 export const unlockVault = createServerFn({ method: "POST" })
 	.validator(z.object({ password: z.string().max(128) }))
 	.handler(async ({ data }) => {
 		const result = await runAuthed((user) =>
 			Effect.gen(function* () {
-				const vault = yield* verify(user.id, data.password);
-				const boardId = yield* ensureVaultBoard(user.id);
+				const { vault, slot } = yield* verify(user.id, data.password);
+				const boardId = yield* ensureVaultBoard(user.id, slot);
 				return {
 					userId: user.id,
 					autoLockMinutes: vault.autoLockMinutes,
 					boardId,
+					slot,
+					legacy: !vault.kdfSalt,
 				};
 			}),
 		);
-		const expiresAt = await issueCookie(result.userId, result.autoLockMinutes);
-		return { expiresAt, boardId: result.boardId };
+		const expiresAt = await issueCookie(
+			result.userId,
+			result.autoLockMinutes,
+			result.slot,
+		);
+		return {
+			expiresAt,
+			boardId: result.boardId,
+			legacy: result.legacy,
+		};
 	});
+
+/**
+ * One-time upgrade of a pre-encryption vault: right after a legacy unlock the
+ * browser derives keys, seals everything and sends the new auth key.
+ */
+export const upgradeVault = createServerFn({ method: "POST" })
+	.validator(
+		z.object({
+			authKey: authKeySchema,
+			salt: saltSchema,
+			sealed: resealSchema,
+		}),
+	)
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			Effect.gen(function* () {
+				yield* requireMain;
+				const vault = yield* findVault(user.id);
+				if (!vault || vault.kdfSalt)
+					return yield* new InvalidInput({ message: "Already encrypted" });
+				yield* applySealed(user.id, data.sealed);
+				const passwordHash = yield* Effect.promise(() =>
+					hashPassword(data.authKey),
+				);
+				yield* query((db) =>
+					db
+						.update(vaults)
+						.set({ passwordHash, kdfSalt: data.salt, decoyHash: null })
+						.where(eq(vaults.userId, user.id)),
+				);
+				return { ok: true };
+			}),
+		),
+	);
+
+/** Sets (or clears) the decoy password. Needs the real vault open. */
+export const setDecoy = createServerFn({ method: "POST" })
+	.validator(z.object({ authKey: authKeySchema.nullable() }))
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			Effect.gen(function* () {
+				yield* requireMain;
+				const vault = yield* findVault(user.id);
+				if (!vault?.kdfSalt)
+					return yield* new InvalidInput({
+						message: "Set up your vault first",
+					});
+				if (data.authKey) {
+					const sameAsMain = yield* Effect.promise(() =>
+						verifyPassword({
+							hash: vault.passwordHash,
+							password: data.authKey as string,
+						}),
+					);
+					if (sameAsMain)
+						return yield* new InvalidInput({
+							message: "Use a different password from your real vault",
+						});
+				}
+				const decoyHash = data.authKey
+					? yield* Effect.promise(() => hashPassword(data.authKey as string))
+					: null;
+				yield* query((db) =>
+					db
+						.update(vaults)
+						.set({ decoyHash })
+						.where(eq(vaults.userId, user.id)),
+				);
+				return { ok: true };
+			}),
+		),
+	);
 
 export const lockVault = createServerFn({ method: "POST" }).handler(() => {
 	deleteCookie(VAULT_COOKIE, { path: "/" });
@@ -166,10 +359,7 @@ export const updateVaultSettings = createServerFn({ method: "POST" })
 	.handler(({ data }) =>
 		runAuthed((user) =>
 			Effect.gen(function* () {
-				if (!(yield* VaultAccess))
-					return yield* new InvalidInput({
-						message: "Unlock your vault first",
-					});
+				yield* requireMain;
 				yield* query((db) =>
 					db
 						.update(vaults)

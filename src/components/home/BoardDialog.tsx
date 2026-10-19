@@ -1,12 +1,21 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
-import { useHomeAction, useSaveSettings } from "#/lib/home-query";
+import { homeKey, useHomeAction, useSaveSettings } from "#/lib/home-query";
 import type { BoardSchedule } from "#/lib/preferences";
 import { DAY_LETTERS, describeSchedule } from "#/lib/schedule";
-import { createBoard, deleteBoard, updateBoard } from "#/server/home";
+import { contentsOf } from "#/lib/vault-actions";
+import { sealContents } from "#/lib/vault-session";
+import {
+	createBoard,
+	deleteBoard,
+	type HomeData,
+	updateBoard,
+} from "#/server/home";
 import { ShareBoard } from "./ShareBoard";
 import type { HomeBoard } from "./types";
 
@@ -46,6 +55,7 @@ export function BoardDialog({
 		board?.layout.schedule ?? null,
 	);
 	const saveSettings = useSaveSettings();
+	const queryClient = useQueryClient();
 	const create = useHomeAction(createBoard, {
 		onSuccess: (result) => {
 			saveSettings.mutate({ activeBoardId: result.board.id });
@@ -67,13 +77,51 @@ export function BoardDialog({
 					event.preventDefault();
 					const vault = vaultUnlocked ? inVault : undefined;
 					if (board)
-						update.mutate({
-							id: board.id,
-							name,
-							icon,
-							vault,
-							layout: { schedule: inVault ? null : schedule },
-						});
+						void (async () => {
+							// Crossing an encrypted vault's boundary re-encodes every link.
+							const crossing =
+								vault !== undefined &&
+								vault !== board.vault &&
+								queryClient.getQueryData<HomeData>(homeKey)?.vault.encrypted;
+							let items: Parameters<typeof updateBoard>[0]["data"]["items"];
+							if (crossing) {
+								const rows = board.groups.flatMap((group) =>
+									group.bookmarks.flatMap((item) => [item, ...item.children]),
+								);
+								try {
+									items = await Promise.all(
+										rows.map(async (row) => {
+											const contents = contentsOf(row);
+											return vault
+												? { id: row.id, sealed: await sealContents(contents) }
+												: {
+														id: row.id,
+														plain: {
+															title: contents.title,
+															url: contents.url ?? "",
+															description: contents.description ?? null,
+															icon: contents.icon ?? null,
+															tags: contents.tags ?? [],
+														},
+													};
+										}),
+									);
+								} catch (error) {
+									toast.error(
+										error instanceof Error ? error.message : "Couldn't encrypt",
+									);
+									return;
+								}
+							}
+							update.mutate({
+								id: board.id,
+								name,
+								icon,
+								vault,
+								items,
+								layout: { schedule: inVault ? null : schedule },
+							});
+						})();
 					else create.mutate({ name, icon, vault });
 				}}
 			>

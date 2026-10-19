@@ -22,6 +22,7 @@ import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
+import { useDecryptedHome, useVaultKeyReady } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
@@ -141,7 +142,8 @@ const widths = {
 } as const;
 
 export function HomeScreen({ session }: { session: SessionInfo }) {
-	const data = useHome();
+	const data = useDecryptedHome(useHome());
+	const vaultKeyReady = useVaultKeyReady();
 	const { settings, boards, vault } = data;
 	const [now, setNow] = useState(() => Date.now());
 	// A scheduled board takes over during its window unless you pick another.
@@ -634,6 +636,16 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							onOpen={(month) => setDialog({ type: "report", month })}
 						/>
 					</div>
+					{board.vault && vault.encrypted && !vaultKeyReady && (
+						<button
+							type="button"
+							onClick={() => setDialog({ type: "vault-unlock" })}
+							className="glass mx-auto mb-4 flex items-center gap-2 rounded-full px-4 py-2 text-sm"
+						>
+							<Lock className="size-4 text-accent" /> Enter your vault password
+							to read these links in this tab
+						</button>
+					)}
 					<BoardGrid board={board} />
 					<Rediscover />
 				</main>
@@ -744,6 +756,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						board={board}
 						boards={boards}
 						session={session}
+						aiAvailable={data.features.ai}
 						initialTab={dialog.tab}
 						onClose={close}
 					/>

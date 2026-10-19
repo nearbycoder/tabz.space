@@ -6,6 +6,7 @@ import {
 	primaryKey,
 	sqliteTable,
 	text,
+	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import {
 	type BoardLayout,
@@ -67,6 +68,8 @@ export const boards = sqliteTable(
 		layout: json<BoardLayout>("layout", DEFAULT_BOARD_LAYOUT),
 		/** Vault boards are only ever returned while the vault is unlocked. */
 		vault: integer("vault", { mode: "boolean" }).default(false).notNull(),
+		/** Vault boards shown when the decoy password was used. */
+		decoy: integer("decoy", { mode: "boolean" }).default(false).notNull(),
 		/** Soft delete: rows sit in the trash for 30 days before being purged. */
 		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 		/** Set for boards mirrored from elsewhere (e.g. "browser" bookmarks sync). */
@@ -83,7 +86,15 @@ export const vaults = sqliteTable("vaults", {
 	userId: text("user_id")
 		.primaryKey()
 		.references(() => user.id, { onDelete: "cascade" }),
+	/**
+	 * Hash of the auth key the browser derives from the vault password (or, for
+	 * vaults created before end-to-end encryption, of the password itself).
+	 */
 	passwordHash: text("password_hash").notNull(),
+	/** PBKDF2 salt for the browser's key derivation; null = legacy vault. */
+	kdfSalt: text("kdf_salt"),
+	/** Optional decoy password: opens a separate, harmless set of boards. */
+	decoyHash: text("decoy_hash"),
 	autoLockMinutes: integer("auto_lock_minutes").default(15).notNull(),
 	...timestamps,
 });
@@ -288,3 +299,26 @@ export const themes = sqliteTable(
 );
 
 export type Theme = typeof themes.$inferSelect;
+
+/** Ways to save links from outside tabz: a Telegram chat or an email address. */
+export const integrations = sqliteTable(
+	"integrations",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		kind: text("kind", { enum: ["telegram", "email"] }).notNull(),
+		/** Telegram chat id, or the secret part of the user's email address. */
+		externalId: text("external_id").notNull(),
+		label: text("label"),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [
+		uniqueIndex("integrations_kind_external_idx").on(
+			table.kind,
+			table.externalId,
+		),
+		index("integrations_user_idx").on(table.userId),
+	],
+);

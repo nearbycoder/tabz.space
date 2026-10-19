@@ -80,6 +80,15 @@ Mark a link, or a whole folder, as always-incognito, or switch on "Open every li
 - **Custom CSS** (Customize → Look): applied to your own home page with stable hooks (`[data-group]`, `[data-tile]`, `[data-clock]`, `[data-board]`, `.glass`, CSS variables).
 - **Community themes**: publish your look (colors, background, font, shape, custom CSS; never links). Published CSS is sanitized: no `@import`, no external `url()`, so applying a theme can't track you.
 
+## Vault encryption, AI and capture
+
+- **End-to-end encrypted vault** (`src/lib/vault-crypto.ts`, `src/lib/vault-session.ts`): the browser stretches the vault password with PBKDF2-SHA256 (310k rounds, per-user salt) into an AES-GCM key that never leaves the tab and a separate auth key; the server stores only a hash of the auth key. Vault links/folders are stored as `meta.sealed` ciphertext with placeholder columns, never fetched, indexed or checked. Changing the password re-encrypts everything; pre-encryption vaults upgrade on their next unlock. Board and group names in the vault are not encrypted.
+- **Decoy password**: a second password opens a separate set of vault boards (`boards.decoy`); the session cookie records which one is open.
+- **AI**: MCP gets `read_bookmark` (saved page text), `list_untagged`, `tag_bookmarks` and prompts (`organize-library`, `tidy-up`, `build-board`, `summarize-reading`). With `ANTHROPIC_API_KEY` set, users can turn on auto-tagging of new links with Claude (`TABZ_AI_MODEL`, default `claude-haiku-5-5`; `src/server/ai.ts`).
+- **Save from anywhere** (`src/server/channels.ts`), off until configured:
+  - Telegram: set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`; the webhook (`/api/channels/telegram`) registers itself. Users link a chat from Customize → Connect.
+  - Email: set `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_SECRET`, route mail for `save-*@<domain>` to `POST /api/channels/email?secret=…` (Postmark inbound JSON or `{ to, subject, text }` from a Cloudflare Email Worker).
+
 ## REST API, tokens and webhooks
 
 Customize → Connect has personal API tokens and outgoing webhooks.

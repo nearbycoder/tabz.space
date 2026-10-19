@@ -8,14 +8,15 @@ import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
 import { homeKey, useSaveSettings } from "#/lib/home-query";
 import type { UserSettings } from "#/lib/preferences";
-import type { HomeData } from "#/server/home";
 import {
-	lockVault,
-	resetVault,
-	setupVault,
-	unlockVault,
-	updateVaultSettings,
-} from "#/server/vault";
+	changeVaultPassword,
+	createVault,
+	setDecoyPassword,
+	unlockWithPassword,
+} from "#/lib/vault-actions";
+import { clearVaultKey } from "#/lib/vault-session";
+import type { HomeData } from "#/server/home";
+import { lockVault, resetVault, updateVaultSettings } from "#/server/vault";
 
 export type VaultState = HomeData["vault"];
 
@@ -33,6 +34,7 @@ export function useLockVault() {
 						}
 					: data,
 			);
+			clearVaultKey();
 			await run(call(lockVault)).catch(() => {});
 			await queryClient.invalidateQueries({ queryKey: homeKey });
 			if (!quiet) toast("Vault locked", { icon: "🔒" });
@@ -60,7 +62,8 @@ export function VaultUnlockDialog({
 		setPending(true);
 		setError(null);
 		try {
-			const result = await run(call(unlockVault, { password }));
+			const userId = queryClient.getQueryData<HomeData>(homeKey)?.userId ?? "";
+			const result = await unlockWithPassword(password, userId, queryClient);
 			await queryClient.invalidateQueries({ queryKey: homeKey });
 			toast("Vault unlocked", { icon: "🔓" });
 			onUnlocked(result.boardId);
@@ -152,13 +155,19 @@ export function VaultSettings({
 		}
 		setPending(true);
 		try {
-			await run(
-				call(setupVault, {
-					password,
-					currentPassword: vault.configured ? currentPassword : undefined,
+			if (vault.configured)
+				await changeVaultPassword({
+					currentPassword,
+					newPassword: password,
 					autoLockMinutes: minutes,
-				}),
-			);
+					queryClient,
+				});
+			else
+				await createVault(
+					password,
+					queryClient.getQueryData<HomeData>(homeKey)?.userId ?? "",
+					minutes,
+				);
 			if (code !== settings.vaultCode)
 				saveSettings.mutate({ vaultCode: code.toLowerCase() });
 			toast.success(
@@ -187,10 +196,12 @@ export function VaultSettings({
 					space
 				</p>
 				<p className="mt-1 text-muted">
-					Vault boards never load until you unlock them. They stay out of
-					search, ⌘K, the most-visited strip, exports and AI assistants. Type
-					your secret code anywhere on your home page to open it. On a phone,
-					tap the clock 5 times quickly.
+					Vault boards never load until you unlock them, and their links are
+					encrypted in your browser with a key made from your vault password:
+					not even tabz can read them. They stay out of search, ⌘K, the
+					most-visited strip, exports and AI assistants. Type your secret code
+					anywhere on your home page to open it. On a phone, tap the clock 5
+					times quickly.
 				</p>
 			</div>
 
@@ -296,6 +307,10 @@ export function VaultSettings({
 				</button>
 			</form>
 
+			{vault.configured && vault.unlocked && vault.encrypted && (
+				<DecoySettings />
+			)}
+
 			{vault.configured && (
 				<div className="space-y-3 border-t border-line pt-5">
 					{vault.unlocked && (
@@ -338,6 +353,100 @@ export function VaultSettings({
 						</div>
 					</details>
 				</div>
+			)}
+		</div>
+	);
+}
+
+/** A second password that opens a separate, harmless vault. */
+function DecoySettings() {
+	const [open, setOpen] = useState(false);
+	const [password, setPassword] = useState("");
+	const [confirm, setConfirm] = useState("");
+	const [pending, setPending] = useState(false);
+
+	const save = async (event: FormEvent) => {
+		event.preventDefault();
+		if (password !== confirm) {
+			toast.error("Passwords don't match");
+			return;
+		}
+		setPending(true);
+		try {
+			await setDecoyPassword(password);
+			toast.success("Decoy password set");
+			setPassword("");
+			setConfirm("");
+			setOpen(false);
+		} catch (cause) {
+			toast.error(cause instanceof Error ? cause.message : "Couldn't save");
+		} finally {
+			setPending(false);
+		}
+	};
+
+	return (
+		<div className="space-y-3 border-t border-line pt-5">
+			<h3 className="text-xs font-semibold tracking-wide text-muted uppercase">
+				Decoy password
+			</h3>
+			<p className="text-sm text-muted">
+				If someone makes you open your vault, type this instead. It opens a
+				separate vault you fill with harmless links, and nothing shows that the
+				real one exists. Changing your real password removes the decoy.
+			</p>
+			{open ? (
+				<form onSubmit={save} className="space-y-2">
+					<input
+						className="field"
+						type="password"
+						placeholder="Decoy password"
+						value={password}
+						onChange={(event) => setPassword(event.target.value)}
+						minLength={4}
+						autoComplete="new-password"
+						required
+					/>
+					<input
+						className="field"
+						type="password"
+						placeholder="Repeat it"
+						value={confirm}
+						onChange={(event) => setConfirm(event.target.value)}
+						minLength={4}
+						autoComplete="new-password"
+						required
+					/>
+					<div className="flex gap-2">
+						<button
+							type="submit"
+							className="btn-primary flex-1"
+							disabled={pending}
+						>
+							{pending && <Loader2 className="size-4 animate-spin" />} Save
+							decoy
+						</button>
+						<button
+							type="button"
+							className="btn-ghost"
+							onClick={async () => {
+								await setDecoyPassword(null).catch(() => {});
+								toast("Decoy password removed");
+								setOpen(false);
+							}}
+						>
+							Remove
+						</button>
+					</div>
+				</form>
+			) : (
+				<button
+					type="button"
+					className="btn-outline w-full"
+					onClick={() => setOpen(true)}
+				>
+					Set a decoy password
+				</button>
 			)}
 		</div>
 	);

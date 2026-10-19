@@ -252,7 +252,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Delete bookmark or folder",
 			description:
-				"Permanently delete a bookmark or folder. Deleting a folder keeps its links (moved back into the group) unless withContents is true.",
+				"Move a bookmark or folder to the trash (restorable for 30 days). Deleting a folder keeps its links (moved back into the group) unless withContents is true.",
 			inputSchema: library.deleteBookmarkInput,
 			annotations: { destructiveHint: true },
 		},
@@ -377,7 +377,8 @@ export function createTabzMcpServer(userId: string) {
 		"delete_group",
 		{
 			title: "Delete group",
-			description: "Permanently delete a group and every bookmark in it.",
+			description:
+				"Move a group and every bookmark in it to the trash (restorable for 30 days).",
 			inputSchema: library.idInput,
 			annotations: { destructiveHint: true },
 		},
@@ -428,11 +429,104 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Delete board",
 			description:
-				"Permanently delete a board with all its groups and bookmarks. The last board can't be deleted.",
+				"Move a board with all its groups and bookmarks to the trash (restorable for 30 days). The last board can't be deleted.",
 			inputSchema: library.idInput,
 			annotations: { destructiveHint: true },
 		},
 		(input) => run(library.deleteBoard(userId, input)),
+	);
+
+	server.registerTool(
+		"read_bookmark",
+		{
+			title: "Read a saved page",
+			description:
+				"Get a bookmark's details plus the readable text tabz saved from the page (up to ~12,000 characters), e.g. to summarize it or decide how to tag it. Text may be empty for pages that couldn't be fetched.",
+			inputSchema: library.idInput,
+			annotations: { readOnlyHint: true },
+		},
+		({ id }) =>
+			run(
+				Effect.gen(function* () {
+					const results = yield* library.readBookmark(userId, id);
+					return results;
+				}),
+			),
+	);
+
+	server.registerTool(
+		"list_untagged",
+		{
+			title: "List untagged bookmarks",
+			description:
+				"Bookmarks without any tags (most recent first), so you can tag them with tag_bookmarks.",
+			inputSchema: z.object({
+				limit: z.number().int().min(1).max(200).optional(),
+			}),
+			annotations: { readOnlyHint: true },
+		},
+		({ limit }) =>
+			run(library.loadHome(userId), (home) =>
+				home.boards
+					.flatMap((board) =>
+						board.groups.flatMap((group) =>
+							group.bookmarks.flatMap((item) =>
+								(item.kind === "folder" ? item.children : [item]).map(
+									(bookmark) => ({
+										bookmark,
+										board: board.name,
+										group: group.name,
+									}),
+								),
+							),
+						),
+					)
+					.filter(({ bookmark }) => bookmark.tags.length === 0)
+					.sort(
+						(a, b) =>
+							new Date(b.bookmark.createdAt).getTime() -
+							new Date(a.bookmark.createdAt).getTime(),
+					)
+					.slice(0, limit ?? 50)
+					.map(({ bookmark, board, group }) => ({
+						...compactBookmark(bookmark),
+						board,
+						group,
+					})),
+			),
+	);
+
+	server.registerTool(
+		"tag_bookmarks",
+		{
+			title: "Tag bookmarks",
+			description:
+				"Set the tags of many bookmarks at once (replaces each bookmark's tags). Use short, lowercase tags and reuse the user's existing ones where possible.",
+			inputSchema: z.object({
+				items: z
+					.array(
+						z.object({
+							id: z.string(),
+							tags: z.array(z.string().max(32)).max(20),
+						}),
+					)
+					.min(1)
+					.max(100),
+			}),
+			annotations: { idempotentHint: true },
+		},
+		({ items }) =>
+			run(
+				Effect.forEach(items, (item) =>
+					library.updateBookmark(userId, {
+						id: item.id,
+						tags: item.tags
+							.map((tag) => tag.trim().toLowerCase())
+							.filter(Boolean),
+					}),
+				),
+				(updated) => ({ tagged: updated.length }),
+			),
 	);
 
 	server.registerTool(
@@ -511,6 +605,74 @@ export function createTabzMcpServer(userId: string) {
 			annotations: { idempotentHint: true },
 		},
 		(input) => run(library.saveSettings(userId, input)),
+	);
+
+	const prompt = (text: string) => ({
+		messages: [
+			{ role: "user" as const, content: { type: "text" as const, text } },
+		],
+	});
+
+	server.registerPrompt(
+		"organize-library",
+		{
+			title: "Organize my bookmarks",
+			description:
+				"Tidy groups and folders, tag untagged links, and suggest a cleaner structure.",
+			argsSchema: z.object({
+				focus: z.string().optional().describe("A board or topic to focus on"),
+			}),
+		},
+		({ focus }) =>
+			prompt(
+				`Help me organize my tabz.space bookmarks${focus ? `, focusing on ${focus}` : ""}. First call get_library. Then: (1) propose a clearer grouping (merge near-duplicate groups, split overloaded ones, use folders for related links) and wait for my OK before moving anything; (2) use list_untagged and tag_bookmarks to tag untagged links with short, consistent tags, reusing ones I already use. Keep changes reversible and summarize what you changed at the end.`,
+			),
+	);
+
+	server.registerPrompt(
+		"tidy-up",
+		{
+			title: "Clean up dead and duplicate links",
+			description: "Find broken links and duplicates and offer to fix them.",
+		},
+		() =>
+			prompt(
+				"Clean up my tabz.space library. Call find_broken_links (check=true) and get_library. List broken links, links that moved (offer to update them to the new URL with update_bookmark), and bookmarks saved more than once. Ask before deleting anything; deleted items go to the trash for 30 days.",
+			),
+	);
+
+	server.registerPrompt(
+		"build-board",
+		{
+			title: "Build a board about a topic",
+			description:
+				"Create a new board with grouped, high-quality links on a topic.",
+			argsSchema: z.object({
+				topic: z.string().describe("e.g. 'learning Rust' or 'trip to Lisbon'"),
+			}),
+		},
+		({ topic }) =>
+			prompt(
+				`Create a new tabz.space board about "${topic}". Use create_board, then create_group for 3-5 sensible sections, and add_bookmark for the best, well-known resources you're confident exist (official docs, reputable guides, tools). Check search_bookmarks first and reuse links I already saved. Finish with a short summary of the board.`,
+			),
+	);
+
+	server.registerPrompt(
+		"summarize-reading",
+		{
+			title: "Summarize my reading list",
+			description: "Read saved pages in a group and summarize them.",
+			argsSchema: z.object({
+				group: z
+					.string()
+					.optional()
+					.describe("Group name, e.g. 'Reading list'"),
+			}),
+		},
+		({ group }) =>
+			prompt(
+				`Summarize what's in my ${group ? `"${group}" group` : "reading-list style groups"} on tabz.space. Call get_library to find the links, then read_bookmark for each (up to 15) and give me a 1-2 sentence summary per link plus which ones look most worth my time.`,
+			),
 	);
 
 	return server;

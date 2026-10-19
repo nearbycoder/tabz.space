@@ -55,6 +55,7 @@ import {
 	normalizeUrl,
 	titleFromUrl,
 } from "#/lib/url";
+import { aiEnabled } from "./ai";
 import { searchText } from "./content";
 import { fetchPageMetadata } from "./metadata";
 import { afterFetch, checkLinksNow } from "./monitors";
@@ -86,6 +87,39 @@ const owned = <T>(entity: string, row: T | undefined) =>
 
 const vaultUnlocked = Effect.map(VaultAccess, (access) => access !== null);
 
+/** Vault boards open only with the matching password: main or decoy. */
+const opensWith = (
+	board: { decoy: boolean },
+	access: { slot: "main" | "decoy" } | null,
+) => access !== null && board.decoy === (access.slot === "decoy");
+
+/** Whether this owner's vault encrypts contents in the browser. */
+export const vaultSealed = (ownerId: string) =>
+	query((db) =>
+		db.query.vaults.findFirst({ where: eq(vaults.userId, ownerId) }),
+	).pipe(Effect.map((vault) => Boolean(vault?.kdfSalt)));
+
+/** Placeholder columns for an end-to-end encrypted vault item. */
+export const sealedColumns = (sealed: string, kind: "link" | "folder") => ({
+	title: kind === "folder" ? "Locked folder" : "Locked link",
+	url: "",
+	description: null,
+	icon: null,
+	tags: [] as string[],
+	meta: { sealed },
+});
+
+export const sealedSchema = z
+	.string()
+	.max(16_000)
+	.regex(/^v1\.[A-Za-z0-9+/=]+$/, "Invalid encrypted payload");
+
+const mustSeal = () =>
+	new InvalidInput({
+		message:
+			"Vault items are encrypted in your browser. Reload the page and unlock the vault again.",
+	});
+
 /* --------------------------------- access ---------------------------------- */
 
 export type Role = "owner" | "editor" | "viewer";
@@ -109,14 +143,14 @@ export const accessBoard = (
 	options: { write?: boolean; includeDeleted?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
-		const unlocked = yield* vaultUnlocked;
+		const access = yield* VaultAccess;
 		const board = yield* query((db) =>
 			db.query.boards.findFirst({ where: eq(boards.id, boardId) }),
 		);
 		if (
 			!board ||
 			(board.deletedAt && !options.includeDeleted) ||
-			(board.vault && !unlocked)
+			(board.vault && !opensWith(board, access))
 		)
 			return yield* new NotFound({ entity: "Board" });
 		let role: Role = "owner";
@@ -379,7 +413,8 @@ export const loadHome = (userId: string) =>
 		// Locked vault boards (and everything in them) never leave the server.
 		const access = yield* VaultAccess;
 		const boardRows = allBoards.filter(
-			(board) => !board.vault || (access && board.userId === userId),
+			(board) =>
+				!board.vault || (board.userId === userId && opensWith(board, access)),
 		);
 		const boardIds = boardRows.map((board) => board.id);
 		const [groupRows, bookmarkRows, settingsRow, vault] = yield* query((db) =>
@@ -449,10 +484,14 @@ export const loadHome = (userId: string) =>
 			vault: {
 				configured: Boolean(vault),
 				unlocked: Boolean(access),
+				/** Contents are end-to-end encrypted in the browser. */
+				encrypted: Boolean(vault?.kdfSalt),
 				expiresAt: access?.expiresAt ?? null,
 				autoLockMinutes: vault?.autoLockMinutes ?? 15,
 			},
 			settings: resolveSettings(settingsRow?.settings),
+			/** Server capabilities the UI can offer. */
+			features: { ai: aiEnabled() },
 			boards: boardRows.map((board) => ({
 				...board,
 				role:
@@ -517,6 +556,7 @@ export const createBoard = (
 ) =>
 	Effect.gen(function* () {
 		if (data.vault) yield* requireUnlocked;
+		const access = yield* VaultAccess;
 		const position = yield* nextPosition(boards, eq(boards.userId, userId));
 		const [board] = yield* query((db) =>
 			db
@@ -526,6 +566,7 @@ export const createBoard = (
 					name: data.name,
 					icon: data.icon ?? null,
 					vault: data.vault ?? false,
+					decoy: Boolean(data.vault && access?.slot === "decoy"),
 					position,
 					layout: DEFAULT_BOARD_LAYOUT,
 				})
@@ -550,6 +591,28 @@ export const updateBoardInput = z.object({
 	layout: boardLayoutSchema.partial().optional(),
 	/** Move the board into (true) or out of (false) the vault. */
 	vault: z.boolean().optional(),
+	/**
+	 * With end-to-end encryption, crossing the vault boundary re-encodes every
+	 * link in the browser: sealed contents going in, readable ones coming out.
+	 */
+	items: z
+		.array(
+			z.object({
+				id: idSchema,
+				sealed: sealedSchema.optional(),
+				plain: z
+					.object({
+						title: z.string().max(200),
+						url: z.string().max(2048),
+						description: z.string().max(500).nullish(),
+						icon: z.string().max(2048).nullish(),
+						tags: z.array(z.string().max(32)).max(20),
+					})
+					.optional(),
+			}),
+		)
+		.max(3000)
+		.optional(),
 });
 
 /** Visible (non-vault, not deleted) owned boards; at least one must always remain. */
@@ -591,12 +654,69 @@ export const updateBoard = (
 					message: "Keep at least one board outside the vault",
 				});
 		}
+		const crossing = data.vault !== undefined && data.vault !== board.vault;
+		const access = yield* VaultAccess;
+		const reencode = crossing && (yield* vaultSealed(board.userId));
+		if (reencode) {
+			const rows = yield* query((db) =>
+				db
+					.select({
+						id: bookmarks.id,
+						kind: bookmarks.kind,
+						meta: bookmarks.meta,
+					})
+					.from(bookmarks)
+					.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+					.where(
+						and(eq(groups.boardId, board.id), isNull(bookmarks.deletedAt)),
+					),
+			);
+			const items = new Map((data.items ?? []).map((item) => [item.id, item]));
+			const missing = rows.some((row) =>
+				data.vault
+					? !items.get(row.id)?.sealed
+					: row.meta.sealed && !items.get(row.id)?.plain,
+			);
+			if (missing) return yield* mustSeal();
+			yield* query((db) =>
+				db.transaction(async (tx) => {
+					for (const row of rows) {
+						const item = items.get(row.id);
+						if (data.vault && item?.sealed)
+							await tx
+								.update(bookmarks)
+								.set(sealedColumns(item.sealed, row.kind))
+								.where(eq(bookmarks.id, row.id));
+						else if (!data.vault && item?.plain)
+							await tx
+								.update(bookmarks)
+								.set({
+									...item.plain,
+									description: item.plain.description ?? null,
+									icon: item.plain.icon ?? null,
+									meta:
+										row.kind === "link"
+											? { favicon: faviconFor(item.plain.url) }
+											: {},
+								})
+								.where(eq(bookmarks.id, row.id));
+					}
+				}),
+			);
+		}
 		const before = yield* snapshot("boards", [board.id]);
 		const [updated] = yield* query((db) =>
 			db
 				.update(boards)
 				.set({
 					vault: data.vault ?? board.vault,
+					...(crossing
+						? {
+								decoy: Boolean(data.vault && access?.slot === "decoy"),
+								// Vault boards are never public.
+								...(data.vault ? { shareSlug: null } : {}),
+							}
+						: {}),
 					name: data.name ?? board.name,
 					icon: data.icon === undefined ? board.icon : data.icon,
 					layout: data.layout
@@ -610,7 +730,8 @@ export const updateBoard = (
 			userId,
 			"update",
 			`Edited board ${quote(board.name)}`,
-			before,
+			// Re-encrypted contents can't be rolled back by undo.
+			reencode ? [] : before,
 		);
 		return updated;
 	});
@@ -848,23 +969,26 @@ const bookmarkFields = {
 const libraryLinks = (userId: string) =>
 	loadHome(userId).pipe(
 		Effect.map((home) =>
-			home.boards.flatMap((board) =>
-				board.groups.flatMap((group) =>
-					group.bookmarks.flatMap((item) =>
-						(item.kind === "folder"
-							? item.children.map((child) => ({ child, folder: item.title }))
-							: [{ child: item as Bookmark, folder: null }]
-						).map(({ child, folder }) => ({
-							id: child.id,
-							title: child.title,
-							url: child.url,
-							path: [board.name, group.name, folder]
-								.filter(Boolean)
-								.join(" / "),
-						})),
+			// Encrypted vault links have no readable URL to compare.
+			home.boards
+				.filter((board) => !board.vault)
+				.flatMap((board) =>
+					board.groups.flatMap((group) =>
+						group.bookmarks.flatMap((item) =>
+							(item.kind === "folder"
+								? item.children.map((child) => ({ child, folder: item.title }))
+								: [{ child: item as Bookmark, folder: null }]
+							).map(({ child, folder }) => ({
+								id: child.id,
+								title: child.title,
+								url: child.url,
+								path: [board.name, group.name, folder]
+									.filter(Boolean)
+									.join(" / "),
+							})),
+						),
 					),
 				),
-			),
 		),
 	);
 
@@ -928,6 +1052,8 @@ export const createBookmarkInput = z.object({
 	favicon: httpUrl.optional(),
 	image: httpUrl.nullish(),
 	siteName: z.string().max(200).nullish(),
+	/** Encrypted contents, required for vault boards with end-to-end encryption. */
+	sealed: sealedSchema.optional(),
 	...bookmarkFields,
 });
 
@@ -941,6 +1067,34 @@ export const createBookmark = (
 			: yield* accessGroup(userId, data.groupId, { write: true, links: true });
 		// A folder's contents live in the folder's group.
 		const groupId = target.group.id;
+		const sealed =
+			target.board.vault && (yield* vaultSealed(target.board.userId));
+		if (sealed !== Boolean(data.sealed))
+			return yield* sealed
+				? mustSeal()
+				: new InvalidInput({ message: "Only vault links are encrypted" });
+		if (sealed && data.sealed) {
+			// The server never sees what this link is: no lookups, no indexing.
+			const position = yield* nextSlot(groupId, data.parentId ?? null);
+			const [bookmark] = yield* query((db) =>
+				db
+					.insert(bookmarks)
+					.values({
+						userId: target.board.userId,
+						groupId,
+						parentId: data.parentId ?? null,
+						color: data.color ?? null,
+						incognito: data.incognito ?? false,
+						position,
+						...sealedColumns(data.sealed as string, "link"),
+					})
+					.returning(),
+			);
+			yield* record(userId, "create", "Added a vault link", [
+				created("bookmarks", bookmark.id),
+			]);
+			return bookmark;
+		}
 		const url = yield* requireUrl(data.url);
 		// Only hit the network when the caller didn't already supply a title.
 		const fetched = data.title ? null : yield* fetchPageMetadata(url);
@@ -1011,6 +1165,10 @@ export const bulkCreateBookmarks = (
 			write: true,
 			links: true,
 		});
+		if (board.vault && (yield* vaultSealed(board.userId)))
+			return yield* new InvalidInput({
+				message: "Add vault links one at a time so they're encrypted",
+			});
 		const existing =
 			data.skipDuplicates === false
 				? new Set<string>()
@@ -1101,6 +1259,8 @@ export const createFolderInput = z.object({
 	incognito: z.boolean().optional(),
 	/** Existing bookmarks to move into the new folder. */
 	bookmarkIds: z.array(idSchema).max(200).optional(),
+	/** Encrypted title/icon for vault folders (see createBookmarkInput). */
+	sealed: sealedSchema.optional(),
 });
 
 export const createFolder = (
@@ -1112,6 +1272,11 @@ export const createFolder = (
 			write: true,
 			links: true,
 		});
+		const sealed = board.vault && (yield* vaultSealed(board.userId));
+		if (sealed !== Boolean(data.sealed))
+			return yield* sealed
+				? mustSeal()
+				: new InvalidInput({ message: "Only vault folders are encrypted" });
 		const position = yield* nextSlot(group.id, null);
 		const [folder] = yield* query((db) =>
 			db
@@ -1126,6 +1291,7 @@ export const createFolder = (
 					color: data.color ?? null,
 					incognito: data.incognito ?? false,
 					position,
+					...(data.sealed ? sealedColumns(data.sealed, "folder") : {}),
 				})
 				.returning(),
 		);
@@ -1146,6 +1312,8 @@ export const updateBookmarkInput = z.object({
 	groupId: idSchema.optional(),
 	/** Folder to move into, or null to move out to the group's top level. */
 	parentId: idSchema.nullish(),
+	/** New encrypted contents (vault boards with end-to-end encryption). */
+	sealed: sealedSchema.optional(),
 	...bookmarkFields,
 });
 
@@ -1162,14 +1330,18 @@ export const updateBookmark = (
 			data.url && !isFolder ? yield* requireUrl(data.url) : bookmark.url;
 		let groupId = bookmark.groupId;
 		let parentId = bookmark.parentId;
+		let destination = board;
 		if (
 			data.parentId !== undefined &&
 			data.parentId !== bookmark.parentId &&
 			!isFolder
 		) {
 			parentId = data.parentId;
-			if (parentId)
-				groupId = (yield* accessFolder(userId, parentId)).bookmark.groupId;
+			if (parentId) {
+				const folder = yield* accessFolder(userId, parentId);
+				groupId = folder.bookmark.groupId;
+				destination = folder.board;
+			}
 		}
 		if (data.groupId && data.groupId !== groupId && !parentId) {
 			const target = yield* accessGroup(userId, data.groupId, {
@@ -1181,7 +1353,26 @@ export const updateBookmark = (
 					message: "Links can only move between boards with the same owner",
 				});
 			groupId = data.groupId;
+			destination = target.board;
 		}
+		// End-to-end encrypted vaults: contents must arrive sealed, and sealed
+		// items leaving the vault must arrive readable again.
+		const wasSealed = Boolean(bookmark.meta.sealed);
+		const sealHere =
+			destination.vault && (yield* vaultSealed(destination.userId));
+		if (sealHere && !data.sealed && !wasSealed) return yield* mustSeal();
+		if (!sealHere && data.sealed)
+			return yield* new InvalidInput({
+				message: "Only vault items are encrypted",
+			});
+		if (!sealHere && wasSealed && !(isFolder ? data.title : data.url))
+			return yield* new InvalidInput({
+				message: "Unlock your vault to move this out of it",
+			});
+		if (isFolder && sealHere !== wasSealed && destination.id !== board.id)
+			return yield* new InvalidInput({
+				message: "Move folders in or out of the vault one link at a time",
+			});
 		const moved =
 			groupId !== bookmark.groupId || parentId !== bookmark.parentId;
 		const position = moved
@@ -1205,6 +1396,19 @@ export const updateBookmark = (
 						.update(bookmarks)
 						.set({ groupId })
 						.where(eq(bookmarks.parentId, bookmark.id));
+				if (sealHere)
+					return tx
+						.update(bookmarks)
+						.set({
+							groupId,
+							parentId,
+							position,
+							color: data.color === undefined ? bookmark.color : data.color,
+							incognito: data.incognito ?? bookmark.incognito,
+							...(data.sealed ? sealedColumns(data.sealed, bookmark.kind) : {}),
+						})
+						.where(eq(bookmarks.id, bookmark.id))
+						.returning();
 				return tx
 					.update(bookmarks)
 					.set({
@@ -1221,8 +1425,11 @@ export const updateBookmark = (
 						color: data.color === undefined ? bookmark.color : data.color,
 						tags: data.tags ?? bookmark.tags,
 						incognito: data.incognito ?? bookmark.incognito,
-						meta:
-							url === bookmark.url
+						meta: wasSealed
+							? isFolder
+								? {}
+								: { favicon: faviconFor(url) }
+							: url === bookmark.url
 								? bookmark.meta
 								: { favicon: faviconFor(url) },
 					})
@@ -2045,4 +2252,23 @@ export const purgeExpired = () =>
 					.where(lt(visits.at, new Date(Date.now() - 400 * 86_400_000)));
 			}),
 		);
+	});
+
+/** A bookmark plus the page text saved for search (for AI assistants). */
+export const readBookmark = (userId: string, id: string) =>
+	Effect.gen(function* () {
+		const { bookmark } = yield* accessBookmark(userId, id);
+		const [row] = yield* query((db) =>
+			db.all<{ body: string }>(
+				sql`SELECT body FROM bookmark_text WHERE bookmark_id = ${bookmark.id} LIMIT 1`,
+			),
+		);
+		return {
+			id: bookmark.id,
+			title: bookmark.title,
+			url: bookmark.url,
+			description: bookmark.description,
+			tags: bookmark.tags,
+			pageText: row?.body?.slice(0, 12_000) ?? "",
+		};
 	});

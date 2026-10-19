@@ -1,13 +1,17 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { ClipboardPaste, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ColorSwatches, Field, Toggle } from "#/components/ui/controls";
 import { Favicon } from "#/components/ui/Favicon";
 import { Modal } from "#/components/ui/Modal";
 import { call, run } from "#/lib/api";
 import { celebrate } from "#/lib/celebrate";
-import { useHomeAction } from "#/lib/home-query";
+import { homeKey, useHomeAction } from "#/lib/home-query";
 import { ACCENTS } from "#/lib/preferences";
-import { faviconFor, normalizeUrl } from "#/lib/url";
+import { faviconFor, normalizeUrl, titleFromUrl } from "#/lib/url";
+import { sealContents } from "#/lib/vault-session";
+import type { HomeData } from "#/server/home";
 import {
 	createBookmark,
 	deleteBookmark,
@@ -67,6 +71,12 @@ export function BookmarkForm({
 	const [looking, setLooking] = useState(false);
 	const [lookedUp, setLookedUp] = useState(bookmark?.url ?? "");
 	const submitButton = useRef<HTMLButtonElement>(null);
+	const queryClient = useQueryClient();
+	// Encrypted vault: the server must never see this link, so no lookups.
+	const sealedTarget =
+		Boolean(
+			boards.find((b) => b.groups.some((g) => g.id === targetGroup))?.vault,
+		) && Boolean(queryClient.getQueryData<HomeData>(homeKey)?.vault.encrypted);
 	const folders =
 		boards
 			.flatMap((b) => b.groups)
@@ -109,6 +119,7 @@ export function BookmarkForm({
 		if (!normalized || normalized === lookedUp) return;
 		setLookedUp(normalized);
 		setFavicon(faviconFor(normalized, 128));
+		if (sealedTarget) return;
 		setLooking(true);
 		try {
 			const meta = await run(call(lookupUrl, { url: normalized }));
@@ -136,7 +147,47 @@ export function BookmarkForm({
 	}, []);
 
 	const pending = create.isPending || update.isPending;
-	const submit = () => {
+	const submit = async () => {
+		if (sealedTarget) {
+			const normalized = normalizeUrl(url);
+			if (!normalized) {
+				toast.error("That doesn't look like a link");
+				return;
+			}
+			try {
+				const sealed = await sealContents({
+					title: title.trim() || titleFromUrl(normalized),
+					url: normalized,
+					description: description.trim() || null,
+					tags: bookmark?.tags ?? [],
+					icon: icon.trim() || null,
+					favicon: favicon ?? faviconFor(normalized),
+				});
+				if (bookmark)
+					update.mutate({
+						id: bookmark.id,
+						groupId: targetGroup,
+						parentId: targetFolder,
+						color,
+						incognito,
+						sealed,
+					});
+				else
+					create.mutate({
+						groupId: targetGroup,
+						parentId: targetFolder,
+						url: "",
+						color,
+						incognito,
+						sealed,
+					});
+			} catch (error) {
+				toast.error(
+					error instanceof Error ? error.message : "Couldn't encrypt",
+				);
+			}
+			return;
+		}
 		const fields = {
 			url,
 			title: title.trim() || undefined,
@@ -168,7 +219,7 @@ export function BookmarkForm({
 			className="space-y-4"
 			onSubmit={(event) => {
 				event.preventDefault();
-				submit();
+				void submit();
 			}}
 		>
 			{image && (

@@ -5,7 +5,10 @@ import { Context } from "effect";
  * a successful unlock. Everything else, including MCP, gets the locked default,
  * so vault boards behave as if they don't exist.
  */
-export const VaultAccess = Context.Reference<{ expiresAt: number } | null>(
-	"tabz/VaultAccess",
-	{ defaultValue: () => null },
-);
+export type VaultSlot = "main" | "decoy";
+
+export const VaultAccess = Context.Reference<{
+	expiresAt: number;
+	/** Which password opened it; the decoy shows only decoy boards. */
+	slot: VaultSlot;
+} | null>("tabz/VaultAccess", { defaultValue: () => null });

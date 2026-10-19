@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import * as tokens from "./api-tokens";
+import * as channels from "./channels";
 import { runAuthed } from "./runtime";
 import * as hooks from "./webhooks";
 
@@ -53,4 +54,24 @@ export const testWebhook = createServerFn({ method: "POST" })
 	.validator(z.object({ id: z.string() }))
 	.handler(({ data }) =>
 		runAuthed((user) => hooks.testWebhook(user.id, data.id)),
+	);
+
+export const listChannels = createServerFn().handler(() =>
+	runAuthed((user) => channels.listChannels(user.id)),
+);
+
+export const connectTelegram = createServerFn({ method: "POST" }).handler(() =>
+	runAuthed((user) => channels.telegramLink(user.id)),
+);
+
+export const getEmailAddress = createServerFn({ method: "POST" })
+	.validator(z.object({ rotate: z.boolean().optional() }))
+	.handler(({ data }) =>
+		runAuthed((user) => channels.emailAddress(user.id, data.rotate)),
+	);
+
+export const removeChannel = createServerFn({ method: "POST" })
+	.validator(z.object({ id: z.string() }))
+	.handler(({ data }) =>
+		runAuthed((user) => channels.removeChannel(user.id, data.id)),
 	);

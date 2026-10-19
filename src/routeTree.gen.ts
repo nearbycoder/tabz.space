@@ -18,6 +18,8 @@ import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as BSlugRouteImport } from './routes/b.$slug'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiChannelsEmailRouteImport } from './routes/api/channels/email'
+import { Route as ApiChannelsTelegramRouteImport } from './routes/api/channels/telegram'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -65,6 +67,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChannelsEmailRoute = ApiChannelsEmailRouteImport.update({
+  id: '/api/channels/email',
+  path: '/api/channels/email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiChannelsTelegramRoute = ApiChannelsTelegramRouteImport.update({
+  id: '/api/channels/telegram',
+  path: '/api/channels/telegram',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   id: '/api/v1/$',
   path: '/api/v1/$',
@@ -81,6 +93,8 @@ export interface FileRoutesByFullPath {
   '/api/mcp': typeof ApiMcpRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/channels/email': typeof ApiChannelsEmailRoute
+  '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRoutesByTo {
@@ -93,6 +107,8 @@ export interface FileRoutesByTo {
   '/api/mcp': typeof ApiMcpRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/channels/email': typeof ApiChannelsEmailRoute
+  '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRoutesById {
@@ -106,6 +122,8 @@ export interface FileRoutesById {
   '/api/mcp': typeof ApiMcpRoute
   '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/channels/email': typeof ApiChannelsEmailRoute
+  '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRouteTypes {
@@ -120,6 +138,8 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/b/$slug'
     | '/api/auth/$'
+    | '/api/channels/email'
+    | '/api/channels/telegram'
     | '/api/v1/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -132,6 +152,8 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/b/$slug'
     | '/api/auth/$'
+    | '/api/channels/email'
+    | '/api/channels/telegram'
     | '/api/v1/$'
   id:
     | '__root__'
@@ -144,6 +166,8 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/b/$slug'
     | '/api/auth/$'
+    | '/api/channels/email'
+    | '/api/channels/telegram'
     | '/api/v1/$'
   fileRoutesById: FileRoutesById
 }
@@ -157,6 +181,8 @@ export interface RootRouteChildren {
   ApiMcpRoute: typeof ApiMcpRoute
   BSlugRoute: typeof BSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiChannelsEmailRoute: typeof ApiChannelsEmailRoute
+  ApiChannelsTelegramRoute: typeof ApiChannelsTelegramRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
 }
 
@@ -225,6 +251,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/channels/email': {
+      id: '/api/channels/email'
+      path: '/api/channels/email'
+      fullPath: '/api/channels/email'
+      preLoaderRoute: typeof ApiChannelsEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/channels/telegram': {
+      id: '/api/channels/telegram'
+      path: '/api/channels/telegram'
+      fullPath: '/api/channels/telegram'
+      preLoaderRoute: typeof ApiChannelsTelegramRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/$': {
       id: '/api/v1/$'
       path: '/api/v1/$'
@@ -245,6 +285,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMcpRoute: ApiMcpRoute,
   BSlugRoute: BSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiChannelsEmailRoute: ApiChannelsEmailRoute,
+  ApiChannelsTelegramRoute: ApiChannelsTelegramRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
 }
 export const routeTree = rootRouteImport

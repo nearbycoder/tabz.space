@@ -4,6 +4,7 @@ import {
 	rectSortingStrategy,
 	SortableContext,
 } from "@dnd-kit/sortable";
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	ExternalLink,
 	Loader2,
@@ -13,11 +14,13 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useDragSensors } from "#/lib/dnd-sensors";
-import { useHomeAction } from "#/lib/home-query";
+import { homeKey, useHomeAction } from "#/lib/home-query";
+import { sealContents } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
 import {
 	arrangeFolder,
@@ -83,9 +86,26 @@ export function FolderDialog({
 
 	if (!folder) return null;
 
+	// Folders in an encrypted vault are saved sealed.
+	const saveFolder = async (patch: { title?: string; icon?: string }) => {
+		if (!folder.meta.sealed) {
+			rename.mutate({ id: folder.id, ...patch });
+			return;
+		}
+		try {
+			const sealed = await sealContents({
+				title: patch.title ?? folder.title,
+				icon: patch.icon ?? folder.icon,
+			});
+			rename.mutate({ id: folder.id, sealed });
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : "Couldn't encrypt");
+		}
+	};
+
 	const saveTitle = () => {
 		if (title.trim() && title.trim() !== folder.title)
-			rename.mutate({ id: folder.id, title: title.trim() });
+			void saveFolder({ title: title.trim() });
 	};
 
 	const onDragEnd = ({ active, over }: DragEndEvent) => {
@@ -118,7 +138,7 @@ export function FolderDialog({
 							aria-label="Folder icon"
 							value={folder.icon ?? "📁"}
 							onChange={(event) =>
-								rename.mutate({ id: folder.id, icon: event.target.value })
+								void saveFolder({ icon: event.target.value })
 							}
 							className="focus-ring size-11 cursor-pointer appearance-none rounded-2xl bg-surface-2 text-center text-2xl"
 						>
@@ -275,7 +295,12 @@ export function NewFolderDialog({
 	const [title, setTitle] = useState("");
 	const [icon, setIcon] = useState(FOLDER_ICONS[0]);
 	const [incognito, setIncognito] = useState(false);
-	const { openDialog } = useHomeContext();
+	const { openDialog, boards } = useHomeContext();
+	const queryClient = useQueryClient();
+	const sealHere =
+		Boolean(
+			boards.find((b) => b.groups.some((g) => g.id === groupId))?.vault,
+		) && Boolean(queryClient.getQueryData<HomeData>(homeKey)?.vault.encrypted);
 	const create = useHomeAction(createFolder, {
 		onSuccess: (folder) => openDialog({ type: "folder", folderId: folder.id }),
 	});
@@ -285,7 +310,20 @@ export function NewFolderDialog({
 				className="space-y-4"
 				onSubmit={(event) => {
 					event.preventDefault();
-					create.mutate({ groupId, title, icon, incognito });
+					if (!sealHere) {
+						create.mutate({ groupId, title, icon, incognito });
+						return;
+					}
+					sealContents({ title, icon })
+						.then((sealed) =>
+							create.mutate({
+								groupId,
+								title: "Locked folder",
+								incognito,
+								sealed,
+							}),
+						)
+						.catch((error) => toast.error(error.message));
 				}}
 			>
 				<Field label="Name">

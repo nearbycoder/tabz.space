@@ -141,6 +141,8 @@ export const userSettingsSchema = z.object({
 	incognitoAll: z.boolean().default(false),
 	linkPreviews: z.boolean().default(true),
 	feedBadges: z.boolean().default(true),
+	/** Tag new links with AI (only offered when the server has a Claude key). */
+	autoTag: z.boolean().default(false),
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
@@ -179,6 +181,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	incognitoAll: false,
 	linkPreviews: true,
 	feedBadges: true,
+	autoTag: false,
 	celebrate: true,
 	tilt: true,
 	activeBoardId: null,
@@ -500,6 +503,11 @@ export type BookmarkMeta = {
 	feed?: { checkedAt: number; items: FeedItem[] };
 	/** When the page text was added to the full-text index (ms). */
 	indexedAt?: number;
+	/**
+	 * End-to-end encrypted contents of a vault link/folder ("v1.<base64>").
+	 * Only the browser holding the vault key can read it.
+	 */
+	sealed?: string;
 };
 
 export type LinkHealth = {

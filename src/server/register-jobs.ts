@@ -1,3 +1,4 @@
+import { registerTelegramWebhook } from "./channels";
 import { indexPending } from "./content";
 import { registerJob } from "./jobs";
 import { purgeExpired } from "./library";
@@ -19,4 +20,9 @@ registerJob({
 	name: "poll-feeds",
 	everyMs: 15 * 60_000,
 	run: () => pollFeeds(),
+});
+registerJob({
+	name: "telegram-webhook",
+	everyMs: 6 * 60 * 60_000,
+	run: registerTelegramWebhook,
 });

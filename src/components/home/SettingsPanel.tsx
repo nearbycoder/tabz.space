@@ -59,7 +59,7 @@ import { Backdrop } from "./Backdrop";
 import { CommunityThemes, CustomCssEditor } from "./CommunityThemes";
 import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
-import { ApiTokens, Webhooks } from "./Developer";
+import { ApiTokens, Channels, Webhooks } from "./Developer";
 import type { HomeBoard } from "./types";
 import { VaultSettings, type VaultState } from "./Vault";
 
@@ -69,6 +69,8 @@ type Props = {
 	board: HomeBoard;
 	boards: HomeBoard[];
 	session: SessionInfo;
+	/** The server has a Claude key, so AI features can be offered. */
+	aiAvailable: boolean;
 	initialTab?: string;
 	onClose: () => void;
 };
@@ -179,6 +181,7 @@ export function SettingsPanel({
 	board,
 	boards,
 	session,
+	aiAvailable,
 	initialTab,
 	onClose,
 }: Props) {
@@ -742,6 +745,13 @@ export function SettingsPanel({
 							checked={settings.showRediscover}
 							onChange={(showRediscover) => set({ showRediscover })}
 						/>
+						{aiAvailable && (
+							<Toggle
+								label="✨ Tag new links automatically with AI"
+								checked={settings.autoTag}
+								onChange={(autoTag) => set({ autoTag })}
+							/>
+						)}
 						<Toggle
 							label="Badges for new posts on sites with a feed"
 							checked={settings.feedBadges}
@@ -921,6 +931,9 @@ export function SettingsPanel({
 				<div className="space-y-6">
 					<Section title="AI assistants (MCP)">
 						<ConnectAI />
+					</Section>
+					<Section title="Save from anywhere">
+						<Channels />
 					</Section>
 					<Section title="API tokens">
 						<ApiTokens />

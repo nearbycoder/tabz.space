@@ -1,15 +1,26 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, Send, Trash2, Webhook } from "lucide-react";
+import {
+	KeyRound,
+	Loader2,
+	RefreshCw,
+	Send,
+	Trash2,
+	Webhook,
+} from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
 import {
+	connectTelegram,
 	createApiToken,
 	createWebhook,
 	deleteWebhook,
+	getEmailAddress,
 	listApiTokens,
+	listChannels,
 	listWebhooks,
+	removeChannel,
 	revokeApiToken,
 	testWebhook,
 } from "#/server/developer";
@@ -324,6 +335,120 @@ export function Webhooks() {
 					</div>
 				</div>
 			))}
+		</div>
+	);
+}
+
+/** Telegram bot + personal email address for saving links from anywhere. */
+export function Channels() {
+	const queryClient = useQueryClient();
+	const channels = useQuery({
+		queryKey: ["channels"],
+		queryFn: () => run(call(listChannels)),
+	});
+	const refresh = () =>
+		queryClient.invalidateQueries({ queryKey: ["channels"] });
+	const data = channels.data;
+	if (!data) return null;
+	if (!data.features.telegram && !data.features.email)
+		return (
+			<p className="text-sm text-muted">
+				Saving by Telegram or email isn't switched on for this server yet.
+			</p>
+		);
+	return (
+		<div className="space-y-4">
+			{data.features.telegram && (
+				<div className="space-y-2">
+					<p className="text-sm font-medium">✈️ Telegram</p>
+					<p className="text-sm text-muted">
+						Share or send any link to the tabz bot and it lands in your Inbox.
+					</p>
+					{data.telegram.map((chat) => (
+						<div
+							key={chat.id}
+							className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm"
+						>
+							<span className="min-w-0 flex-1 truncate">
+								Connected {chat.label ? `as ${chat.label}` : ""}
+							</span>
+							<button
+								type="button"
+								className="icon-btn size-7"
+								aria-label="Disconnect Telegram"
+								onClick={async () => {
+									await run(call(removeChannel, { id: chat.id })).catch(
+										() => {},
+									);
+									await refresh();
+								}}
+							>
+								<Trash2 className="size-3.5" />
+							</button>
+						</div>
+					))}
+					<button
+						type="button"
+						className="btn-outline"
+						onClick={async () => {
+							try {
+								const { url } = await run(call(connectTelegram));
+								window.open(url, "_blank", "noopener");
+								toast("Tap Start in Telegram to finish connecting");
+								setTimeout(refresh, 15_000);
+							} catch (cause) {
+								toast.error(message(cause));
+							}
+						}}
+					>
+						{data.telegram.length ? "Connect another chat" : "Connect Telegram"}
+					</button>
+				</div>
+			)}
+			{data.features.email && (
+				<div className="space-y-2">
+					<p className="text-sm font-medium">📧 Email</p>
+					<p className="text-sm text-muted">
+						Forward newsletters or email yourself links at this address. Keep it
+						private: anyone who knows it can add links.
+					</p>
+					{data.email ? (
+						<div className="flex items-center gap-1 rounded-xl border border-line bg-surface-2 py-1 pr-1 pl-3">
+							<code className="min-w-0 flex-1 truncate font-mono text-xs">
+								{data.email}
+							</code>
+							<CopyButton value={data.email} />
+							<button
+								type="button"
+								className="icon-btn size-8"
+								title="New address (the old one stops working)"
+								aria-label="New address"
+								onClick={async () => {
+									await run(call(getEmailAddress, { rotate: true })).catch(
+										(cause) => toast.error(message(cause)),
+									);
+									await refresh();
+								}}
+							>
+								<RefreshCw className="size-3.5" />
+							</button>
+						</div>
+					) : (
+						<button
+							type="button"
+							className="btn-outline"
+							onClick={async () => {
+								await run(call(getEmailAddress, {})).catch((cause) =>
+									toast.error(message(cause)),
+								);
+								await refresh();
+							}}
+						>
+							Get my address
+						</button>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

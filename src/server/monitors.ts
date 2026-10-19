@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { boards, bookmarks, groups } from "#/db/schema";
 import type { BookmarkMeta, LinkHealth } from "#/lib/preferences";
 import { canonicalUrl } from "#/lib/url";
+import { autoTag } from "./ai";
 import { indexText, monitoredLinks, setMeta } from "./content";
 import { checkLink, fetchFeed, type PageMetadata } from "./metadata";
 import { query } from "./runtime";
@@ -176,7 +177,9 @@ export const afterFetch = (
 		? Effect.void
 		: Effect.all(
 				[
-					indexText(link.id, page.title ?? link.title, page.text ?? ""),
+					indexText(link.id, page.title ?? link.title, page.text ?? "").pipe(
+						Effect.andThen(autoTag(link.id, page)),
+					),
 					page.feedUrl
 						? fetchFeed(page.feedUrl).pipe(
 								Effect.flatMap((items) =>
