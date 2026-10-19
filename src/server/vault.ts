@@ -115,14 +115,18 @@ const issueCookie = async (
 	userId: string,
 	minutes: number,
 	slot: VaultSlot,
+	/** Keep an earlier expiry (resuming after a reload); never extends auto-lock. */
+	until?: number,
 ) => {
-	const expiresAt = Date.now() + minutes * 60_000;
+	const full = Date.now() + minutes * 60_000;
+	const expiresAt = until && until > Date.now() ? Math.min(until, full) : full;
+	const maxAge = Math.max(1, Math.round((expiresAt - Date.now()) / 1000));
 	setCookie(VAULT_COOKIE, await signVaultToken(userId, expiresAt, slot), {
 		httpOnly: true,
 		secure: process.env.NODE_ENV === "production",
 		sameSite: "strict",
 		path: "/",
-		maxAge: minutes * 60,
+		maxAge,
 	});
 	return expiresAt;
 };
@@ -285,7 +289,13 @@ export const setupVault = createServerFn({ method: "POST" })
 
 /** `password` is the derived auth key (or the raw password for legacy vaults). */
 export const unlockVault = createServerFn({ method: "POST" })
-	.validator(z.object({ password: z.string().max(128) }))
+	.validator(
+		z.object({
+			password: z.string().max(128),
+			/** Resume an earlier unlock (after a reload) until its original expiry. */
+			until: z.number().int().positive().optional(),
+		}),
+	)
 	.handler(async ({ data }) => {
 		const result = await runAuthed((user) =>
 			Effect.gen(function* () {
@@ -304,6 +314,7 @@ export const unlockVault = createServerFn({ method: "POST" })
 			result.userId,
 			result.autoLockMinutes,
 			result.slot,
+			data.until,
 		);
 		return {
 			expiresAt,

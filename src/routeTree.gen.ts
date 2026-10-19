@@ -21,6 +21,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiChannelsEmailRouteImport } from './routes/api/channels/email'
 import { Route as ApiChannelsTelegramRouteImport } from './routes/api/channels/telegram'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
+import { Route as ApiVaultLockRouteImport } from './routes/api/vault/lock'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,6 +83,11 @@ const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   path: '/api/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVaultLockRoute = ApiVaultLockRouteImport.update({
+  id: '/api/vault/lock',
+  path: '/api/vault/lock',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/vault/lock': typeof ApiVaultLockRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/vault/lock': typeof ApiVaultLockRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/api/vault/lock': typeof ApiVaultLockRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/api/channels/email'
     | '/api/channels/telegram'
     | '/api/v1/$'
+    | '/api/vault/lock'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/api/channels/email'
     | '/api/channels/telegram'
     | '/api/v1/$'
+    | '/api/vault/lock'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/api/channels/email'
     | '/api/channels/telegram'
     | '/api/v1/$'
+    | '/api/vault/lock'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   ApiChannelsEmailRoute: typeof ApiChannelsEmailRoute
   ApiChannelsTelegramRoute: typeof ApiChannelsTelegramRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
+  ApiVaultLockRoute: typeof ApiVaultLockRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -272,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/vault/lock': {
+      id: '/api/vault/lock'
+      path: '/api/vault/lock'
+      fullPath: '/api/vault/lock'
+      preLoaderRoute: typeof ApiVaultLockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -288,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChannelsEmailRoute: ApiChannelsEmailRoute,
   ApiChannelsTelegramRoute: ApiChannelsTelegramRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
+  ApiVaultLockRoute: ApiVaultLockRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

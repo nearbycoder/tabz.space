@@ -22,7 +22,12 @@ import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
-import { useDecryptedHome, useVaultKeyReady } from "#/lib/vault-session";
+import {
+	resumeVault,
+	startVaultSync,
+	useDecryptedHome,
+	useVaultKeyReady,
+} from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
@@ -147,6 +152,7 @@ const widths = {
 
 export function HomeScreen({ session }: { session: SessionInfo }) {
 	const data = useDecryptedHome(useHome());
+	const queryClient = useQueryClient();
 	const vaultKeyReady = useVaultKeyReady();
 	const { settings, boards, vault } = data;
 	const [now, setNow] = useState(() => Date.now());
@@ -179,6 +185,26 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	}, [settings.theme]);
 
 	useEffect(() => applyAppearance(settings), [settings]);
+
+	// The vault follows the tab: resume it after a reload or a return via Back,
+	// and refresh when another tab locks it.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: once per page load
+	useEffect(() => {
+		startVaultSync();
+		const refresh = () => queryClient.invalidateQueries({ queryKey: homeKey });
+		const resume = () =>
+			resumeVault(data.userId).then((reopened) => {
+				if (reopened) void refresh();
+			});
+		if (data.vault.configured && !data.vault.unlocked) void resume();
+		const onShow = (event: PageTransitionEvent) => event.persisted && resume();
+		window.addEventListener("tabz:vault-locked", refresh);
+		window.addEventListener("pageshow", onShow);
+		return () => {
+			window.removeEventListener("tabz:vault-locked", refresh);
+			window.removeEventListener("pageshow", onShow);
+		};
+	}, []);
 
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
@@ -359,7 +385,6 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[boards],
 	);
 
-	const queryClient = useQueryClient();
 	const onVisit = useCallback(
 		(bookmark: LinkItem) => {
 			// Fire-and-forget; visit counts power search ranking and the most-visited strip.

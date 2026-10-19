@@ -55,7 +55,12 @@ export async function unlockWithPassword(
 	if (info.salt) {
 		const keys = await deriveVaultKeys(password, info.salt);
 		const result = await run(call(unlockVault, { password: keys.authKey }));
-		await setVaultKey(userId, keys.encryptionKey, result.expiresAt);
+		await setVaultKey(
+			userId,
+			keys.encryptionKey,
+			result.expiresAt,
+			keys.authKey,
+		);
 		return result;
 	}
 	// A vault from before end-to-end encryption: unlock the old way once, then
@@ -72,7 +77,7 @@ export async function unlockWithPassword(
 		})),
 	);
 	await run(call(upgradeVault, { authKey: keys.authKey, salt, sealed }));
-	await setVaultKey(userId, keys.encryptionKey, result.expiresAt);
+	await setVaultKey(userId, keys.encryptionKey, result.expiresAt, keys.authKey);
 	return result;
 }
 
@@ -95,7 +100,7 @@ export async function createVault(
 			pinLength,
 		}),
 	);
-	await setVaultKey(userId, keys.encryptionKey, result.expiresAt);
+	await setVaultKey(userId, keys.encryptionKey, result.expiresAt, keys.authKey);
 	return result;
 }
 
@@ -145,7 +150,12 @@ export async function changeVaultPassword(options: {
 			pinLength: options.pinLength,
 		}),
 	);
-	await setVaultKey(raw.userId, next.encryptionKey, result.expiresAt);
+	await setVaultKey(
+		raw.userId,
+		next.encryptionKey,
+		result.expiresAt,
+		next.authKey,
+	);
 	return result;
 }
 

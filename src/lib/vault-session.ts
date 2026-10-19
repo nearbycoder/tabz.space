@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { flattenTree, mapTree } from "#/components/home/types";
 import type { HomeData } from "#/server/home";
+import { unlockVault } from "#/server/vault";
+import { call, run } from "./api";
 import {
 	importVaultKey,
 	type SealedContents,
@@ -9,14 +11,28 @@ import {
 } from "./vault-crypto";
 
 /*
- * The unlocked vault key for this tab. Kept in memory plus sessionStorage (so
- * a reload doesn't need the password again until the vault auto-locks) and
- * never sent anywhere. Decrypted contents are cached by ciphertext.
+ * The unlocked vault key for this tab. Kept in memory plus sessionStorage
+ * (which survives a reload but not closing the tab) and never sent anywhere.
+ * Decrypted contents are cached by ciphertext.
+ *
+ * The vault follows the tab: when the last tab using it closes, it locks
+ * (the unlock cookie is cleared). A reloaded tab quietly unlocks again until
+ * the original auto-lock time; new tabs borrow the key from an open one.
  */
 
 const STORAGE = "tabz:vault-key";
+const CHANNEL = "tabz-vault";
+
+type Session = {
+	userId: string;
+	raw: string;
+	expiresAt: number;
+	/** Derived auth key, so a reload can re-open the vault without the password. */
+	authKey?: string;
+};
 
 let key: CryptoKey | null = null;
+let session: Session | null = null;
 let loadedFor: string | null = null;
 let version = 0;
 const listeners = new Set<() => void>();
@@ -31,41 +47,143 @@ const subscribe = (listener: () => void) => {
 	return () => listeners.delete(listener);
 };
 
-export async function setVaultKey(
+const readStored = (): Session | null => {
+	try {
+		const saved = JSON.parse(
+			sessionStorage.getItem(STORAGE) ?? "null",
+		) as Session | null;
+		if (saved && saved.expiresAt > Date.now()) return saved;
+	} catch {}
+	sessionStorage.removeItem(STORAGE);
+	return null;
+};
+
+const adopt = async (next: Session) => {
+	sessionStorage.setItem(STORAGE, JSON.stringify(next));
+	session = next;
+	key = await importVaultKey(next.raw);
+	loadedFor = next.userId;
+	opened.clear();
+	notify();
+	// Let other tabs know right away, so closing one doesn't lock this one.
+	post({ type: "here", tab: tabId });
+};
+
+export const setVaultKey = (
 	userId: string,
 	raw: string,
 	expiresAt: number,
-) {
-	sessionStorage.setItem(STORAGE, JSON.stringify({ userId, raw, expiresAt }));
-	key = await importVaultKey(raw);
-	loadedFor = userId;
-	opened.clear();
-	notify();
-}
+	authKey?: string,
+) => adopt({ userId, raw, expiresAt, authKey });
 
-export function clearVaultKey() {
+const forget = () => {
 	sessionStorage.removeItem(STORAGE);
 	key = null;
+	session = null;
 	opened.clear();
 	notify();
+};
+
+/** Forgets the key here and tells other tabs the vault was locked. */
+export function clearVaultKey() {
+	forget();
+	channel?.postMessage({ type: "locked" });
+}
+
+/* ------------------------------ tab coordination ----------------------------- */
+
+const tabId =
+	typeof crypto !== "undefined" && "randomUUID" in crypto
+		? crypto.randomUUID()
+		: String(Math.random());
+const peers = new Map<string, number>();
+let channel: BroadcastChannel | null = null;
+
+type Message =
+	| { type: "here" | "bye" | "hello"; tab: string }
+	| { type: "need-key"; tab: string; userId: string }
+	| { type: "key"; to: string; session: Session }
+	| { type: "locked" };
+
+const post = (message: Message) => channel?.postMessage(message);
+
+/** Starts talking to other tabs; safe to call repeatedly. */
+export function startVaultSync() {
+	if (channel || typeof BroadcastChannel === "undefined") return;
+	channel = new BroadcastChannel(CHANNEL);
+	channel.onmessage = ({ data }: MessageEvent<Message>) => {
+		if (data.type === "here") peers.set(data.tab, Date.now());
+		else if (data.type === "bye") peers.delete(data.tab);
+		else if (data.type === "hello") {
+			if (key) post({ type: "here", tab: tabId });
+		} else if (data.type === "need-key") {
+			if (
+				key &&
+				session?.userId === data.userId &&
+				session.expiresAt > Date.now()
+			)
+				post({ type: "key", to: data.tab, session });
+		} else if (data.type === "key") {
+			if (data.to === tabId && !key) void adopt(data.session);
+		} else if (data.type === "locked") {
+			forget();
+			window.dispatchEvent(new Event("tabz:vault-locked"));
+		}
+	};
+	post({ type: "hello", tab: tabId });
+	setInterval(() => {
+		if (key) post({ type: "here", tab: tabId });
+		for (const [tab, seen] of peers)
+			if (Date.now() - seen > 25_000) peers.delete(tab);
+	}, 10_000);
+	window.addEventListener("pagehide", () => {
+		post({ type: "bye", tab: tabId });
+		// Last tab with the vault open: lock it. A reload re-opens it from
+		// sessionStorage; closing the tab clears that too.
+		if (key && peers.size === 0) navigator.sendBeacon("/api/vault/lock");
+	});
+}
+
+/** Asks other open tabs for the key; resolves once one answers (or gives up). */
+const keyFromPeers = (userId: string) =>
+	new Promise<boolean>((resolve) => {
+		if (!channel) return resolve(false);
+		post({ type: "need-key", tab: tabId, userId });
+		const started = Date.now();
+		const check = setInterval(() => {
+			if (key || Date.now() - started > 600) {
+				clearInterval(check);
+				resolve(Boolean(key));
+			}
+		}, 50);
+	});
+
+/**
+ * Brings the vault back after a reload (or a return via Back) in a tab that
+ * had it open: re-unlocks with the stored auth key until the original
+ * auto-lock time. Resolves true when the vault was re-opened on the server.
+ */
+export async function resumeVault(userId: string) {
+	const saved = readStored();
+	if (!saved || saved.userId !== userId || !saved.authKey) return false;
+	try {
+		await run(
+			call(unlockVault, { password: saved.authKey, until: saved.expiresAt }),
+		);
+		await adopt(saved);
+		return true;
+	} catch {
+		forget();
+		return false;
+	}
 }
 
 async function recall(userId: string) {
 	if (loadedFor === userId && key) return;
 	loadedFor = userId;
-	try {
-		const saved = JSON.parse(sessionStorage.getItem(STORAGE) ?? "null") as {
-			userId: string;
-			raw: string;
-			expiresAt: number;
-		} | null;
-		if (saved && saved.userId === userId && saved.expiresAt > Date.now()) {
-			key = await importVaultKey(saved.raw);
-			notify();
-		} else sessionStorage.removeItem(STORAGE);
-	} catch {
-		sessionStorage.removeItem(STORAGE);
-	}
+	const saved = readStored();
+	if (saved && saved.userId === userId) await adopt(saved);
+	else await keyFromPeers(userId);
 }
 
 export const getVaultKey = () => key;
