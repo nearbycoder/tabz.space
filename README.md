@@ -140,6 +140,11 @@ Customize → Connect has personal API tokens and outgoing webhooks.
 - Geist is self-hosted and its Latin file is preloaded, so there's no request to Google Fonts and no font swap. The other optional fonts still load from Google when picked.
 - Unsplash wallpapers render as an `<img>` with a `srcset`, so phones download a phone-sized photo.
 - Confetti, zod and Effect stay out of the initial bundle.
+- **Instant new tabs, even offline** (`public/sw.js`, `src/lib/offline.ts`):
+  - The service worker keeps the last render of your home page plus the hashed `/assets/`. Launches (the extension opens `/?launch=newtab`, the installed app opens `/?launch=app`) are answered from that copy with no network wait. The page then refetches anything older than 30 seconds, and the copy refreshes in the background, including whenever you leave a tab.
+  - Ordinary visits to `/` (such as sign-in redirects) go network-first, with the copy only as an offline fallback.
+  - The server marks each home render with `x-tabz-offline` (`1` to save, `keep` while the vault is unlocked so it's never saved, `clear` when signed out) and `x-tabz-viewer` (an account hash). A copy from another account is replaced and the page reloads. Signing out deletes the copy.
+- The search box is focused by an inline script as soon as it's parsed, on devices with a mouse or trackpad, and text typed before the app loads is kept. The extension opens tabz as a regular tab (not a new-tab-page redirect), so the browser gives the cursor to the page instead of the address bar. This can be turned off in the extension's options.
 
 ## Deploy (Railway)
 

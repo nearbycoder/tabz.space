@@ -6,8 +6,9 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Toaster } from "sonner";
+import { startOffline } from "#/lib/offline";
 import { splashLinks } from "#/lib/splash";
 import { readThemePreference, themeInitScript } from "#/lib/theme";
 import appCss from "../styles.css?url";
@@ -70,6 +71,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootDocument({ children }: { children: ReactNode }) {
 	const { theme } = Route.useRouteContext();
+	useEffect(() => startOffline(), []);
 	return (
 		<html
 			lang="en"

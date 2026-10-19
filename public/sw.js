@@ -1,0 +1,149 @@
+/*
+ * tabz service worker: makes new tabs open instantly, even offline.
+ *
+ * - Launches (the extension's new tab and the installed app open "/?launch=…")
+ *   are answered straight from the last saved copy of your home page, then
+ *   refreshed in the background. The page refetches anything stale itself.
+ * - Every other visit to "/" goes to the network first (sign-in redirects
+ *   never see an old page) and falls back to the saved copy when offline.
+ * - Built files under /assets/ are content-hashed, so they're kept and served
+ *   from here; an old saved page can always find the code it was built with.
+ *
+ * The server says what may be saved (x-tabz-offline): "1" save, "keep" leave
+ * the current copy alone (the vault is unlocked, so this render shows it),
+ * "clear" forget it (signed out). x-tabz-viewer identifies the account, so a
+ * copy from someone else is replaced and the page reloads.
+ */
+
+const PAGES = "tabz-pages-v1";
+const ASSETS = "tabz-assets-v1";
+const MAX_ASSETS = 400;
+const HOME = "/";
+const REFRESH_EVERY = 30_000;
+let lastRefresh = 0;
+
+self.addEventListener("install", () => self.skipWaiting());
+
+self.addEventListener("activate", (event) => {
+	event.waitUntil(
+		(async () => {
+			for (const key of await caches.keys())
+				if (key !== PAGES && key !== ASSETS) await caches.delete(key);
+			await self.clients.claim();
+		})(),
+	);
+});
+
+/** Saves a fresh render of the home page; returns true if the account changed. */
+async function remember(response, previous) {
+	const mode = response.headers.get("x-tabz-offline");
+	const cache = await caches.open(PAGES);
+	if (mode === "clear") {
+		await cache.delete(HOME);
+		return Boolean(previous);
+	}
+	const changed =
+		Boolean(previous) &&
+		previous.headers.get("x-tabz-viewer") !==
+			response.headers.get("x-tabz-viewer");
+	const html = (response.headers.get("content-type") || "").includes("text/html");
+	if (mode === "1" && response.ok && !response.redirected && html)
+		await cache.put(HOME, response);
+	else if (changed) await cache.delete(HOME);
+	return changed;
+}
+
+/*
+ * Pages served from the saved copy ask, once they're running, whether that
+ * copy turned out to be someone else's. (A message pushed earlier could
+ * arrive before the page is listening.) Keyed by the new page's client id.
+ */
+const checks = new Map();
+
+async function home(event) {
+	const url = new URL(event.request.url);
+	const cache = await caches.open(PAGES);
+	const cached = await cache.match(HOME);
+	const launch = url.searchParams.has("launch");
+	const network = fetch(event.request);
+	const update = network
+		.then((response) => remember(response.clone(), cached))
+		.catch(() => false);
+	event.waitUntil(update);
+	if (cached && launch) {
+		const id = event.resultingClientId;
+		if (id) {
+			checks.set(id, update);
+			setTimeout(() => checks.delete(id), 60_000);
+		}
+		return cached;
+	}
+	try {
+		return await network;
+	} catch (error) {
+		if (cached) return cached;
+		throw error;
+	}
+}
+
+async function asset(event) {
+	const cache = await caches.open(ASSETS);
+	const hit = await cache.match(event.request);
+	if (hit) return hit;
+	const response = await fetch(event.request);
+	if (response.ok && response.type === "basic") {
+		const copy = response.clone();
+		event.waitUntil(
+			(async () => {
+				await cache.put(event.request, copy);
+				const keys = await cache.keys();
+				for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS)))
+					await cache.delete(key);
+			})(),
+		);
+	}
+	return response;
+}
+
+self.addEventListener("fetch", (event) => {
+	const { request } = event;
+	if (request.method !== "GET") return;
+	const url = new URL(request.url);
+	if (url.origin !== self.location.origin) return;
+	if (request.mode === "navigate" && url.pathname === HOME)
+		event.respondWith(home(event));
+	else if (url.pathname.startsWith("/assets/")) event.respondWith(asset(event));
+});
+
+/** Pages ask for a refresh when you leave them, so the next new tab is current. */
+async function refresh() {
+	if (Date.now() - lastRefresh < REFRESH_EVERY) return;
+	lastRefresh = Date.now();
+	const cache = await caches.open(PAGES);
+	const previous = await cache.match(HOME);
+	try {
+		const response = await fetch(HOME, {
+			credentials: "same-origin",
+			headers: { accept: "text/html" },
+		});
+		await remember(response, previous);
+	} catch {
+		// Offline: keep the copy we have.
+	}
+}
+
+self.addEventListener("message", (event) => {
+	const type = event.data && event.data.type;
+	if (type === "tabz:refresh") event.waitUntil(refresh());
+	if (type === "tabz:forget") event.waitUntil(caches.delete(PAGES));
+	if (type === "tabz:check" && event.source) {
+		const pending = checks.get(event.source.id);
+		if (pending)
+			event.waitUntil(
+				pending.then((changed) => {
+					checks.delete(event.source.id);
+					if (changed) event.source.postMessage({ type: "tabz:reload" });
+				}),
+			);
+	}
+});

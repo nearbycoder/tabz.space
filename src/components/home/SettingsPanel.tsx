@@ -39,6 +39,7 @@ import {
 	getExtensionStatus,
 	onExtensionStatus,
 } from "#/lib/incognito";
+import { forgetOfflinePage } from "#/lib/offline";
 import {
 	ACCENTS,
 	BACKGROUNDS,
@@ -922,6 +923,7 @@ export function SettingsPanel({
 								className="btn-outline"
 								onClick={async () => {
 									await authClient.signOut();
+									await forgetOfflinePage();
 									window.location.assign("/");
 								}}
 							>

@@ -1,5 +1,5 @@
 import { ArrowUpRight, Globe, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
@@ -28,12 +28,35 @@ const score = (bookmark: LinkItem, terms: string[]) => {
 	);
 };
 
+/*
+ * Runs as soon as the server-rendered input is parsed, before the app loads,
+ * so you can type the moment a new tab appears. Only with a mouse/trackpad:
+ * on phones it would pop the keyboard over the page.
+ */
+const FOCUS_NOW = `(function(){var i=document.getElementById("tabz-search"),a=document.activeElement;if(i&&matchMedia("(pointer: fine)").matches&&(!a||a===document.body))i.focus({preventScroll:true})})()`;
+
 export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 	const { openLink } = useHomeContext();
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
 	const [focused, setFocused] = useState(false);
 	const input = useRef<HTMLInputElement>(null);
+
+	// Keep anything typed before the app finished loading.
+	useLayoutEffect(() => {
+		const early = input.current?.value;
+		if (early) setQuery(early);
+	}, []);
+
+	// Client-side visits (no server render) focus here instead.
+	useEffect(() => {
+		const active = document.activeElement;
+		if (
+			matchMedia("(pointer: fine)").matches &&
+			(!active || active === document.body)
+		)
+			input.current?.focus({ preventScroll: true });
+	}, []);
 
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
@@ -111,6 +134,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 				<Search className="size-5 shrink-0 text-muted" />
 				<input
 					ref={input}
+					id="tabz-search"
 					value={query}
 					onChange={(event) => setQuery(event.target.value)}
 					onFocus={() => setFocused(true)}
@@ -134,6 +158,10 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 					aria-label="Search"
 					autoComplete="off"
 					spellCheck={false}
+				/>
+				<script
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: static first-party focus bootstrap
+					dangerouslySetInnerHTML={{ __html: FOCUS_NOW }}
 				/>
 				<kbd className="hidden rounded-md border border-line px-1.5 py-0.5 font-mono text-xs text-muted sm:block">
 					/

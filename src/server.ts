@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
 import {
 	createServerEntry,
 	createStartHandler,
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
+import { auth } from "#/lib/auth";
+import {
+	cookieValue,
+	readVaultToken,
+	VAULT_COOKIE,
+} from "#/server/vault-token";
 
 /*
  * Custom server entry: the default TanStack Start handler, plus security
@@ -55,6 +62,30 @@ function secure(request: Request, response: Response) {
 	});
 }
 
+/*
+ * Tells the service worker (public/sw.js) whether this render of the home page
+ * may be kept for instant new tabs: never while the vault is unlocked (the
+ * page would show it), and forgotten once signed out. The viewer hash lets it
+ * notice a different account.
+ */
+async function offlineHeaders(request: Request) {
+	const session = await auth.api
+		.getSession({ headers: request.headers })
+		.catch(() => null);
+	if (!session) return { "x-tabz-offline": "clear", "x-tabz-viewer": "" };
+	const vault = await readVaultToken(
+		cookieValue(request.headers, VAULT_COOKIE),
+		session.user.id,
+	);
+	return {
+		"x-tabz-offline": vault ? "keep" : "1",
+		"x-tabz-viewer": createHash("sha256")
+			.update(session.user.id)
+			.digest("hex")
+			.slice(0, 16),
+	};
+}
+
 function compress(request: Request, response: Response) {
 	if (
 		!response.body ||
@@ -79,7 +110,16 @@ function compress(request: Request, response: Response) {
 
 export default createServerEntry({
 	async fetch(request, ...rest) {
-		const response = await handler(request, ...rest);
-		return compress(request, secure(request, response));
+		const home =
+			request.method === "GET" && new URL(request.url).pathname === "/";
+		const [response, offline] = await Promise.all([
+			handler(request, ...rest),
+			home ? offlineHeaders(request) : null,
+		]);
+		const secured = secure(request, response);
+		if (offline && secured.headers.get("content-type")?.includes("text/html"))
+			for (const [name, value] of Object.entries(offline))
+				secured.headers.set(name, value);
+		return compress(request, secured);
 	},
 });

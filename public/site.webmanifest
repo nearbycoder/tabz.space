@@ -2,7 +2,7 @@
 	"name": "Tabz",
 	"short_name": "Tabz",
 	"description": "Your home on the web: bookmarks, boards and quick search.",
-	"start_url": "/",
+	"start_url": "/?launch=app",
 	"scope": "/",
 	"display": "standalone",
 	"background_color": "#0b0c10",

@@ -11,11 +11,13 @@ const flash = (text) => {
 const stored = await chrome.storage.sync.get([
 	"baseUrl",
 	"newTab",
+	"focusPage",
 	"syncBookmarks",
 ]);
 const local = await chrome.storage.local.get(["lastSync", "lastSyncCount"]);
 $("baseUrl").value = stored.baseUrl || DEFAULT_BASE_URL;
 $("newTab").checked = stored.newTab ?? true;
+$("focusPage").checked = stored.focusPage ?? true;
 $("syncBookmarks").checked = stored.syncBookmarks ?? false;
 $("connection").textContent = (await getToken())
 	? "Connected to your tabz account."
@@ -34,6 +36,7 @@ $("save").addEventListener("click", async () => {
 	await chrome.storage.sync.set({
 		baseUrl: $("baseUrl").value.trim(),
 		newTab: $("newTab").checked,
+		focusPage: $("focusPage").checked,
 		syncBookmarks: $("syncBookmarks").checked,
 	});
 	flash("Saved");
