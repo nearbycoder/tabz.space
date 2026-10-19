@@ -67,7 +67,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 				} as React.CSSProperties
 			}
 			className={cn(
-				"glass group/card rounded-3xl p-4 shadow-sm lg:[grid-column:span_var(--span)/span_var(--span)]",
+				"glass group/card min-w-0 rounded-3xl p-4 shadow-sm lg:[grid-column:span_var(--span)/span_var(--span)]",
 				sortable.isDragging && "z-10 opacity-60 shadow-2xl",
 			)}
 		>

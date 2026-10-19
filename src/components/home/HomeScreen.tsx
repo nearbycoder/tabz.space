@@ -325,7 +325,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			<div className="relative min-h-dvh">
 				<Backdrop background={settings.background} />
 
-				<header className="sticky top-0 z-30">
+				<header className="sticky top-0 z-30 bg-[color-mix(in_srgb,var(--canvas)_60%,transparent)] pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:bg-transparent sm:backdrop-blur-none">
 					<div
 						className={cn(
 							"mx-auto flex items-center gap-2 px-4 py-3 sm:px-6",

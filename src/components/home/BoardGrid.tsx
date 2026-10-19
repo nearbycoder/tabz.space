@@ -289,7 +289,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 				strategy={rectSortingStrategy}
 			>
 				<div
-					className="grid items-start gap-4 sm:[grid-template-columns:repeat(var(--cols-sm),minmax(0,1fr))] lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
+					className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:[grid-template-columns:repeat(var(--cols-sm),minmax(0,1fr))] lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
 					style={
 						{
 							"--cols": columns,
