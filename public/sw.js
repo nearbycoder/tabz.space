@@ -17,7 +17,9 @@
 
 const PAGES = "tabz-pages-v1";
 const ASSETS = "tabz-assets-v1";
+const ICONS = "tabz-icons-v1";
 const MAX_ASSETS = 400;
+const MAX_ICONS = 800;
 const HOME = "/";
 const REFRESH_EVERY = 30_000;
 let lastRefresh = 0;
@@ -28,7 +30,8 @@ self.addEventListener("activate", (event) => {
 	event.waitUntil(
 		(async () => {
 			for (const key of await caches.keys())
-				if (key !== PAGES && key !== ASSETS) await caches.delete(key);
+				if (key !== PAGES && key !== ASSETS && key !== ICONS)
+					await caches.delete(key);
 			await self.clients.claim();
 		})(),
 	);
@@ -86,8 +89,9 @@ async function home(event) {
 	}
 }
 
-async function asset(event) {
-	const cache = await caches.open(ASSETS);
+/** Cache-first with a size cap: built files and site icons. */
+async function cached(event, name = ASSETS, max = MAX_ASSETS) {
+	const cache = await caches.open(name);
 	const hit = await cache.match(event.request);
 	if (hit) return hit;
 	const response = await fetch(event.request);
@@ -97,7 +101,7 @@ async function asset(event) {
 			(async () => {
 				await cache.put(event.request, copy);
 				const keys = await cache.keys();
-				for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS)))
+				for (const key of keys.slice(0, Math.max(0, keys.length - max)))
 					await cache.delete(key);
 			})(),
 		);
@@ -112,7 +116,10 @@ self.addEventListener("fetch", (event) => {
 	if (url.origin !== self.location.origin) return;
 	if (request.mode === "navigate" && url.pathname === HOME)
 		event.respondWith(home(event));
-	else if (url.pathname.startsWith("/assets/")) event.respondWith(asset(event));
+	else if (url.pathname.startsWith("/assets/")) event.respondWith(cached(event));
+	// Site icons, so tiles keep their icons on an offline new tab.
+	else if (url.pathname === "/api/icon")
+		event.respondWith(cached(event, ICONS, MAX_ICONS));
 });
 
 /** Pages ask for a refresh when you leave them, so the next new tab is current. */

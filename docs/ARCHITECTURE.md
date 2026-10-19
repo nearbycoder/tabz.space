@@ -132,8 +132,17 @@ Customize → Connect has personal API tokens and outgoing webhooks.
 - Public links (`/b/<slug>`, 64-bit random) show regular groups only: no smart groups, widgets, incognito items or vault boards. They're served with `noindex`, and `Referrer-Policy` keeps the path from leaking to linked sites. Only the owner sees or changes a board's public link.
 - While the vault is locked, nothing about it is returned: not in boards, search, trash, history, undo, webhooks, REST or MCP.
 - Vault unlocks: 5 attempts, then a doubling cool-down up to an hour. It's stored in the database and claimed atomically, so restarts and parallel requests can't get around it.
-- Server-side fetches (previews, feeds, calendars, link checks, webhooks) can only reach public addresses. The connection is pinned to the checked IP, so DNS rebinding doesn't work.
+- Server-side fetches (previews, feeds, calendars, link checks, webhooks, site icons) can only reach public addresses. The connection is pinned to the checked IP, so DNS rebinding doesn't work.
 - Responses carry `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, HSTS, and `Cache-Control: private` for pages and data.
+
+## Site icons
+
+`GET /api/icon?url=<origin>` (`src/server/favicons.ts`) finds a site's icon and serves it from tabz:
+- **Order:** touch icons first (declared by the home page, then `/apple-touch-icon.png`), since they're opaque and read on any theme. Then the icon seen when the link was saved, the page's other icons, `/favicon.ico`, and finally Google's and DuckDuckGo's icon services (which answer 404 for unknown sites instead of a generic globe).
+- **Checks:** bytes are sniffed, so HTML error pages and placeholders are rejected.
+- **Caching:** results are cached per host (a week when found, 12 hours when missing). Browsers and the service worker cache them too.
+- **Why serve them from tabz:** this gets around sites that forbid embedding their icons or only serve them over http, and Google no longer sees which sites you've saved.
+- **Vault:** end-to-end encrypted vault links never use it, so the server doesn't learn their sites.
 
 ## Performance
 

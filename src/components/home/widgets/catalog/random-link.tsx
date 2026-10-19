@@ -23,6 +23,7 @@ export default function RandomLink(_: WidgetProps<object>) {
 					url={link.url}
 					icon={link.icon}
 					favicon={link.meta.favicon}
+					sealed={Boolean(link.meta.sealed)}
 					title={link.title}
 					color={link.color}
 					className="size-10 shrink-0 rounded-lg"

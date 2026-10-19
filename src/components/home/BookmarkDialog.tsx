@@ -273,6 +273,7 @@ export function BookmarkForm({
 							url={normalizeUrl(url) ?? url}
 							icon={icon}
 							favicon={favicon}
+							sealed={sealedTarget}
 							title={title}
 							color={color}
 							className="size-7 text-2xl"

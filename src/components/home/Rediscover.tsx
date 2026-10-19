@@ -110,6 +110,7 @@ export function Rediscover() {
 								url={link.url}
 								icon={link.icon}
 								favicon={link.meta.favicon}
+								sealed={Boolean(link.meta.sealed)}
 								title={link.title}
 								className="size-8 shrink-0 rounded-lg text-xl"
 							/>

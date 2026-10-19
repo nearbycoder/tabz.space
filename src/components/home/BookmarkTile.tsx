@@ -152,6 +152,7 @@ function FolderMosaic({
 							url={child.url}
 							icon={child.icon}
 							favicon={child.meta.favicon}
+							sealed={Boolean(child.meta.sealed)}
 							title={child.title}
 							className="size-[70%] text-[0.7em]"
 						/>
@@ -231,6 +232,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			url={item.url}
 			icon={item.icon}
 			favicon={item.meta.favicon}
+			sealed={Boolean(item.meta.sealed)}
 			title={item.title}
 			color={item.color}
 			className={cn("shrink-0 rounded-md", iconSize[style][size])}
@@ -330,6 +332,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 									url={item.url}
 									icon={item.icon}
 									favicon={item.meta.favicon}
+									sealed={Boolean(item.meta.sealed)}
 									title={item.title}
 									color={item.color}
 									className="size-12 rounded-xl text-4xl"

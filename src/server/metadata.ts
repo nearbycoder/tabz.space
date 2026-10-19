@@ -169,6 +169,49 @@ const follow = (
 		});
 	});
 
+/** The whole body as bytes, or null if it's bigger than `max`. */
+const readBytes = async (response: Response, max: number) => {
+	const reader = response.body?.getReader();
+	if (!reader) return null;
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > max) {
+			await reader.cancel().catch(() => {});
+			return null;
+		}
+		chunks.push(value);
+	}
+	return new Uint8Array(Buffer.concat(chunks));
+};
+
+/** A small binary file (an icon), with the same private-network protection. */
+export const fetchBytes = (start: URL, accept: string, max = 256 * 1024) =>
+	Effect.gen(function* () {
+		const { url, response } = yield* follow(start, accept);
+		if (!response.ok) {
+			response.body?.cancel().catch(() => {});
+			return yield* new FetchError({
+				url: url.toString(),
+				reason: `HTTP ${response.status}`,
+			});
+		}
+		const body = yield* Effect.tryPromise({
+			try: () => readBytes(response, max),
+			catch: (error) =>
+				new FetchError({ url: url.toString(), reason: String(error) }),
+		});
+		if (!body)
+			return yield* new FetchError({
+				url: url.toString(),
+				reason: "too large",
+			});
+		return { url, body };
+	});
+
 export const fetchText = (start: URL, accept: string, accepts: RegExp) =>
 	Effect.gen(function* () {
 		const { url, response } = yield* follow(start, accept);
@@ -216,22 +259,50 @@ const metaContent = (html: string, key: string) => {
 	return undefined;
 };
 
-const iconHref = (html: string) => {
-	const links = html.match(/<link\b[^>]*>/gi) ?? [];
-	const ranked = links
-		.map((tag) => ({
-			rel: tag.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "",
-			href: tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1],
-		}))
-		.filter((link) => link.href && link.rel.includes("icon"));
-	return (
-		ranked.find((link) => link.rel.includes("apple-touch-icon")) ??
-		ranked.find(
-			(link) => link.rel === "icon" || link.rel === "shortcut icon",
-		) ??
-		ranked[0]
-	)?.href;
+/** Attributes of one HTML tag, quoted or not: <link rel=icon href="/a.png">. */
+const attributesOf = (tag: string) => {
+	const attributes: Record<string, string> = {};
+	for (const match of tag.matchAll(
+		/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g,
+	))
+		attributes[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? "";
+	return attributes;
 };
+
+/**
+ * The page's icons, best first: touch icons, then SVGs and big PNGs, then
+ * 16px .ico files. Safari's monochrome mask-icon is skipped.
+ */
+export const iconCandidates = (html: string) => {
+	const ranked: { href: string; score: number; touch: boolean }[] = [];
+	for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+		const { rel = "", href, sizes = "", type = "" } = attributesOf(tag);
+		const kind = rel.toLowerCase();
+		if (!href || !kind.includes("icon") || kind.includes("mask-icon")) continue;
+		const size = Math.max(
+			0,
+			...sizes
+				.split(/\s+/)
+				.map((value) => Number.parseInt(value.split(/x/i)[0], 10) || 0),
+		);
+		const svg = type.includes("svg") || /\.svg(\?|$)/i.test(href);
+		// Touch icons first: they're opaque, so they read on light and dark
+		// themes (SVG favicons are often black shapes meant for a light tab bar).
+		const score =
+			(kind.includes("apple-touch-icon") ? 1000 : 0) +
+			(svg ? 256 : size || (/\.ico(\?|$)/i.test(href) ? 16 : 32));
+		ranked.push({
+			href: decode(href),
+			score,
+			touch: kind.includes("apple-touch-icon"),
+		});
+	}
+	return ranked
+		.sort((a, b) => b.score - a.score)
+		.map(({ href, touch }) => ({ href, touch }));
+};
+
+const iconHref = (html: string) => iconCandidates(html)[0]?.href;
 
 const feedHref = (html: string) => {
 	const links = html.match(/<link\b[^>]*>/gi) ?? [];

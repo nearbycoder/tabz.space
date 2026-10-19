@@ -337,6 +337,7 @@ export function CommandPalette({
 												url={bookmark.url}
 												icon={bookmark.icon}
 												favicon={bookmark.meta.favicon}
+												sealed={Boolean(bookmark.meta.sealed)}
 												title={bookmark.title}
 												className="size-4 rounded text-sm"
 											/>
@@ -369,6 +370,7 @@ export function CommandPalette({
 												url={bookmark.url}
 												icon={bookmark.icon}
 												favicon={bookmark.meta.favicon}
+												sealed={Boolean(bookmark.meta.sealed)}
 												title={bookmark.title}
 												className="size-4 rounded text-sm"
 											/>

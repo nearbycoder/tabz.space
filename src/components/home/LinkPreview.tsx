@@ -106,6 +106,7 @@ export function LinkPreview({
 									url={bookmark.url}
 									icon={bookmark.icon}
 									favicon={bookmark.meta.favicon}
+									sealed={Boolean(bookmark.meta.sealed)}
 									title={bookmark.title}
 									className="size-4 rounded text-sm"
 								/>

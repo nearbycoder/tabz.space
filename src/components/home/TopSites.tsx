@@ -31,6 +31,7 @@ export function TopSites({ links }: { links: LinkItem[] }) {
 							url={link.url}
 							icon={link.icon}
 							favicon={link.meta.favicon}
+							sealed={Boolean(link.meta.sealed)}
 							title={link.title}
 							className="size-4 rounded-sm text-sm"
 						/>

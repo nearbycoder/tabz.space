@@ -192,6 +192,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 											url={result.bookmark.url}
 											icon={result.bookmark.icon}
 											favicon={result.bookmark.meta.favicon}
+											sealed={Boolean(result.bookmark.meta.sealed)}
 											title={result.bookmark.title}
 											className="size-5 rounded text-base"
 										/>

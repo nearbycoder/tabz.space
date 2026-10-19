@@ -320,7 +320,7 @@ function GroupName({
 				}}
 				maxLength={60}
 				aria-label="Group name"
-				className="-mx-1 min-w-0 flex-1 rounded-md bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-1 text-sm font-semibold outline-none ring-2 ring-[color-mix(in_srgb,var(--accent)_50%,transparent)]"
+				className="min-w-0 flex-1 rounded-md bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-1 text-sm font-semibold outline-none ring-2 ring-[color-mix(in_srgb,var(--accent)_50%,transparent)]"
 			/>
 		);
 	return (
@@ -330,7 +330,7 @@ function GroupName({
 					type="button"
 					title="Rename"
 					onClick={() => setDraft(group.name)}
-					className="-mx-1 max-w-full cursor-text truncate rounded-md px-1 text-left transition hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]"
+					className="max-w-full cursor-text truncate rounded-md px-1 text-left transition hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]"
 				>
 					{group.name}
 				</button>
