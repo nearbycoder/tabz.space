@@ -164,3 +164,19 @@ export const emptyTrash = createServerFn({ method: "POST" }).handler(() =>
 export const listDuplicates = createServerFn().handler(() =>
 	runAuthed((user) => library.listDuplicates(user.id)),
 );
+
+export const searchContent = createServerFn()
+	.validator(library.searchInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.searchContent(user.id, data)),
+	);
+
+export const listLinkHealth = createServerFn().handler(() =>
+	runAuthed((user) => library.listLinkHealth(user.id)),
+);
+
+export const checkLinks = createServerFn({ method: "POST" })
+	.validator(library.checkLinksInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.checkLinks(user.id, data)),
+	);

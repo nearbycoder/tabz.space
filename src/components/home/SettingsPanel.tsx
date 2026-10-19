@@ -6,6 +6,7 @@ import {
 	Download,
 	GalleryHorizontalEnd,
 	Grid2x2,
+	HeartPulse,
 	History,
 	Home,
 	LayoutList,
@@ -727,6 +728,11 @@ export function SettingsPanel({
 							onChange={(linkPreviews) => set({ linkPreviews })}
 						/>
 						<Toggle
+							label="Badges for new posts on sites with a feed"
+							checked={settings.feedBadges}
+							onChange={(feedBadges) => set({ feedBadges })}
+						/>
+						<Toggle
 							label="3D tilt on hover"
 							checked={settings.tilt}
 							onChange={(tilt) => set({ tilt })}
@@ -816,6 +822,13 @@ export function SettingsPanel({
 								onClick={() => openDialog({ type: "duplicates" })}
 							>
 								<Copy className="size-4" /> Duplicates
+							</button>
+							<button
+								type="button"
+								className="btn-outline"
+								onClick={() => openDialog({ type: "link-health" })}
+							>
+								<HeartPulse className="size-4" /> Broken links
 							</button>
 							<button
 								type="button"

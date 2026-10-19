@@ -52,7 +52,9 @@ import {
 	normalizeUrl,
 	titleFromUrl,
 } from "#/lib/url";
+import { searchText } from "./content";
 import { fetchPageMetadata } from "./metadata";
+import { afterFetch, checkLinksNow } from "./monitors";
 import { query } from "./runtime";
 import { STARTER_BOARD, type StarterItem } from "./seed";
 import { VaultAccess } from "./vault-access";
@@ -139,7 +141,7 @@ const accessBoard = (
 const accessGroup = (
 	userId: string,
 	groupId: string,
-	options: { write?: boolean; includeDeleted?: boolean } = {},
+	options: { write?: boolean; includeDeleted?: boolean; links?: boolean } = {},
 ) =>
 	Effect.gen(function* () {
 		const group = yield* query((db) =>
@@ -147,6 +149,11 @@ const accessGroup = (
 		).pipe(Effect.flatMap((row) => owned("Group", row)));
 		if (group.deletedAt && !options.includeDeleted)
 			return yield* new NotFound({ entity: "Group" });
+		// Smart groups fill themselves; links can't be put in them.
+		if (options.links && group.kind !== "links")
+			return yield* new InvalidInput({
+				message: "Smart groups fill themselves. Pick a regular group.",
+			});
 		const { board } = yield* accessBoard(userId, group.boardId, options);
 		return { group, board };
 	});
@@ -881,7 +888,7 @@ export const createBookmark = (
 	Effect.gen(function* () {
 		const target = data.parentId
 			? yield* accessFolder(userId, data.parentId)
-			: yield* accessGroup(userId, data.groupId, { write: true });
+			: yield* accessGroup(userId, data.groupId, { write: true, links: true });
 		// A folder's contents live in the folder's group.
 		const groupId = target.group.id;
 		const url = yield* requireUrl(data.url);
@@ -916,6 +923,21 @@ export const createBookmark = (
 		yield* record(userId, "create", `Added ${quote(bookmark.title)}`, [
 			created("bookmarks", bookmark.id),
 		]);
+		// Index the page text and load its feed in the background.
+		yield* Effect.forkDetach(
+			(fetched ? Effect.succeed(fetched) : fetchPageMetadata(url)).pipe(
+				Effect.flatMap((page) =>
+					afterFetch(
+						{
+							id: bookmark.id,
+							title: bookmark.title,
+							vault: target.board.vault,
+						},
+						page,
+					),
+				),
+			),
+		);
 		return bookmark;
 	});
 
@@ -937,6 +959,7 @@ export const bulkCreateBookmarks = (
 	Effect.gen(function* () {
 		const { group, board } = yield* accessGroup(userId, data.groupId, {
 			write: true,
+			links: true,
 		});
 		const existing =
 			data.skipDuplicates === false
@@ -999,6 +1022,17 @@ export const bulkCreateBookmarks = (
 										updatedAt: sql`${bookmarks.updatedAt}`,
 									})
 									.where(eq(bookmarks.id, row.id)),
+							).pipe(
+								Effect.andThen(
+									afterFetch(
+										{
+											id: row.id,
+											title: meta.title ?? titleFromUrl(row.url),
+											vault: board.vault,
+										},
+										meta,
+									),
+								),
 							),
 						),
 						Effect.ignore,
@@ -1026,6 +1060,7 @@ export const createFolder = (
 	Effect.gen(function* () {
 		const { group, board } = yield* accessGroup(userId, data.groupId, {
 			write: true,
+			links: true,
 		});
 		const position = yield* nextSlot(group.id, null);
 		const [folder] = yield* query((db) =>
@@ -1087,7 +1122,10 @@ export const updateBookmark = (
 				groupId = (yield* accessFolder(userId, parentId)).bookmark.groupId;
 		}
 		if (data.groupId && data.groupId !== groupId && !parentId) {
-			const target = yield* accessGroup(userId, data.groupId, { write: true });
+			const target = yield* accessGroup(userId, data.groupId, {
+				write: true,
+				links: true,
+			});
 			if (target.board.userId !== board.userId)
 				return yield* new InvalidInput({
 					message: "Links can only move between boards with the same owner",
@@ -1225,7 +1263,8 @@ export const arrangeBookmarks = (
 		const owners = new Set<string>();
 		for (const groupId of new Set(data.groups.map((group) => group.groupId)))
 			owners.add(
-				(yield* accessGroup(userId, groupId, { write: true })).board.userId,
+				(yield* accessGroup(userId, groupId, { write: true, links: true }))
+					.board.userId,
 			);
 		if (owners.size > 1)
 			return yield* new InvalidInput({
@@ -1309,9 +1348,15 @@ export const arrangeFolder = (
 /** Re-fetches a link's title/description/preview image, e.g. for the hover preview. */
 export const refreshPreview = (userId: string, data: z.infer<typeof idInput>) =>
 	Effect.gen(function* () {
-		const { bookmark } = yield* accessBookmark(userId, data.id);
+		const { bookmark, board } = yield* accessBookmark(userId, data.id);
 		if (bookmark.kind === "folder") return bookmark;
 		const meta = yield* fetchPageMetadata(bookmark.url);
+		yield* Effect.forkDetach(
+			afterFetch(
+				{ id: bookmark.id, title: bookmark.title, vault: board.vault },
+				meta,
+			),
+		);
 		const [updated] = yield* query((db) =>
 			db
 				.update(bookmarks)
@@ -1439,36 +1484,54 @@ export const searchInput = z.object({
 	limit: z.number().int().min(1).max(100).optional(),
 });
 
-/** Case-insensitive match on title, URL, description and tags, most-visited first. */
+type LinkEntry = {
+	bookmark: Bookmark;
+	board: string;
+	group: string;
+	folder: string | null;
+	/** Matching passage from the page text, when found by full-text search. */
+	snippet?: string;
+};
+
+type Home = Effect.Success<ReturnType<typeof loadHome>>;
+
+/** Every link on the given boards (default: all the caller can see), with where it lives. */
+const visibleLinks = (home: Home, boardList: Home["boards"] = home.boards) =>
+	boardList.flatMap((board) =>
+		board.groups.flatMap((group) =>
+			group.bookmarks.flatMap((item): LinkEntry[] =>
+				item.kind === "folder"
+					? item.children.map((bookmark) => ({
+							bookmark,
+							board: board.name,
+							group: group.name,
+							folder: item.title,
+						}))
+					: [
+							{
+								bookmark: item as Bookmark,
+								board: board.name,
+								group: group.name,
+								folder: null,
+							},
+						],
+			),
+		),
+	);
+
+/**
+ * Case-insensitive match on title, URL, description and tags (most-visited
+ * first), followed by matches inside the saved pages' text.
+ */
 export const searchBookmarks = (
 	userId: string,
 	data: z.infer<typeof searchInput>,
 ) =>
 	Effect.gen(function* () {
-		const home = yield* loadHome(userId);
+		const limit = data.limit ?? 25;
+		const links = visibleLinks(yield* loadHome(userId));
 		const terms = data.query.toLowerCase().split(/\s+/);
-		return home.boards
-			.flatMap((board) =>
-				board.groups.flatMap((group) =>
-					group.bookmarks.flatMap((item) =>
-						item.kind === "folder"
-							? item.children.map((bookmark) => ({
-									bookmark,
-									board: board.name,
-									group: group.name,
-									folder: item.title as string | null,
-								}))
-							: [
-									{
-										bookmark: item as Bookmark,
-										board: board.name,
-										group: group.name,
-										folder: null,
-									},
-								],
-					),
-				),
-			)
+		const direct = links
 			.filter(({ bookmark }) => {
 				const haystack = [
 					bookmark.title,
@@ -1481,7 +1544,98 @@ export const searchBookmarks = (
 				return terms.every((term) => haystack.includes(term));
 			})
 			.sort((a, b) => b.bookmark.visitCount - a.bookmark.visitCount)
-			.slice(0, data.limit ?? 25);
+			.slice(0, limit);
+		if (direct.length >= limit) return direct;
+		const found = new Set(direct.map((entry) => entry.bookmark.id));
+		const byId = new Map(links.map((entry) => [entry.bookmark.id, entry]));
+		const hits = yield* searchText(
+			data.query,
+			new Set([...byId.keys()].filter((id) => !found.has(id))),
+			limit - direct.length,
+		);
+		return [
+			...direct,
+			...hits.flatMap((hit) => {
+				const entry = byId.get(hit.id);
+				return entry ? [{ ...entry, snippet: hit.snippet }] : [];
+			}),
+		];
+	});
+
+/** Page-text matches only, for the ⌘K palette (title matches happen client-side). */
+export const searchContent = (
+	userId: string,
+	data: z.infer<typeof searchInput>,
+) =>
+	Effect.gen(function* () {
+		const links = visibleLinks(yield* loadHome(userId));
+		return yield* searchText(
+			data.query,
+			new Set(links.map((entry) => entry.bookmark.id)),
+			data.limit ?? 12,
+		);
+	});
+
+/** Links whose last check found them broken or moved. */
+export const listLinkHealth = (userId: string) =>
+	loadHome(userId).pipe(
+		Effect.map((home) => {
+			const links = visibleLinks(
+				home,
+				home.boards.filter((board) => !board.vault),
+			);
+			return {
+				checked: links.filter((entry) => entry.bookmark.meta.health).length,
+				total: links.length,
+				problems: links.flatMap(({ bookmark, board, group, folder }) => {
+					const health = bookmark.meta.health;
+					return health && health.status !== "ok"
+						? [
+								{
+									id: bookmark.id,
+									title: bookmark.title,
+									url: bookmark.url,
+									groupId: bookmark.groupId,
+									path: [board, group, folder].filter(Boolean).join(" / "),
+									health,
+								},
+							]
+						: [];
+				}),
+			};
+		}),
+	);
+
+export const checkLinksInput = z.object({
+	ids: z.array(idSchema).max(200).optional(),
+});
+
+/** Checks the given links (or the 150 least recently checked) right now. */
+export const checkLinks = (
+	userId: string,
+	data: z.infer<typeof checkLinksInput>,
+) =>
+	Effect.gen(function* () {
+		const home = yield* loadHome(userId);
+		const wanted = data.ids ? new Set(data.ids) : null;
+		const links = visibleLinks(
+			home,
+			home.boards.filter((board) => !board.vault),
+		)
+			.map((entry) => entry.bookmark)
+			.filter((bookmark) => !wanted || wanted.has(bookmark.id))
+			.sort(
+				(a, b) =>
+					(a.meta.health?.checkedAt ?? 0) - (b.meta.health?.checkedAt ?? 0),
+			)
+			.slice(0, 150);
+		const results = yield* checkLinksNow(links);
+		return {
+			checked: results.length,
+			broken: results.filter((r) => r.health.status === "broken").length,
+			redirected: results.filter((r) => r.health.status === "redirected")
+				.length,
+		};
 	});
 
 /** Groups of bookmarks that point at the same page. */

@@ -284,11 +284,13 @@ export function BookmarkForm({
 								key={board.id}
 								label={`${board.icon ?? ""} ${board.name}`.trim()}
 							>
-								{board.groups.map((group) => (
-									<option key={group.id} value={group.id}>
-										{group.name}
-									</option>
-								))}
+								{board.groups
+									.filter((group) => group.kind === "links")
+									.map((group) => (
+										<option key={group.id} value={group.id}>
+											{group.name}
+										</option>
+									))}
 							</optgroup>
 						))}
 					</select>

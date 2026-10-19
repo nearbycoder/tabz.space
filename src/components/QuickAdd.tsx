@@ -4,6 +4,7 @@ import { BookmarkForm } from "#/components/home/BookmarkDialog";
 import { applyAppearance } from "#/lib/appearance";
 import { useHome } from "#/lib/home-query";
 import { applyTheme } from "#/lib/theme";
+import { isLinksGroup } from "./home/types";
 import { Logo } from "./Logo";
 
 /** Compact add-bookmark page used by the extension popup and bookmarklet. */
@@ -38,7 +39,8 @@ export function QuickAdd({
 	});
 
 	const groupId =
-		board?.groups[0]?.id ?? boards.flatMap((b) => b.groups)[0]?.id;
+		board?.groups.find(isLinksGroup)?.id ??
+		boards.flatMap((b) => b.groups).find(isLinksGroup)?.id;
 
 	return (
 		<main className="mx-auto max-w-md px-5 py-6">

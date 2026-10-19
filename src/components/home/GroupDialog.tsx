@@ -1,9 +1,16 @@
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ColorSwatches, Field, Segmented } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { useHomeAction } from "#/lib/home-query";
-import { ACCENTS, type TileStyle } from "#/lib/preferences";
+import {
+	ACCENTS,
+	DEFAULT_SMART_RULES,
+	SMART_SORTS,
+	type SmartRules,
+	type SmartSort,
+	type TileStyle,
+} from "#/lib/preferences";
 import { createGroup, deleteGroup, updateGroup } from "#/server/home";
 import type { HomeBoard, HomeGroup } from "./types";
 
@@ -23,6 +30,24 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 	);
 	const [span, setSpan] = useState(group?.options.span ?? 1);
 	const [targetBoard, setTargetBoard] = useState(boardId);
+	const [kind, setKind] = useState<"links" | "smart">(
+		group?.kind === "smart" ? "smart" : "links",
+	);
+	const [rules, setRules] = useState<SmartRules>(
+		group?.options.smart ?? DEFAULT_SMART_RULES,
+	);
+	const [tagText, setTagText] = useState(rules.tags?.join(", ") ?? "");
+	const smartOptions = () => ({
+		smart: {
+			...rules,
+			query: rules.query?.trim() || undefined,
+			tags: tagText
+				.split(",")
+				.map((tag) => tag.trim())
+				.filter(Boolean)
+				.slice(0, 10),
+		},
+	});
 	const [confirming, setConfirming] = useState(false);
 
 	const create = useHomeAction(createGroup, { onSuccess: onClose });
@@ -48,8 +73,14 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 				name,
 				color,
 				boardId: targetBoard,
-				options: { tileStyle: style === "inherit" ? undefined : style, span },
+				options: {
+					tileStyle: style === "inherit" ? undefined : style,
+					span,
+					...(kind === "smart" ? smartOptions() : {}),
+				},
 			});
+		} else if (kind === "smart") {
+			create.mutate({ boardId, name, color, kind, options: smartOptions() });
 		} else {
 			create.mutate({ boardId, name, color });
 		}
@@ -64,6 +95,16 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 					submit();
 				}}
 			>
+				{!group && (
+					<Segmented
+						value={kind}
+						onChange={setKind}
+						options={[
+							{ value: "links", label: "Links" },
+							{ value: "smart", label: "✨ Smart" },
+						]}
+					/>
+				)}
 				<Field label="Name">
 					<input
 						className="field"
@@ -75,6 +116,83 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 						autoFocus
 					/>
 				</Field>
+				{kind === "smart" && (
+					<div className="space-y-3 rounded-2xl border border-line p-3">
+						<p className="flex items-center gap-1.5 text-xs text-muted">
+							<Sparkles className="size-3.5 text-accent" /> Fills itself from
+							all your boards and stays up to date.
+						</p>
+						<Field label="Show">
+							<select
+								className="field"
+								value={rules.sort}
+								onChange={(event) =>
+									setRules({ ...rules, sort: event.target.value as SmartSort })
+								}
+							>
+								{Object.entries(SMART_SORTS).map(([value, label]) => (
+									<option key={value} value={value}>
+										{label}
+									</option>
+								))}
+							</select>
+						</Field>
+						<div className="grid gap-3 sm:grid-cols-2">
+							<Field label="With tags">
+								<input
+									className="field"
+									value={tagText}
+									onChange={(event) => setTagText(event.target.value)}
+									placeholder="Any (comma separated)"
+								/>
+							</Field>
+							<Field label="Containing">
+								<input
+									className="field"
+									value={rules.query ?? ""}
+									onChange={(event) =>
+										setRules({ ...rules, query: event.target.value })
+									}
+									placeholder="Any text"
+									maxLength={100}
+								/>
+							</Field>
+						</div>
+						{boards.length > 1 && (
+							<Field label="From">
+								<select
+									className="field"
+									value={rules.boardId ?? ""}
+									onChange={(event) =>
+										setRules({
+											...rules,
+											boardId: event.target.value || undefined,
+										})
+									}
+								>
+									<option value="">All boards</option>
+									{boards
+										.filter((b) => !b.vault)
+										.map((b) => (
+											<option key={b.id} value={b.id}>
+												{`${b.icon ?? ""} ${b.name}`.trim()}
+											</option>
+										))}
+								</select>
+							</Field>
+						)}
+						<Field label="Up to">
+							<Segmented
+								value={rules.limit}
+								onChange={(limit) => setRules({ ...rules, limit })}
+								options={[6, 12, 24, 48].map((value) => ({
+									value,
+									label: String(value),
+								}))}
+							/>
+						</Field>
+					</div>
+				)}
 				<Field label="Color">
 					<ColorSwatches
 						value={color}
@@ -139,7 +257,9 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 								className="btn bg-red-500 text-white"
 								onClick={() => remove.mutate({ id: group.id })}
 							>
-								Delete {group.bookmarks.length} bookmarks?
+								{group.kind === "smart"
+									? "Delete this group?"
+									: `Delete ${group.bookmarks.length} bookmarks?`}
 							</button>
 						) : (
 							<button

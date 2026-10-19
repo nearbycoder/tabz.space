@@ -208,18 +208,14 @@ export const syncBrowserBookmarks = (
 						})
 						.returning();
 					for (let i = 0; i < rows.length; i += 200) {
-						await tx
-							.insert(bookmarks)
-							.values(
-								rows
-									.slice(i, i + 200)
-									.map((row) => ({
-										...row,
-										userId,
-										groupId: group.id,
-										meta: { favicon: faviconFor(row.url) },
-									})),
-							);
+						await tx.insert(bookmarks).values(
+							rows.slice(i, i + 200).map((row) => ({
+								...row,
+								userId,
+								groupId: group.id,
+								meta: { favicon: faviconFor(row.url) },
+							})),
+						);
 					}
 					total += rows.length;
 				}

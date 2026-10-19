@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
 	Bot,
@@ -7,6 +8,7 @@ import {
 	FolderOpen,
 	FolderPlus,
 	Globe,
+	HeartPulse,
 	History,
 	LayoutGrid,
 	Lock,
@@ -25,14 +27,16 @@ import {
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Favicon } from "#/components/ui/Favicon";
+import { call, run as runEffect } from "#/lib/api";
 import {
 	SEARCH_ENGINES,
 	THEME_PRESETS,
 	type UserSettings,
 } from "#/lib/preferences";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
+import { searchContent } from "#/server/home";
 import { useHomeContext } from "./context";
-import type { HomeBoard, LinkItem } from "./types";
+import { type HomeBoard, isLinksGroup, type LinkItem } from "./types";
 
 type Props = {
 	open: boolean;
@@ -69,6 +73,32 @@ function Row({
 }
 
 /** Every typed word must appear; earlier and word-start matches rank higher. */
+/** A page-text excerpt with the matched words (wrapped in « ») highlighted. */
+function Snippet({ text }: { text: string }) {
+	let offset = 0;
+	const parts = text.split(/(«[^»]*»)/).map((part) => {
+		const at = offset;
+		offset += part.length;
+		return { part, at };
+	});
+	return (
+		<span className="mt-0.5 line-clamp-2 block text-xs whitespace-normal text-muted">
+			{parts.map(({ part, at }) =>
+				part.startsWith("«") ? (
+					<mark
+						key={at}
+						className="rounded bg-[color-mix(in_srgb,var(--accent)_22%,transparent)] px-0.5 text-ink"
+					>
+						{part.slice(1, -1)}
+					</mark>
+				) : (
+					<span key={at}>{part}</span>
+				),
+			)}
+		</span>
+	);
+}
+
 const filter = (value: string, search: string, keywords?: string[]) => {
 	const haystack = `${value} ${keywords?.join(" ") ?? ""}`.toLowerCase();
 	const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
@@ -134,6 +164,39 @@ export function CommandPalette({
 		return { links, folders };
 	}, [boards]);
 
+	// Matches inside saved pages' text, fetched once typing pauses.
+	const [textQuery, setTextQuery] = useState("");
+	useEffect(() => {
+		const timer = setTimeout(() => setTextQuery(query.trim()), 250);
+		return () => clearTimeout(timer);
+	}, [query]);
+	const pageHits = useQuery({
+		queryKey: ["search-content", textQuery],
+		queryFn: () =>
+			runEffect(call(searchContent, { query: textQuery, limit: 12 })),
+		enabled: open && textQuery.length >= 3,
+		staleTime: 30_000,
+		placeholderData: (previous) => previous,
+	});
+	const textMatches = useMemo(() => {
+		if (textQuery.length < 3 || !pageHits.data) return [];
+		const byId = new Map(links.map((entry) => [entry.bookmark.id, entry]));
+		return pageHits.data.flatMap((hit) => {
+			const entry = byId.get(hit.id);
+			// Skip links the regular list already shows for this query.
+			if (
+				!entry ||
+				filter(
+					`${entry.bookmark.title} ${entry.bookmark.url} ${entry.path}`,
+					textQuery,
+					entry.bookmark.tags,
+				) > 0
+			)
+				return [];
+			return [{ ...entry, snippet: hit.snippet }];
+		});
+	}, [pageHits.data, links, textQuery]);
+
 	if (!open || typeof document === "undefined") return null;
 
 	const close = () => onOpenChange(false);
@@ -148,7 +211,7 @@ export function CommandPalette({
 	};
 	const visit = (bookmark: LinkItem) =>
 		run(() => openLink(bookmark, { newTab: newTab.current }));
-	const firstGroup = board.groups[0]?.id;
+	const firstGroup = board.groups.find(isLinksGroup)?.id;
 	const trimmed = query.trim();
 	const typedUrl =
 		trimmed && !/\s/.test(trimmed) && trimmed.includes(".")
@@ -195,9 +258,11 @@ export function CommandPalette({
 					</button>
 				</div>
 				<Command.List className="max-h-[48dvh] overflow-y-auto overscroll-contain p-2 [scrollbar-width:thin] sm:max-h-[55vh]">
-					<Command.Empty className="px-3 py-8 text-center text-sm text-muted">
-						Nothing matches. Press ↵ to search the web.
-					</Command.Empty>
+					{!(trimmed.length >= 3 && textMatches.length > 0) && (
+						<Command.Empty className="px-3 py-8 text-center text-sm text-muted">
+							Nothing matches. Press ↵ to search the web.
+						</Command.Empty>
+					)}
 
 					{trimmed && (
 						<Command.Group heading="Web" forceMount>
@@ -283,6 +348,36 @@ export function CommandPalette({
 								</Command.Item>
 							))}
 					</Command.Group>
+
+					{trimmed.length >= 3 && textMatches.length > 0 && (
+						<Command.Group heading="Found in page text" forceMount>
+							{textMatches.map(({ bookmark, path, snippet }) => (
+								<Command.Item
+									key={bookmark.id}
+									value={`${trimmed} page-text ${bookmark.id}`}
+									onSelect={() => visit(bookmark)}
+									className={itemClass}
+								>
+									<Row
+										icon={
+											<Favicon
+												url={bookmark.url}
+												icon={bookmark.icon}
+												favicon={bookmark.meta.favicon}
+												title={bookmark.title}
+												className="size-4 rounded text-sm"
+											/>
+										}
+										hint={hostnameOf(bookmark.url)}
+									>
+										<span className="font-medium">{bookmark.title}</span>
+										<span className="ml-2 text-xs text-muted">{path}</span>
+										<Snippet text={snippet} />
+									</Row>
+								</Command.Item>
+							))}
+						</Command.Group>
+					)}
 
 					{folders.length > 0 && (
 						<Command.Group heading="Folders">
@@ -416,6 +511,15 @@ export function CommandPalette({
 							className={itemClass}
 						>
 							<Row icon={<Copy className="size-4" />}>Find duplicates</Row>
+						</Command.Item>
+						<Command.Item
+							value="broken links dead link health check"
+							onSelect={() => run(() => openDialog({ type: "link-health" }))}
+							className={itemClass}
+						>
+							<Row icon={<HeartPulse className="size-4" />}>
+								Find broken links
+							</Row>
 						</Command.Item>
 						<Command.Item
 							value="new group section"

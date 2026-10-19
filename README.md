@@ -59,6 +59,13 @@ On phones the page switches to a thumb-reach bottom dock (search, edit, add, the
 
 Mark a link, or a whole folder, as always-incognito, or switch on "Open every link in incognito" (Customize → Home). Web pages can't open private windows, so the browser extension does it: its content script (`extension/bridge.js`, injected only on tabz.space) relays requests to the background worker, which calls `chrome.windows.create({ incognito: true })`. This needs "Allow in Incognito" switched on for the extension. Without the extension, tabz never falls back to a normal tab; it offers to copy the link instead. Private links skip visit tracking, hover previews and screenshot thumbnails.
 
+## Search, smart groups and monitors
+
+- **Full-text search**: page text is extracted when a link is saved (and by the `index-content` job for older ones) into an FTS5 table, `bookmark_text` (migration 0007, `src/server/content.ts`). ⌘K shows "Found in page text" matches with highlighted snippets; REST/MCP search returns them with the matching passage. Vault boards are never indexed.
+- **Smart groups** (`groups.kind = "smart"`, rules in `groups.options.smart`): live views over every non-vault board (most visited, recently opened, newest, forgotten, unread feeds, broken links; filter by tags, text or board). Computed in the browser (`src/lib/smart.ts`), so they never store links.
+- **Link health** (`check-links` job, `src/server/monitors.ts`): re-checks each link weekly with HEAD/GET, following redirects through the private-network guard. A link is "broken" only after two failed checks in a row (404/410/unreachable); 401/403/429/5xx and intranet hosts count as inconclusive. Permanent same-site redirects are offered as "Update link". Customize → Data → Broken links, or ⌘K.
+- **Feeds** (`poll-feeds` job): links whose page advertises RSS/Atom get their latest items polled every couple of hours; tiles show a badge with posts newer than your last visit.
+
 ## REST API, tokens and webhooks
 
 Customize → Connect has personal API tokens and outgoing webhooks.

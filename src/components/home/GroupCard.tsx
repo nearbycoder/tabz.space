@@ -13,10 +13,13 @@ import {
 	GripVertical,
 	Plus,
 	Settings2,
+	Sparkles,
 } from "lucide-react";
+import { useMemo } from "react";
 import { cn } from "#/lib/cn";
 import type { BoardLayout, TileStyle } from "#/lib/preferences";
-import { BookmarkTile } from "./BookmarkTile";
+import { SMART_EMPTY, smartItems } from "#/lib/smart";
+import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import type { HomeGroup } from "./types";
 
@@ -40,7 +43,12 @@ export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 };
 
 export function GroupCard({ group, layout, onToggle }: Props) {
-	const { editing, openDialog, openAll } = useHomeContext();
+	const { editing, openDialog, openAll, boards } = useHomeContext();
+	const smart = group.kind === "smart" ? group.options.smart : undefined;
+	const smartLinks = useMemo(
+		() => (smart ? smartItems(boards, smart) : []),
+		[boards, smart],
+	);
 	const style = group.options.tileStyle ?? layout.tileStyle;
 	const span = Math.min(group.options.span ?? 1, layout.columns);
 	const sortable = useSortable({
@@ -51,9 +59,11 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		id: `drop:${group.id}`,
 		data: { type: "drop", groupId: group.id },
 	});
-	const links = group.bookmarks.flatMap((item) =>
-		item.kind === "folder" ? item.children : [item],
-	);
+	const links = smart
+		? smartLinks
+		: group.bookmarks.flatMap((item) =>
+				item.kind === "folder" ? item.children : [item],
+			);
 	const total = links.length;
 	const square = style === "tile" || style === "icon";
 
@@ -90,6 +100,12 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 						className="size-2 shrink-0 rounded-full"
 						style={{ background: group.color ?? "var(--muted)" }}
 					/>
+					{smart && (
+						<Sparkles
+							className="size-3.5 shrink-0 text-accent"
+							aria-label="Smart group"
+						/>
+					)}
 					<h2 className="truncate text-sm font-semibold">{group.name}</h2>
 					<span className="text-xs text-muted">{total}</span>
 					<div
@@ -110,28 +126,32 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								<ExternalLink className="size-3.5" />
 							</button>
 						)}
-						<button
-							type="button"
-							className="icon-btn size-7 pointer-coarse:size-9"
-							aria-label="Add bookmark"
-							title="Add bookmark"
-							onClick={() =>
-								openDialog({ type: "bookmark", groupId: group.id })
-							}
-						>
-							<Plus className="size-4" />
-						</button>
-						<button
-							type="button"
-							className="icon-btn size-7 pointer-coarse:size-9"
-							aria-label="New folder"
-							title="New folder"
-							onClick={() =>
-								openDialog({ type: "new-folder", groupId: group.id })
-							}
-						>
-							<FolderPlus className="size-3.5" />
-						</button>
+						{!smart && (
+							<>
+								<button
+									type="button"
+									className="icon-btn size-7 pointer-coarse:size-9"
+									aria-label="Add bookmark"
+									title="Add bookmark"
+									onClick={() =>
+										openDialog({ type: "bookmark", groupId: group.id })
+									}
+								>
+									<Plus className="size-4" />
+								</button>
+								<button
+									type="button"
+									className="icon-btn size-7 pointer-coarse:size-9"
+									aria-label="New folder"
+									title="New folder"
+									onClick={() =>
+										openDialog({ type: "new-folder", groupId: group.id })
+									}
+								>
+									<FolderPlus className="size-3.5" />
+								</button>
+							</>
+						)}
 						<button
 							type="button"
 							className="icon-btn size-7 pointer-coarse:size-9"
@@ -159,7 +179,24 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 					</div>
 				</header>
 			)}
-			{!group.collapsed && (
+			{!group.collapsed && smart && (
+				<div
+					className={cn("grid", style === "list" ? "gap-0.5" : "gap-3")}
+					style={gridFor(style, layout.tileSize)}
+				>
+					{smartLinks.map((item) => (
+						<div key={item.id} className="group/tile relative">
+							<TileBody item={item} style={style} size={layout.tileSize} />
+						</div>
+					))}
+					{smartLinks.length === 0 && (
+						<p className="col-span-full py-3 text-center text-sm text-muted">
+							{SMART_EMPTY[smart.sort]}
+						</p>
+					)}
+				</div>
+			)}
+			{!group.collapsed && !smart && (
 				<div
 					ref={drop.setNodeRef}
 					className={cn(

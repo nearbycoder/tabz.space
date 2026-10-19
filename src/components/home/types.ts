@@ -22,5 +22,9 @@ export type DialogState =
 	| { type: "vault-unlock" }
 	| { type: "history"; tab?: "history" | "trash" }
 	| { type: "duplicates" }
+	| { type: "link-health" }
 	| { type: "bulk-add"; text?: string; groupId?: string }
 	| null;
+
+/** Regular groups hold links; smart groups fill themselves. */
+export const isLinksGroup = (group: { kind: string }) => group.kind === "links";

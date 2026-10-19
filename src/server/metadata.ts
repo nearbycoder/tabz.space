@@ -5,6 +5,8 @@ import { FetchError } from "#/lib/effect/errors";
 
 export type PageMetadata = {
 	feedUrl?: string;
+	/** Readable page text for the full-text index (not stored in meta). */
+	text?: string;
 	title?: string;
 	description?: string;
 	favicon?: string;
@@ -70,53 +72,83 @@ const readLimited = async (response: Response) => {
 	return new TextDecoder().decode(Buffer.concat(chunks));
 };
 
+const HTML = "text/html,application/xhtml+xml";
+const FEED =
+	"application/rss+xml,application/atom+xml,application/xml;q=0.9,text/xml;q=0.8";
+
 // Interrupting the effect (e.g. on timeout) aborts the underlying fetch.
-const request = (url: URL) =>
+const request = (url: URL, accept: string, method = "GET") =>
 	Effect.tryPromise({
 		try: (signal) =>
 			fetch(url, {
+				method,
 				redirect: "manual",
 				signal,
 				headers: {
 					"user-agent":
 						"Mozilla/5.0 (compatible; TabzBot/1.0; +https://tabz.space)",
-					accept: "text/html,application/xhtml+xml",
+					accept,
 				},
 			}),
 		catch: (error) =>
 			new FetchError({ url: url.toString(), reason: String(error) }),
 	});
 
-const fetchHtml = (start: URL) =>
+/** Follows redirects by hand so every hop is checked against private networks. */
+const follow = (
+	start: URL,
+	accept: string,
+	method = "GET",
+	maxRedirects = MAX_REDIRECTS,
+) =>
 	Effect.gen(function* () {
 		let url = start;
-		for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+		// True when every hop was a permanent (301/308) redirect.
+		let permanent: boolean | null = null;
+		for (let hop = 0; hop <= maxRedirects; hop++) {
 			yield* assertPublicHost(url);
-			const response = yield* request(url);
+			const response = yield* request(url, accept, method);
 			const location = response.headers.get("location");
 			if (response.status >= 300 && response.status < 400 && location) {
+				response.body?.cancel().catch(() => {});
+				permanent =
+					(permanent ?? true) &&
+					(response.status === 301 || response.status === 308);
 				url = new URL(location, url);
 				continue;
 			}
-			if (!response.ok)
-				return yield* new FetchError({
-					url: url.toString(),
-					reason: `HTTP ${response.status}`,
-				});
-			const type = response.headers.get("content-type") ?? "";
-			if (!type.includes("html")) return { url, html: "" };
-			const html = yield* Effect.tryPromise({
-				try: () => readLimited(response),
-				catch: (error) =>
-					new FetchError({ url: url.toString(), reason: String(error) }),
-			});
-			return { url, html };
+			return { url, response, permanent: permanent === true };
 		}
 		return yield* new FetchError({
 			url: start.toString(),
 			reason: "too many redirects",
 		});
 	});
+
+const fetchText = (start: URL, accept: string, accepts: RegExp) =>
+	Effect.gen(function* () {
+		const { url, response } = yield* follow(start, accept);
+		if (!response.ok)
+			return yield* new FetchError({
+				url: url.toString(),
+				reason: `HTTP ${response.status}`,
+			});
+		if (!accepts.test(response.headers.get("content-type") ?? "")) {
+			response.body?.cancel().catch(() => {});
+			return { url, body: "" };
+		}
+		const body = yield* Effect.tryPromise({
+			try: () => readLimited(response),
+			catch: (error) =>
+				new FetchError({ url: url.toString(), reason: String(error) }),
+		});
+		return { url, body };
+	});
+
+const fetchHtml = (start: URL) =>
+	fetchText(start, HTML, /html/i).pipe(
+		Effect.map(({ url, body }) => ({ url, html: body })),
+	);
 
 const decode = (value: string) =>
 	value
@@ -194,7 +226,25 @@ export const parseMetadata = (html: string, base: URL): PageMetadata => {
 		image: absolute(metaContent(html, "og:image")),
 		favicon: absolute(iconHref(html)),
 		feedUrl: absolute(feedHref(html)),
+		text: pageText(html),
 	};
+};
+
+const MAX_TEXT = 20_000;
+
+/** Visible text of a page, minus scripts, styles and chrome, for search. */
+export const pageText = (html: string) => {
+	const body = html.match(/<body\b[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? html;
+	const text = decode(
+		body
+			.replace(
+				/<(script|style|noscript|svg|template|nav|footer|header|form|iframe)\b[\s\S]*?<\/\1>/gi,
+				" ",
+			)
+			.replace(/<!--[\s\S]*?-->/g, " ")
+			.replace(/<[^>]+>/g, " "),
+	);
+	return text ? text.slice(0, MAX_TEXT) : undefined;
 };
 
 /**
@@ -209,4 +259,113 @@ export const fetchPageMetadata = (rawUrl: string) =>
 		Effect.timeout("4 seconds"),
 		Effect.retry({ times: 1, schedule: Schedule.spaced("250 millis") }),
 		Effect.catch(() => Effect.succeed<PageMetadata>({})),
+	);
+
+/* ----------------------------------- feeds ---------------------------------- */
+
+const tagText = (xml: string, tag: string) => {
+	const raw = xml.match(
+		new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i"),
+	)?.[1];
+	if (!raw) return undefined;
+	return decode(raw.replace(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/, "$1"));
+};
+
+const MAX_FEED_ITEMS = 15;
+
+/** Parses RSS 2.0, RSS 1.0 and Atom into dated items, newest first. */
+export const parseFeed = (xml: string, base: URL) => {
+	const blocks =
+		xml.match(/<item\b[\s\S]*?<\/item>/gi) ??
+		xml.match(/<entry\b[\s\S]*?<\/entry>/gi) ??
+		[];
+	const items = blocks.flatMap((block) => {
+		const date =
+			tagText(block, "pubDate") ??
+			tagText(block, "published") ??
+			tagText(block, "updated") ??
+			tagText(block, "dc:date");
+		const at = date ? Date.parse(date) : Number.NaN;
+		if (Number.isNaN(at)) return [];
+		const href =
+			block.match(/<link\b[^>]*\bhref\s*=\s*["']([^"']+)["']/i)?.[1] ??
+			tagText(block, "link");
+		let url: string | undefined;
+		try {
+			url = href ? new URL(href, base).toString() : undefined;
+		} catch {
+			url = undefined;
+		}
+		const title = (tagText(block, "title") ?? "").replace(/<[^>]+>/g, "");
+		return [{ title: title.slice(0, 200) || "Untitled", url, at }];
+	});
+	return items.sort((a, b) => b.at - a.at).slice(0, MAX_FEED_ITEMS);
+};
+
+export const fetchFeed = (feedUrl: string) =>
+	fetchText(new URL(feedUrl), FEED, /xml|rss|atom/i).pipe(
+		Effect.map(({ url, body }) => (body ? parseFeed(body, url) : [])),
+		Effect.timeout("8 seconds"),
+	);
+
+/* -------------------------------- link health ------------------------------- */
+
+export type HealthResult =
+	| { kind: "ok"; code: number; finalUrl: string; permanent: boolean }
+	| { kind: "missing"; code: number }
+	| { kind: "unreachable"; reason: string }
+	/** 401/403/429/5xx: the site is up but won't tell us; not counted as broken. */
+	| { kind: "inconclusive"; code: number };
+
+/** One lightweight request (HEAD, falling back to GET) to see if a link still resolves. */
+export const checkLink = (rawUrl: string) =>
+	Effect.gen(function* () {
+		let { url, response, permanent } = yield* follow(
+			new URL(rawUrl),
+			HTML,
+			"HEAD",
+			6,
+		);
+		// Plenty of servers reject HEAD; ask again properly before judging.
+		if (
+			response.status === 405 ||
+			response.status === 501 ||
+			response.status === 404 ||
+			response.status === 403
+		) {
+			({ url, response, permanent } = yield* follow(
+				new URL(rawUrl),
+				HTML,
+				"GET",
+				6,
+			));
+		}
+		response.body?.cancel().catch(() => {});
+		const code = response.status;
+		if (response.ok)
+			return {
+				kind: "ok",
+				code,
+				finalUrl: url.toString(),
+				permanent,
+			} as HealthResult;
+		if (code === 404 || code === 410)
+			return { kind: "missing", code } as HealthResult;
+		return { kind: "inconclusive", code } as HealthResult;
+	}).pipe(
+		Effect.timeout("8 seconds"),
+		Effect.catch((error) => {
+			const reason = String((error as { reason?: string }).reason ?? error);
+			// Intranet links (private IPs, single-label hosts) can't be judged from here.
+			const local =
+				reason.includes("private") || !new URL(rawUrl).hostname.includes(".");
+			// Endless sign-in redirect chains mean the site is up.
+			if (reason.includes("too many redirects"))
+				return Effect.succeed<HealthResult>({ kind: "inconclusive", code: 0 });
+			return Effect.succeed<HealthResult>(
+				local
+					? { kind: "inconclusive", code: 0 }
+					: { kind: "unreachable", reason },
+			);
+		}),
 	);

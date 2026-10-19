@@ -1,8 +1,9 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Rss, TriangleAlert } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Favicon } from "#/components/ui/Favicon";
 import { screenshotFor } from "#/lib/appearance";
+import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
 import { hostnameOf } from "#/lib/url";
 import { refreshPreview } from "#/server/home";
@@ -64,6 +65,12 @@ export function LinkPreview({
 			? bookmark.meta.image
 			: screenshotFor(bookmark.url);
 
+	const health = bookmark.meta.health;
+	const feed = bookmark.meta.feed?.items ?? [];
+	const since = new Date(
+		bookmark.lastVisitedAt ?? bookmark.createdAt,
+	).getTime();
+
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: hover only shows a decorative preview; the link inside stays the interactive element
 		<div
@@ -110,6 +117,40 @@ export function LinkPreview({
 								<p className="line-clamp-2 text-xs text-muted">
 									{bookmark.description}
 								</p>
+							)}
+							{health && health.status !== "ok" && (
+								<p className="flex items-center gap-1 text-[11px] text-amber-500">
+									<TriangleAlert className="size-3 shrink-0" />
+									<span className="truncate">
+										{health.status === "broken"
+											? `Looks broken${health.code ? ` (${health.code})` : ""}`
+											: `Moved to ${health.location?.replace(/^https?:\/\//, "")}`}
+									</span>
+								</p>
+							)}
+							{feed.length > 0 && (
+								<ul className="space-y-0.5 border-t border-line pt-1.5">
+									{feed.slice(0, 3).map((item) => (
+										<li
+											key={`${item.at}${item.title}`}
+											className="flex items-center gap-1.5 text-[11px]"
+										>
+											{item.at > since ? (
+												<span className="size-1.5 shrink-0 rounded-full bg-accent" />
+											) : (
+												<Rss className="size-2.5 shrink-0 text-muted" />
+											)}
+											<span
+												className={cn(
+													"truncate",
+													item.at > since ? "text-ink" : "text-muted",
+												)}
+											>
+												{item.title}
+											</span>
+										</li>
+									))}
+								</ul>
 							)}
 							<p className="flex items-center gap-1 text-[11px] text-muted">
 								<ExternalLink className="size-3" />{" "}

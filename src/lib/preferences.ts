@@ -133,6 +133,7 @@ export const userSettingsSchema = z.object({
 	/** Open every link in a private window (needs the browser extension). */
 	incognitoAll: z.boolean().default(false),
 	linkPreviews: z.boolean().default(true),
+	feedBadges: z.boolean().default(true),
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
@@ -168,6 +169,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	openInNewTab: false,
 	incognitoAll: false,
 	linkPreviews: true,
+	feedBadges: true,
 	celebrate: true,
 	tilt: true,
 	activeBoardId: null,
@@ -359,9 +361,35 @@ export const DEFAULT_BOARD_LAYOUT: BoardLayout = {
 	showGroupTitles: true,
 };
 
+export const SMART_SORTS = {
+	visits: "Most visited",
+	recent: "Recently opened",
+	added: "Newest",
+	forgotten: "Not opened in a while",
+	unread: "Unread feeds",
+	broken: "Broken links",
+} as const;
+export type SmartSort = keyof typeof SMART_SORTS;
+
+/** Rules for a smart group: a live view over every non-vault board. */
+export const smartRulesSchema = z.object({
+	sort: z.enum(Object.keys(SMART_SORTS) as [SmartSort, ...SmartSort[]]),
+	/** Only links carrying any of these tags. */
+	tags: z.array(z.string().trim().min(1).max(32)).max(10).optional(),
+	/** Only links whose title, URL or description contain this text. */
+	query: z.string().trim().max(100).optional(),
+	/** Only links from this board. */
+	boardId: z.string().max(64).optional(),
+	limit: z.number().int().min(1).max(60),
+});
+export type SmartRules = z.infer<typeof smartRulesSchema>;
+
+export const DEFAULT_SMART_RULES: SmartRules = { sort: "visits", limit: 12 };
+
 export const groupOptionsSchema = z.object({
 	tileStyle: z.enum(TILE_STYLES).optional(),
 	span: z.number().int().min(1).max(6).optional(),
+	smart: smartRulesSchema.optional(),
 });
 
 export type GroupOptions = z.infer<typeof groupOptionsSchema>;
@@ -375,13 +403,38 @@ export type BookmarkMeta = {
 	/** RSS/Atom feed advertised by the page (powers unread badges). */
 	feedUrl?: string;
 	/** Last link-health check. */
-	health?: {
-		status: "ok" | "broken" | "redirected";
-		code?: number;
-		location?: string;
-		checkedAt: number;
-	};
+	health?: LinkHealth;
+	/** Latest items from `feedUrl`; unread = newer than the last visit. */
+	feed?: { checkedAt: number; items: FeedItem[] };
+	/** When the page text was added to the full-text index (ms). */
+	indexedAt?: number;
 };
+
+export type LinkHealth = {
+	status: "ok" | "broken" | "redirected";
+	code?: number;
+	/** Where a redirected link ends up. */
+	location?: string;
+	/** Consecutive failed checks; a link is only "broken" after two. */
+	failures?: number;
+	checkedAt: number;
+};
+
+export type FeedItem = { title: string; url?: string; at: number };
+
+/** Feed items published since the link was last opened (or added). */
+export function unreadCount(bookmark: {
+	meta: BookmarkMeta;
+	lastVisitedAt: Date | string | null;
+	createdAt: Date | string;
+}) {
+	const items = bookmark.meta.feed?.items;
+	if (!items?.length) return 0;
+	const since = new Date(
+		bookmark.lastVisitedAt ?? bookmark.createdAt,
+	).getTime();
+	return items.filter((item) => item.at > since).length;
+}
 
 /** Merges stored (possibly older-shaped) JSON with current defaults. */
 export function resolveSettings(stored: unknown): UserSettings {

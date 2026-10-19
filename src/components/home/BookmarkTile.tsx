@@ -1,12 +1,16 @@
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Folder, Pencil, VenetianMask } from "lucide-react";
+import { Folder, Pencil, TriangleAlert, VenetianMask } from "lucide-react";
 import { type MouseEvent, type ReactNode, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { screenshotFor } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
-import type { BoardLayout, TileStyle } from "#/lib/preferences";
+import {
+	type BoardLayout,
+	type TileStyle,
+	unreadCount,
+} from "#/lib/preferences";
 import { hostnameOf } from "#/lib/url";
 import { useHomeContext } from "./context";
 import { LinkPreview } from "./LinkPreview";
@@ -141,6 +145,20 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		useHomeContext();
 	const incognito = isIncognito(item);
 	const isFolder = item.kind === "folder";
+	// Folders add up the new posts of everything inside.
+	const unread =
+		!settings.feedBadges || incognito
+			? 0
+			: isFolder
+				? (item.children ?? []).reduce(
+						(sum, child) => sum + (isIncognito(child) ? 0 : unreadCount(child)),
+						0,
+					)
+				: unreadCount(item);
+	const broken =
+		!isFolder &&
+		(item.meta.health?.status === "broken" ||
+			item.meta.health?.status === "redirected");
 	const tilt = useTilt(
 		settings.tilt &&
 			!overlay &&
@@ -388,12 +406,36 @@ export function TileBody({ item, style, size, overlay }: Props) {
 					{link}
 				</LinkPreview>
 			)}
-			{incognito && (
-				<span
-					title="Opens in a private window"
-					className="pointer-events-none absolute -top-1.5 -left-1.5 z-10 grid size-6 place-items-center rounded-full border border-line bg-surface-2 text-ink shadow-sm"
-				>
-					<VenetianMask className="size-3.5" />
+			{(incognito || unread > 0 || broken) && !overlay && (
+				<span className="pointer-events-none absolute -top-1.5 -left-1.5 z-10 flex gap-0.5">
+					{incognito && (
+						<span
+							title="Opens in a private window"
+							className="grid size-6 place-items-center rounded-full border border-line bg-surface-2 text-ink shadow-sm"
+						>
+							<VenetianMask className="size-3.5" />
+						</span>
+					)}
+					{unread > 0 && (
+						<span
+							title={`${unread} new post${unread === 1 ? "" : "s"} since your last visit`}
+							className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white shadow-sm tabular-nums"
+						>
+							{unread > 9 ? "9+" : unread}
+						</span>
+					)}
+					{broken && (
+						<span
+							title={
+								item.meta.health?.status === "broken"
+									? "This link looks broken"
+									: "This page has moved"
+							}
+							className="grid size-5 place-items-center rounded-full bg-amber-500 text-white shadow-sm"
+						>
+							<TriangleAlert className="size-3" />
+						</span>
+					)}
 				</span>
 			)}
 			{!overlay && (

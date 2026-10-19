@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Effect } from "effect";
 import {
 	Check,
@@ -15,10 +16,11 @@ import { Logo } from "#/components/Logo";
 import { call } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
-import { useHome, useSaveSettings, useUndo } from "#/lib/home-query";
+import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
 import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
+import type { HomeData } from "#/server/home";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
@@ -33,10 +35,17 @@ import { DuplicatesDialog } from "./DuplicatesDialog";
 import { FolderDialog, NewFolderDialog } from "./FolderDialog";
 import { GroupDialog } from "./GroupDialog";
 import { HistoryDialog } from "./HistoryDialog";
+import { LinkHealthDialog } from "./LinkHealthDialog";
 import { SearchBar } from "./SearchBar";
 import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
-import type { DialogState, HomeBoard, LinkItem } from "./types";
+import {
+	type DialogState,
+	type HomeBoard,
+	type HomeGroup,
+	isLinksGroup,
+	type LinkItem,
+} from "./types";
 import { useLockVault, VaultUnlockDialog } from "./Vault";
 
 /** Thumb-reach actions for phones; the header holds these on larger screens. */
@@ -251,9 +260,12 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				if (vault.configured && midCode) return;
 			}
 			if (event.key === "e") setEditing((value) => !value);
-			else if (event.key === "n" && board?.groups[0]) {
+			else if (event.key === "n" && board?.groups.find(isLinksGroup)) {
 				event.preventDefault();
-				setDialog({ type: "bookmark", groupId: board.groups[0].id });
+				setDialog({
+					type: "bookmark",
+					groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+				});
 			} else if (/^[1-9]$/.test(event.key)) {
 				const next = boards[Number(event.key) - 1];
 				if (next) selectBoard(next.id);
@@ -304,10 +316,42 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[boards],
 	);
 
-	const onVisit = useCallback((bookmark: LinkItem) => {
-		// Fire-and-forget; visit counts power search ranking and the most-visited strip.
-		Effect.runFork(call(recordVisit, { id: bookmark.id }).pipe(Effect.ignore));
-	}, []);
+	const queryClient = useQueryClient();
+	const onVisit = useCallback(
+		(bookmark: LinkItem) => {
+			// Fire-and-forget; visit counts power search ranking and the most-visited strip.
+			Effect.runFork(
+				call(recordVisit, { id: bookmark.id }).pipe(Effect.ignore),
+			);
+			// Clear "new posts" badges right away when the link opens in another tab.
+			const visited = <T extends LinkItem>(item: T): T =>
+				item.id === bookmark.id
+					? {
+							...item,
+							visitCount: item.visitCount + 1,
+							lastVisitedAt: new Date(),
+						}
+					: item;
+			queryClient.setQueryData<HomeData>(homeKey, (data) =>
+				data
+					? {
+							...data,
+							boards: data.boards.map((b) => ({
+								...b,
+								groups: b.groups.map((g) => ({
+									...g,
+									bookmarks: g.bookmarks.map((item) => ({
+										...visited(item),
+										children: item.children.map(visited),
+									})),
+								})),
+							})),
+						}
+					: data,
+			);
+		},
+		[queryClient],
+	);
 
 	const incognitoFolders = useMemo(
 		() =>
@@ -482,10 +526,13 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								className="icon-btn"
 								aria-label="Add bookmark"
 								title="Add bookmark (N)"
-								disabled={!board.groups[0]}
+								disabled={!board.groups.find(isLinksGroup)}
 								onClick={() =>
-									board.groups[0] &&
-									setDialog({ type: "bookmark", groupId: board.groups[0].id })
+									board.groups.find(isLinksGroup) &&
+									setDialog({
+										type: "bookmark",
+										groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+									})
 								}
 							>
 								<Plus className="size-5" />
@@ -537,8 +584,11 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					vaultUnlocked={vault.unlocked}
 					onSearch={() => setPaletteOpen(true)}
 					onAdd={() =>
-						board.groups[0] &&
-						setDialog({ type: "bookmark", groupId: board.groups[0].id })
+						board.groups.find(isLinksGroup) &&
+						setDialog({
+							type: "bookmark",
+							groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+						})
 					}
 					onEdit={() => setEditing((value) => !value)}
 					onCustomize={() => setDialog({ type: "settings" })}
@@ -575,14 +625,14 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					<HistoryDialog initialTab={dialog.tab} onClose={close} />
 				)}
 				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
+				{dialog?.type === "link-health" && <LinkHealthDialog onClose={close} />}
 				{dialog?.type === "bulk-add" &&
-					(dialog.groupId ??
-						board.groups.find((g) => g.kind === "links")?.id) && (
+					(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
 						<BulkAddDialog
 							boards={boards}
 							groupId={
 								(dialog.groupId ??
-									board.groups.find((g) => g.kind === "links")?.id) as string
+									board.groups.find(isLinksGroup)?.id) as string
 							}
 							initialText={dialog.text}
 							festive={settings.celebrate}

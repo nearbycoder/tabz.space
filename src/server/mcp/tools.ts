@@ -8,6 +8,8 @@ import {
 	ACCENTS,
 	boardLayoutSchema,
 	SEARCH_ENGINES,
+	SMART_SORTS,
+	smartRulesSchema,
 	TILE_STYLES,
 } from "#/lib/preferences";
 import * as capture from "../capture";
@@ -72,6 +74,12 @@ const compactLibrary = (home: Home, boardId?: string) => ({
 				id: group.id,
 				name: group.name,
 				color: group.color,
+				...(group.kind === "smart"
+					? {
+							smart: group.options.smart,
+							note: "fills itself; can't add links",
+						}
+					: {}),
 				items: group.bookmarks.map((item) =>
 					item.kind === "folder"
 						? {
@@ -135,14 +143,15 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Search bookmarks",
 			description:
-				"Find bookmarks whose title, URL, description or tags contain all query words.",
+				"Find bookmarks whose title, URL, description or tags contain all query words, plus bookmarks whose saved page text matches (the passage is in matchedText).",
 			inputSchema: library.searchInput,
 			annotations: { readOnlyHint: true },
 		},
 		(input) =>
 			run(library.searchBookmarks(userId, input), (results) =>
-				results.map(({ bookmark, board, group, folder }) => ({
+				results.map(({ bookmark, board, group, folder, snippet }) => ({
 					...compactBookmark(bookmark),
+					...(snippet ? { matchedText: snippet } : {}),
 					board,
 					group,
 					...(folder ? { folder, folderId: bookmark.parentId } : {}),
@@ -288,14 +297,20 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Create group",
 			description:
-				"Add a group (section) to a board. Defaults to the active board.",
+				"Add a group (section) to a board. Defaults to the active board. Pass `smart` to make a smart group that fills itself from every board (most visited, recently opened, newest, not opened in a while, unread feeds or broken links), optionally filtered by tags, text or board.",
 			inputSchema: z.object({
 				name: z.string().min(1).max(60),
 				boardId: z.string().optional(),
 				color: colorInput,
+				smart: smartRulesSchema
+					.partial({ limit: true })
+					.optional()
+					.describe(
+						`Smart group rules. sort: ${Object.keys(SMART_SORTS).join(" | ")}`,
+					),
 			}),
 		},
-		({ name, boardId, color }) =>
+		({ name, boardId, color, smart }) =>
 			run(
 				Effect.gen(function* () {
 					const home = yield* library.loadHome(userId);
@@ -305,6 +320,12 @@ export function createTabzMcpServer(userId: string) {
 						boardId: board.id,
 						name,
 						color,
+						...(smart
+							? {
+									kind: "smart" as const,
+									options: { smart: { limit: 12, ...smart } },
+								}
+							: {}),
 					});
 				}),
 				(group) => ({ id: group.id, name: group.name, boardId: group.boardId }),
@@ -401,6 +422,24 @@ export function createTabzMcpServer(userId: string) {
 			annotations: { destructiveHint: true },
 		},
 		(input) => run(library.deleteBoard(userId, input)),
+	);
+
+	server.registerTool(
+		"find_broken_links",
+		{
+			title: "Find broken links",
+			description:
+				"List bookmarks whose last health check found them broken (gone or unreachable twice in a row) or moved to another page on the same site (with the new location). Set check=true to re-check the least recently checked links first (slower).",
+			inputSchema: z.object({ check: z.boolean().optional() }),
+			annotations: { readOnlyHint: true, openWorldHint: true },
+		},
+		({ check }) =>
+			run(
+				Effect.gen(function* () {
+					if (check) yield* library.checkLinks(userId, {});
+					return yield* library.listLinkHealth(userId);
+				}),
+			),
 	);
 
 	server.registerTool(
