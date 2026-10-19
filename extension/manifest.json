@@ -3,7 +3,7 @@
 	"name": "Tabz \u2014 save to your start page",
 	"short_name": "Tabz",
 	"description": "Save pages and whole windows of tabs to tabz.space, mirror your browser bookmarks, open private links in incognito, and use tabz as your new tab.",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"icons": {
 		"16": "icons/icon-16.png",
 		"32": "icons/icon-32.png",

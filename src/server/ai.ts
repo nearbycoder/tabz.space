@@ -128,7 +128,11 @@ export const autoTag = (
 				if (!resolveSettings(settingsRow?.settings).autoTag) return;
 				const used = yield* query((db) =>
 					db.all<{ tag: string }>(
-						sql`SELECT DISTINCT value AS tag FROM bookmarks, json_each(bookmarks.tags) WHERE bookmarks.user_id = ${row.ownerId} LIMIT 200`,
+						// Vault tags never go to the AI provider.
+						sql`SELECT DISTINCT value AS tag FROM bookmarks
+							JOIN groups ON groups.id = bookmarks.group_id
+							JOIN boards ON boards.id = groups.board_id, json_each(bookmarks.tags)
+							WHERE bookmarks.user_id = ${row.ownerId} AND boards.vault = 0 LIMIT 200`,
 					),
 				);
 				const tags = yield* suggestTags(

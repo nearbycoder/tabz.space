@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { deleteCookie, setCookie } from "@tanstack/react-start/server";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import { boards, bookmarks, groups, vaults } from "#/db/schema";
@@ -18,38 +18,72 @@ const autoLockSchema = z
 	.min(1)
 	.max(24 * 60);
 
-/* Brute-force brake: 5 free attempts, then exponential cool-down per user. */
-const failures = new Map<string, { count: number; until: number }>();
-
-const checkThrottle = (userId: string) =>
-	Effect.gen(function* () {
-		const entry = failures.get(userId);
-		if (entry && entry.until > Date.now()) {
-			const seconds = Math.ceil((entry.until - Date.now()) / 1000);
-			return yield* new InvalidInput({
-				message: `Too many attempts. Try again in ${seconds}s`,
-			});
-		}
-	});
-
-const recordFailure = (userId: string) => {
-	const count = (failures.get(userId)?.count ?? 0) + 1;
-	const until =
-		count >= 5
-			? Date.now() + Math.min(60_000 * 2 ** (count - 5), 60 * 60_000)
-			: 0;
-	failures.set(userId, { count, until });
-};
-
 const findVault = (userId: string) =>
 	query((db) =>
 		db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
 	);
 
+/*
+ * Brute-force brake: 5 free attempts, then an exponential cool-down (1 min,
+ * doubling, up to an hour). Each attempt is counted *before* the secret is
+ * checked, in one atomic update, so a burst of parallel guesses can't slip
+ * past; a correct secret resets the count. Stored in the database so restarts
+ * don't reset it — a 4-digit PIN only has 10,000 possibilities.
+ */
+const FREE_ATTEMPTS = 5;
+
+const tooMany = (until: Date | null) =>
+	new InvalidInput({
+		message: `Too many attempts. Try again in ${Math.max(
+			1,
+			Math.ceil(((until?.getTime() ?? Date.now()) - Date.now()) / 1000),
+		)}s`,
+	});
+
+const claimAttempt = (userId: string) =>
+	Effect.gen(function* () {
+		const now = Date.now();
+		const next = sql`${vaults.failedAttempts} + 1`;
+		const [claimed] = yield* query((db) =>
+			db
+				.update(vaults)
+				.set({
+					failedAttempts: next,
+					lockedUntil: sql`CASE WHEN ${next} >= ${FREE_ATTEMPTS}
+						THEN ${now} + min(60000 * (1 << min(${next} - ${FREE_ATTEMPTS}, 6)), 3600000)
+						ELSE NULL END`,
+				})
+				.where(
+					and(
+						eq(vaults.userId, userId),
+						or(
+							isNull(vaults.lockedUntil),
+							lte(vaults.lockedUntil, new Date(now)),
+						),
+					),
+				)
+				.returning({ userId: vaults.userId }),
+		);
+		if (!claimed) {
+			const vault = yield* findVault(userId);
+			return yield* vault
+				? tooMany(vault.lockedUntil)
+				: new InvalidInput({ message: "Set up your vault first" });
+		}
+	});
+
+const clearAttempts = (userId: string) =>
+	query((db) =>
+		db
+			.update(vaults)
+			.set({ failedAttempts: 0, lockedUntil: null })
+			.where(eq(vaults.userId, userId)),
+	);
+
 /** Checks a vault secret; returns which slot it opens (main or decoy). */
 const verify = (userId: string, password: string) =>
 	Effect.gen(function* () {
-		yield* checkThrottle(userId);
+		yield* claimAttempt(userId);
 		const vault = yield* findVault(userId);
 		if (!vault)
 			return yield* new InvalidInput({ message: "Set up your vault first" });
@@ -62,11 +96,9 @@ const verify = (userId: string, password: string) =>
 			: (yield* matches(vault.decoyHash))
 				? "decoy"
 				: null;
-		if (!slot) {
-			recordFailure(userId);
+		if (!slot)
 			return yield* new Unauthorized({ message: "Wrong vault password" });
-		}
-		failures.delete(userId);
+		yield* clearAttempts(userId);
 		return { vault, slot };
 	});
 

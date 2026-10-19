@@ -18,6 +18,7 @@ import {
 	isNotNull,
 	isNull,
 	lt,
+	notInArray,
 	or,
 	sql,
 } from "drizzle-orm";
@@ -224,6 +225,48 @@ const accessFolder = (userId: string, id: string) =>
 		),
 	);
 
+type Destination = { userId: string; vault: boolean; decoy: boolean };
+
+/**
+ * Items being dragged into place: each must be one the caller can change, on a
+ * board with the same owner and on the same side of the vault (crossing it goes
+ * through updateBookmark, which handles encryption).
+ */
+const accessMoving = (
+	userId: string,
+	ids: string[],
+	destinations: Destination[],
+) =>
+	Effect.gen(function* () {
+		const [destination, ...others] = destinations;
+		const sameSide = (board: Destination) =>
+			board.userId === destination.userId &&
+			board.vault === destination.vault &&
+			board.decoy === destination.decoy;
+		if (!others.every(sameSide)) return yield* cantMove();
+		const unique = [...new Set(ids)];
+		if (unique.length === 0) return;
+		const rows = yield* query((db) =>
+			db
+				.select({ boardId: groups.boardId })
+				.from(bookmarks)
+				.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+				.where(inArray(bookmarks.id, unique)),
+		);
+		if (rows.length !== unique.length)
+			return yield* new NotFound({ entity: "Bookmark" });
+		for (const boardId of new Set(rows.map((row) => row.boardId))) {
+			const { board } = yield* accessBoard(userId, boardId, { write: true });
+			if (!sameSide(board)) return yield* cantMove();
+		}
+	});
+
+const cantMove = () =>
+	new InvalidInput({
+		message:
+			"Links can only be dragged between boards with the same owner. To move one in or out of the vault, edit it.",
+	});
+
 /** Every folder/link nested anywhere inside the given folders (any depth). */
 export const descendantIds = (folderIds: string[]) =>
 	folderIds.length === 0
@@ -305,6 +348,61 @@ const SINGULAR = {
 	bookmarks: "bookmark",
 } as const;
 
+/**
+ * Which vault (if any) a change touched, before or after, so its history entry
+ * stays hidden with the vault.
+ */
+const vaultSlotOf = (snapshots: Snapshot[]) =>
+	Effect.gen(function* () {
+		const ids = { boards: new Set<string>(), groups: new Set<string>() };
+		const bookmarkIds: string[] = [];
+		for (const snap of snapshots) {
+			if (snap.table === "boards") ids.boards.add(snap.id);
+			if (snap.table === "groups") ids.groups.add(snap.id);
+			if (snap.table === "bookmarks") bookmarkIds.push(snap.id);
+			const { boardId, groupId } = snap.values;
+			if (typeof boardId === "string") ids.boards.add(boardId);
+			if (typeof groupId === "string") ids.groups.add(groupId);
+		}
+		const [viaGroups, viaBookmarks] = yield* query((db) =>
+			Promise.all([
+				ids.groups.size
+					? db
+							.select({ boardId: groups.boardId })
+							.from(groups)
+							.where(inArray(groups.id, [...ids.groups]))
+					: [],
+				bookmarkIds.length
+					? db
+							.select({ boardId: groups.boardId })
+							.from(bookmarks)
+							.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+							.where(inArray(bookmarks.id, bookmarkIds))
+					: [],
+			]),
+		);
+		for (const row of [...viaGroups, ...viaBookmarks])
+			ids.boards.add(row.boardId);
+		if (ids.boards.size === 0) return null;
+		const vaultBoard = yield* query((db) =>
+			db.query.boards.findFirst({
+				where: and(inArray(boards.id, [...ids.boards]), eq(boards.vault, true)),
+			}),
+		);
+		return vaultBoard ? (vaultBoard.decoy ? "decoy" : "main") : null;
+	});
+
+/** History entries visible right now: vault changes only while it's open. */
+const visibleActivity = (userId: string) =>
+	Effect.map(VaultAccess, (access) =>
+		and(
+			eq(activity.userId, userId),
+			access
+				? or(isNull(activity.vaultSlot), eq(activity.vaultSlot, access.slot))
+				: isNull(activity.vaultSlot),
+		),
+	);
+
 /** Logs an undoable change and notifies the user's webhooks. */
 export const record = (
 	userId: string,
@@ -315,9 +413,14 @@ export const record = (
 	snapshots.length === 0
 		? Effect.void
 		: Effect.gen(function* () {
+				const vaultSlot = yield* vaultSlotOf(snapshots);
 				yield* query((db) =>
-					db.insert(activity).values({ userId, action, label, snapshots }),
+					db
+						.insert(activity)
+						.values({ userId, action, label, snapshots, vaultSlot }),
 				);
+				// Webhooks leave the server; vault activity never does.
+				if (vaultSlot) return;
 				const byTable = new Map<Snapshot["table"], string[]>();
 				for (const snap of snapshots)
 					byTable.set(snap.table, [
@@ -553,6 +656,8 @@ export const loadHome = (userId: string) =>
 			features: { ai: aiEnabled() },
 			boards: boardRows.map((board) => ({
 				...board,
+				// Only the owner manages (and sees) a board's public link.
+				shareSlug: board.userId === userId ? board.shareSlug : null,
 				role:
 					board.userId === userId
 						? ("owner" as Role)
@@ -1400,6 +1505,10 @@ export const updateBookmark = (
 				)
 					return yield* cantNest();
 				const folder = yield* accessFolder(userId, parentId);
+				if (folder.board.userId !== board.userId)
+					return yield* new InvalidInput({
+						message: "Links can only move between boards with the same owner",
+					});
 				groupId = folder.bookmark.groupId;
 				destination = folder.board;
 			}
@@ -1575,18 +1684,15 @@ export const arrangeBookmarks = (
 	data: z.infer<typeof arrangeBookmarksInput>,
 ) =>
 	Effect.gen(function* () {
-		const owners = new Set<string>();
+		const destinations: Destination[] = [];
 		for (const groupId of new Set(data.groups.map((group) => group.groupId)))
-			owners.add(
+			destinations.push(
 				(yield* accessGroup(userId, groupId, { write: true, links: true }))
-					.board.userId,
+					.board,
 			);
-		if (owners.size > 1)
-			return yield* new InvalidInput({
-				message: "Links can only move between boards with the same owner",
-			});
-		const [owner] = owners;
 		const ids = data.groups.flatMap((group) => group.ids);
+		yield* accessMoving(userId, ids, destinations);
+		const owner = destinations[0].userId;
 		const childIds = yield* descendantIds(ids);
 		const insideOf = new Map<string, string[]>();
 		for (const id of ids) insideOf.set(id, yield* descendantIds([id]));
@@ -1637,6 +1743,7 @@ export const arrangeFolder = (
 		// A folder can't end up inside itself or one of its own subfolders.
 		const above = new Set([folder.id, ...(yield* ancestorIds(folder.id))]);
 		if (data.ids.some((id) => above.has(id))) return yield* cantNest();
+		yield* accessMoving(userId, data.ids, [board]);
 		const inside = yield* descendantIds(data.ids);
 		const before = yield* snapshot("bookmarks", [...data.ids, ...inside]);
 		yield* query((db) =>
@@ -2071,35 +2178,37 @@ export const listActivity = (
 	userId: string,
 	data: z.infer<typeof activityInput> = {},
 ) =>
-	query((db) =>
-		db
-			.select({
-				id: activity.id,
-				action: activity.action,
-				label: activity.label,
-				undoneAt: activity.undoneAt,
-				createdAt: activity.createdAt,
-			})
-			.from(activity)
-			.where(eq(activity.userId, userId))
-			.orderBy(desc(activity.createdAt))
-			.limit(data.limit ?? 50),
-	);
+	Effect.gen(function* () {
+		const visible = yield* visibleActivity(userId);
+		return yield* query((db) =>
+			db
+				.select({
+					id: activity.id,
+					action: activity.action,
+					label: activity.label,
+					undoneAt: activity.undoneAt,
+					createdAt: activity.createdAt,
+				})
+				.from(activity)
+				.where(visible)
+				.orderBy(desc(activity.createdAt))
+				.limit(data.limit ?? 50),
+		);
+	});
 
 export const undoInput = z.object({ id: idSchema.optional() });
 
 /** Reverts one change (the latest by default). */
 export const undo = (userId: string, data: z.infer<typeof undoInput> = {}) =>
 	Effect.gen(function* () {
+		const visible = yield* visibleActivity(userId);
 		const entry = yield* query((db) =>
 			db.query.activity.findFirst({
-				where: data.id
-					? and(
-							eq(activity.id, data.id),
-							eq(activity.userId, userId),
-							isNull(activity.undoneAt),
-						)
-					: and(eq(activity.userId, userId), isNull(activity.undoneAt)),
+				where: and(
+					visible,
+					isNull(activity.undoneAt),
+					data.id ? eq(activity.id, data.id) : undefined,
+				),
 				orderBy: [desc(activity.createdAt)],
 			}),
 		);
@@ -2114,10 +2223,50 @@ export const undo = (userId: string, data: z.infer<typeof undoInput> = {}) =>
 		return { label: entry.label };
 	});
 
+/** Vault boards the caller can't see right now (locked, or the other password's). */
+const hiddenVaultBoards = (userId: string) =>
+	Effect.gen(function* () {
+		const access = yield* VaultAccess;
+		const rows = yield* query((db) =>
+			db
+				.select({ id: boards.id, decoy: boards.decoy })
+				.from(boards)
+				.where(and(eq(boards.userId, userId), eq(boards.vault, true))),
+		);
+		return new Set(
+			rows.filter((board) => !opensWith(board, access)).map((row) => row.id),
+		);
+	});
+
+/** The board a trash item belongs to, or NotFound if it's hidden in the vault. */
+const visibleTrashItem = (
+	userId: string,
+	data: z.infer<typeof trashItemInput>,
+) =>
+	Effect.gen(function* () {
+		const boardId =
+			data.type === "board"
+				? data.id
+				: data.type === "group"
+					? (yield* query((db) =>
+							db.query.groups.findFirst({ where: eq(groups.id, data.id) }),
+						))?.boardId
+					: (yield* query((db) =>
+							db
+								.select({ boardId: groups.boardId })
+								.from(bookmarks)
+								.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+								.where(eq(bookmarks.id, data.id)),
+						))[0]?.boardId;
+		if (!boardId || (yield* hiddenVaultBoards(userId)).has(boardId))
+			return yield* new NotFound({ entity: "Item" });
+	});
+
 /** Everything deleted in the last 30 days that the user owns. */
 export const listTrash = (userId: string) =>
 	Effect.gen(function* () {
 		const since = new Date(Date.now() - TRASH_DAYS * 86_400_000);
+		const hidden = yield* hiddenVaultBoards(userId);
 		const [deletedBoards, deletedGroups, deletedBookmarks] = yield* query(
 			(db) =>
 				Promise.all([
@@ -2142,6 +2291,7 @@ export const listTrash = (userId: string) =>
 							title: groups.name,
 							deletedAt: groups.deletedAt,
 							board: boards.name,
+							boardId: groups.boardId,
 						})
 						.from(groups)
 						.innerJoin(boards, eq(boards.id, groups.boardId))
@@ -2161,6 +2311,7 @@ export const listTrash = (userId: string) =>
 							meta: bookmarks.meta,
 							deletedAt: bookmarks.deletedAt,
 							group: groups.name,
+							boardId: groups.boardId,
 						})
 						.from(bookmarks)
 						.innerJoin(groups, eq(groups.id, bookmarks.groupId))
@@ -2173,17 +2324,22 @@ export const listTrash = (userId: string) =>
 						),
 				]),
 		);
+		// Nothing from a locked vault shows up here, not even that it exists.
+		const shown = <T extends { boardId: string }>(rows: T[]) =>
+			rows.filter((row) => !hidden.has(row.boardId));
 		const items = [
-			...deletedBoards.map((row) => ({
-				type: "board" as const,
-				id: row.id,
-				title: row.title,
-				detail: "Board",
-				icon: row.icon,
-				url: null,
-				deletedAt: row.deletedAt as Date,
-			})),
-			...deletedGroups.map((row) => ({
+			...shown(deletedBoards.map((row) => ({ ...row, boardId: row.id }))).map(
+				(row) => ({
+					type: "board" as const,
+					id: row.id,
+					title: row.title,
+					detail: "Board",
+					icon: row.icon,
+					url: null,
+					deletedAt: row.deletedAt as Date,
+				}),
+			),
+			...shown(deletedGroups).map((row) => ({
 				type: "group" as const,
 				id: row.id,
 				title: row.title,
@@ -2192,7 +2348,7 @@ export const listTrash = (userId: string) =>
 				url: null,
 				deletedAt: row.deletedAt as Date,
 			})),
-			...deletedBookmarks.map((row) => ({
+			...shown(deletedBookmarks).map((row) => ({
 				type: "bookmark" as const,
 				id: row.id,
 				title: row.title,
@@ -2221,6 +2377,7 @@ export const restoreFromTrash = (
 	data: z.infer<typeof trashItemInput>,
 ) =>
 	Effect.gen(function* () {
+		yield* visibleTrashItem(userId, data);
 		const restore = (
 			table: typeof boards | typeof groups | typeof bookmarks,
 			id: string,
@@ -2270,6 +2427,7 @@ export const deleteForever = (
 	data: z.infer<typeof trashItemInput>,
 ) =>
 	Effect.gen(function* () {
+		yield* visibleTrashItem(userId, data);
 		const table =
 			data.type === "board"
 				? boards
@@ -2290,22 +2448,50 @@ export const deleteForever = (
 		return { ok: true };
 	});
 
+/** Empties the trash, leaving anything from a locked vault untouched. */
 export const emptyTrash = (userId: string) =>
-	query((db) =>
-		db.transaction(async (tx) => {
-			await tx
-				.delete(bookmarks)
-				.where(
-					and(eq(bookmarks.userId, userId), isNotNull(bookmarks.deletedAt)),
-				);
-			await tx
-				.delete(groups)
-				.where(and(eq(groups.userId, userId), isNotNull(groups.deletedAt)));
-			await tx
-				.delete(boards)
-				.where(and(eq(boards.userId, userId), isNotNull(boards.deletedAt)));
-		}),
-	).pipe(Effect.as({ ok: true }));
+	Effect.gen(function* () {
+		const hidden = [...(yield* hiddenVaultBoards(userId))];
+		const visibleGroups = hidden.length
+			? notInArray(groups.boardId, hidden)
+			: undefined;
+		yield* query((db) =>
+			db.transaction(async (tx) => {
+				const groupIds = tx
+					.select({ id: groups.id })
+					.from(groups)
+					.where(and(eq(groups.userId, userId), visibleGroups));
+				await tx
+					.delete(bookmarks)
+					.where(
+						and(
+							eq(bookmarks.userId, userId),
+							isNotNull(bookmarks.deletedAt),
+							hidden.length ? inArray(bookmarks.groupId, groupIds) : undefined,
+						),
+					);
+				await tx
+					.delete(groups)
+					.where(
+						and(
+							eq(groups.userId, userId),
+							isNotNull(groups.deletedAt),
+							visibleGroups,
+						),
+					);
+				await tx
+					.delete(boards)
+					.where(
+						and(
+							eq(boards.userId, userId),
+							isNotNull(boards.deletedAt),
+							hidden.length ? notInArray(boards.id, hidden) : undefined,
+						),
+					);
+			}),
+		);
+		return { ok: true };
+	});
 
 /** Background housekeeping: purge expired trash and trim old history. */
 export const purgeExpired = () =>

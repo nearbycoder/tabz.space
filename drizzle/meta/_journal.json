@@ -92,6 +92,13 @@
       "when": 1792389401296,
       "tag": "0012_vault_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792417132356,
+      "tag": "0013_security",
+      "breakpoints": true
     }
   ]
 }

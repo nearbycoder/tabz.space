@@ -1,6 +1,8 @@
+import { type LookupAddress, lookup as lookupCallback } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Effect, Schedule } from "effect";
+import { Agent, fetch as undiciFetch } from "undici";
 import { FetchError } from "#/lib/effect/errors";
 
 export type PageMetadata = {
@@ -17,28 +19,70 @@ export type PageMetadata = {
 const MAX_BYTES = 512 * 1024;
 const MAX_REDIRECTS = 3;
 
+/** Addresses a server-side fetch must never reach: loopback, LAN, link-local, cloud metadata, … */
+const blocked = new BlockList();
+for (const [network, prefix] of [
+	["0.0.0.0", 8],
+	["10.0.0.0", 8],
+	["100.64.0.0", 10],
+	["127.0.0.0", 8],
+	["169.254.0.0", 16],
+	["172.16.0.0", 12],
+	["192.0.0.0", 24],
+	["192.168.0.0", 16],
+	["198.18.0.0", 15],
+	["224.0.0.0", 4],
+	["240.0.0.0", 4],
+] as const)
+	blocked.addSubnet(network, prefix, "ipv4");
+for (const [network, prefix] of [
+	["::", 128],
+	["::1", 128],
+	["64:ff9b::", 96],
+	["100::", 64],
+	["fc00::", 7],
+	["fe80::", 10],
+	["ff00::", 8],
+] as const)
+	blocked.addSubnet(network, prefix, "ipv6");
+// IPv4-mapped IPv6 (::ffff:127.0.0.1) is matched by the IPv4 rules above.
+
 const isPrivateAddress = (address: string) => {
-	if (address.includes(":")) {
-		const lower = address.toLowerCase();
-		return (
-			lower === "::1" ||
-			lower.startsWith("fc") ||
-			lower.startsWith("fd") ||
-			lower.startsWith("fe80") ||
-			lower.startsWith("::ffff:")
-		);
-	}
-	const [a, b] = address.split(".").map(Number);
-	return (
-		a === 10 ||
-		a === 127 ||
-		a === 0 ||
-		(a === 169 && b === 254) ||
-		(a === 172 && b >= 16 && b <= 31) ||
-		(a === 192 && b === 168) ||
-		(a === 100 && b >= 64 && b <= 127)
-	);
+	const type = isIP(address);
+	if (type === 0) return true;
+	return blocked.check(address, type === 6 ? "ipv6" : "ipv4");
 };
+
+/**
+ * DNS for outbound fetches: the address that's checked is the one connected
+ * to, so a hostname can't pass the check and then re-resolve to a private
+ * address (DNS rebinding).
+ */
+const publicLookup: LookupFunction = (hostname, options, callback) => {
+	lookupCallback(hostname, { ...options, all: true }, (error, addresses) => {
+		const list = (addresses ?? []) as LookupAddress[];
+		const failure =
+			error ??
+			(list.length === 0 ||
+			list.some(({ address }) => isPrivateAddress(address))
+				? Object.assign(new Error(`private address for ${hostname}`), {
+						code: "ENOTFOUND",
+					})
+				: null);
+		if (failure) return callback(failure, "", 0);
+		if (options.all) return callback(null, list as never);
+		callback(null, list[0].address, list[0].family);
+	});
+};
+
+const publicAgent = new Agent({ connect: { lookup: publicLookup } });
+
+/** fetch() that can only connect to public addresses. Pair with assertPublicHost for IP literals. */
+export const publicFetch = (url: URL | string, init: RequestInit = {}) =>
+	undiciFetch(url, {
+		...(init as Parameters<typeof undiciFetch>[1]),
+		dispatcher: publicAgent,
+	}) as unknown as Promise<Response>;
 
 /** Blocks requests to loopback/private networks so lookups can't probe internal services. */
 export const assertPublicHost = (url: URL) =>
@@ -80,7 +124,7 @@ const FEED =
 const request = (url: URL, accept: string, method = "GET") =>
 	Effect.tryPromise({
 		try: (signal) =>
-			fetch(url, {
+			publicFetch(url, {
 				method,
 				redirect: "manual",
 				signal,

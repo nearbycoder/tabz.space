@@ -121,6 +121,7 @@ export const monthlyReport = (
 				.where(
 					and(
 						eq(activity.userId, userId),
+						isNull(activity.vaultSlot),
 						gte(activity.createdAt, start),
 						lt(activity.createdAt, end),
 					),

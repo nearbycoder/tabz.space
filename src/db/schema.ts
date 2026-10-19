@@ -97,6 +97,10 @@ export const vaults = sqliteTable("vaults", {
 	decoyHash: text("decoy_hash"),
 	/** 4 or 6 when the vault opens with a numeric PIN (keypad); null = password. */
 	pinLength: integer("pin_length"),
+	/** Wrong guesses in a row; stored so restarts don't reset the brake. */
+	failedAttempts: integer("failed_attempts").default(0).notNull(),
+	/** No unlock attempts are accepted before this time. */
+	lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
 	autoLockMinutes: integer("auto_lock_minutes").default(15).notNull(),
 	...timestamps,
 });
@@ -193,6 +197,8 @@ export const activity = sqliteTable(
 		action: text("action").notNull(),
 		label: text("label").notNull(),
 		snapshots: json<Snapshot[]>("snapshots", []),
+		/** Set for changes inside a vault, so they stay hidden while it's locked. */
+		vaultSlot: text("vault_slot", { enum: ["main", "decoy"] }),
 		undoneAt: integer("undone_at", { mode: "timestamp_ms" }),
 		createdAt: timestamps.createdAt,
 	},

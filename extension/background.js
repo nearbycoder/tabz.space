@@ -1,5 +1,7 @@
 import { api, getBaseUrl, getToken } from "./config.js";
 
+const OFFICIAL = new Set(["https://tabz.space", "https://www.tabz.space"]);
+
 /* ----------------------------- saving pages ----------------------------- */
 
 /** The detailed add flow: the /add page in a small window (uses the site session). */
@@ -190,9 +192,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 						!message.token.startsWith("tabz_")
 					)
 						return { ok: false };
+					// Only the server you've pointed the extension at (options page),
+					// or tabz.space itself, can connect it. Otherwise any page on
+					// localhost could redirect your bookmark sync to itself.
+					const origin = String(message.baseUrl ?? "").replace(/\/+$/, "");
+					if (origin !== (await getBaseUrl()) && !OFFICIAL.has(origin))
+						return { ok: false };
 					await chrome.storage.local.set({ token: message.token });
-					if (message.baseUrl)
-						await chrome.storage.sync.set({ baseUrl: message.baseUrl });
+					await chrome.storage.sync.set({ baseUrl: origin });
 					scheduleSync(1000);
 					return { ok: true };
 				})(),

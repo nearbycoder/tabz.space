@@ -115,6 +115,15 @@ Customize → Connect has personal API tokens and outgoing webhooks.
 - `src/components/home/*`: the start page UI
 - `extension/`: Chrome/Edge/Brave/Firefox MV3 extension (see its README); `scripts/build-extension.mjs` packages it into `public/downloads/`
 
+## Security
+
+- Every read and write goes through `accessBoard` / `accessGroup` / `accessBookmark` in `src/server/library.ts`: owner or collaborator, role checked for writes, vault boards hidden unless unlocked with the matching password. Dragging items (arrange endpoints) re-checks every moved id, and items only cross the vault boundary through the edit dialog, which handles encryption.
+- Public links (`/b/<slug>`, 64-bit random) show regular groups only: no smart groups, widgets, incognito items or vault boards. They're served with `noindex`, and `Referrer-Policy` keeps the path from leaking to linked sites. Only the owner sees or changes a board's public link.
+- While the vault is locked, nothing about it is returned: not in boards, search, trash, history, undo, webhooks, REST or MCP.
+- Vault unlocks: 5 attempts, then a doubling cool-down up to an hour. It's stored in the database and claimed atomically, so restarts and parallel requests can't get around it.
+- Server-side fetches (previews, feeds, calendars, link checks, webhooks) can only reach public addresses. The connection is pinned to the checked IP, so DNS rebinding doesn't work.
+- Responses carry `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, HSTS, and `Cache-Control: private` for pages and data.
+
 ## Performance
 
 - HTML and server-function responses are gzipped in `src/server.ts`; static assets are served as precompressed brotli/gzip with immutable caching.

@@ -4,7 +4,7 @@ import { Effect, Schedule } from "effect";
 import { z } from "zod";
 import { webhooks } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
-import { assertPublicHost } from "./metadata";
+import { assertPublicHost, publicFetch } from "./metadata";
 import { query } from "./runtime";
 
 export const WEBHOOK_EVENTS = [
@@ -88,11 +88,13 @@ const deliver = (
 ) =>
 	Effect.tryPromise({
 		try: async (signal) => {
+			// Checked again on every delivery: DNS can change after the hook was saved.
+			await Effect.runPromise(assertPublicHost(new URL(hook.url)));
 			const timestamp = Math.floor(Date.now() / 1000);
 			const signature = createHmac("sha256", hook.secret)
 				.update(`${timestamp}.${body}`)
 				.digest("hex");
-			const response = await fetch(hook.url, {
+			const response = await publicFetch(hook.url, {
 				method: "POST",
 				signal,
 				redirect: "manual",

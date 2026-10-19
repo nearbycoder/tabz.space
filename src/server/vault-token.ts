@@ -9,8 +9,14 @@ import type { VaultSlot } from "./vault-access";
 
 export const VAULT_COOKIE = "tabz_vault";
 
-const secret = () =>
-	process.env.BETTER_AUTH_SECRET ?? "tabz-space-dev-secret-change-me";
+const secret = () => {
+	const value = process.env.BETTER_AUTH_SECRET;
+	if (value) return value;
+	// A guessable key would let anyone forge an unlocked-vault cookie.
+	if (process.env.NODE_ENV === "production")
+		throw new Error("BETTER_AUTH_SECRET must be set in production");
+	return "tabz-space-dev-secret-change-me";
+};
 
 export async function signVaultToken(
 	userId: string,
