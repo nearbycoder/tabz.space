@@ -15,8 +15,9 @@ import {
 	Settings2,
 	Sparkles,
 } from "lucide-react";
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { cn } from "#/lib/cn";
+import { useHomeAction } from "#/lib/home-query";
 import { lazyNamed } from "#/lib/lazy";
 import {
 	type BoardLayout,
@@ -24,6 +25,7 @@ import {
 	WIDGET_TYPES,
 } from "#/lib/preferences";
 import { SMART_EMPTY, smartItems } from "#/lib/smart";
+import { updateGroup } from "#/server/home";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import { type HomeGroup, linksIn } from "./types";
@@ -123,7 +125,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								: WIDGET_TYPES[widget.type].icon}
 						</span>
 					)}
-					<h2 className="truncate text-sm font-semibold">{group.name}</h2>
+					<GroupName group={group} editable={!readOnly} />
 					{!widget && <span className="text-xs text-muted">{total}</span>}
 					<div
 						className={cn(
@@ -274,5 +276,67 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 				</div>
 			)}
 		</section>
+	);
+}
+
+/** The group's name; click it to rename in place (Enter saves, Escape cancels). */
+function GroupName({
+	group,
+	editable,
+}: {
+	group: HomeGroup;
+	editable: boolean;
+}) {
+	const [draft, setDraft] = useState<string | null>(null);
+	const rename = useHomeAction(updateGroup, {
+		optimistic: (data, input) => ({
+			...data,
+			boards: data.boards.map((board) => ({
+				...board,
+				groups: board.groups.map((g) =>
+					g.id === input.id ? { ...g, name: input.name ?? g.name } : g,
+				),
+			})),
+		}),
+	});
+	const save = () => {
+		const name = draft?.trim();
+		setDraft(null);
+		if (name && name !== group.name) rename.mutate({ id: group.id, name });
+	};
+
+	if (draft !== null)
+		return (
+			<input
+				// biome-ignore lint/a11y/noAutofocus: opened by clicking the name
+				autoFocus
+				value={draft}
+				onChange={(event) => setDraft(event.target.value)}
+				onFocus={(event) => event.currentTarget.select()}
+				onBlur={save}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") event.currentTarget.blur();
+					if (event.key === "Escape") setDraft(null);
+				}}
+				maxLength={60}
+				aria-label="Group name"
+				className="-mx-1 min-w-0 flex-1 rounded-md bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] px-1 text-sm font-semibold outline-none ring-2 ring-[color-mix(in_srgb,var(--accent)_50%,transparent)]"
+			/>
+		);
+	return (
+		<h2 className="min-w-0 truncate text-sm font-semibold">
+			{editable ? (
+				<button
+					type="button"
+					title="Rename"
+					onClick={() => setDraft(group.name)}
+					className="-mx-1 max-w-full cursor-text truncate rounded-md px-1 text-left transition hover:bg-[color-mix(in_srgb,var(--ink)_6%,transparent)]"
+				>
+					{group.name}
+				</button>
+			) : (
+				group.name
+			)}
+		</h2>
 	);
 }
