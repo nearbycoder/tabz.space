@@ -15,6 +15,7 @@ import {
 import * as capture from "../capture";
 import * as library from "../library";
 import { runServer } from "../runtime";
+import * as sharing from "../sharing";
 
 /*
  * MCP tools over the same library programs the web app uses. Each request
@@ -432,6 +433,42 @@ export function createTabzMcpServer(userId: string) {
 			annotations: { destructiveHint: true },
 		},
 		(input) => run(library.deleteBoard(userId, input)),
+	);
+
+	server.registerTool(
+		"share_board",
+		{
+			title: "Share a board",
+			description:
+				"Turn a board's public read-only link on or off (returns the URL), and/or invite an existing tabz user by username or email as an editor or viewer. Vault boards can't be shared.",
+			inputSchema: z.object({
+				boardId: z.string(),
+				public: z.boolean().optional(),
+				invite: sharing.inviteInput.omit({ boardId: true }).optional(),
+			}),
+			annotations: { openWorldHint: true },
+		},
+		({ boardId, public: isPublic, invite }) =>
+			run(
+				Effect.gen(function* () {
+					const result: Record<string, unknown> = {};
+					if (isPublic !== undefined) {
+						const { shareSlug } = yield* sharing.setPublic(userId, {
+							id: boardId,
+							public: isPublic,
+						});
+						result.publicUrl = shareSlug
+							? `${process.env.BETTER_AUTH_URL ?? "https://tabz.space"}/b/${shareSlug}`
+							: null;
+					}
+					if (invite)
+						result.invited = yield* sharing.inviteMember(userId, {
+							boardId,
+							...invite,
+						});
+					return result;
+				}),
+			),
 	);
 
 	server.registerTool(

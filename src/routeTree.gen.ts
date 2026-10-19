@@ -16,6 +16,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as BSlugRouteImport } from './routes/b.$slug'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
 
@@ -54,6 +55,11 @@ const ApiMcpRoute = ApiMcpRouteImport.update({
   path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BSlugRoute = BSlugRouteImport.update({
+  id: '/b/$slug',
+  path: '/b/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/b/$slug': typeof BSlugRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/.well-known/$'
     | '/api/mcp'
+    | '/b/$slug'
     | '/api/auth/$'
     | '/api/v1/$'
   fileRoutesByTo: FileRoutesByTo
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/.well-known/$'
     | '/api/mcp'
+    | '/b/$slug'
     | '/api/auth/$'
     | '/api/v1/$'
   id:
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/.well-known/$'
     | '/api/mcp'
+    | '/b/$slug'
     | '/api/auth/$'
     | '/api/v1/$'
   fileRoutesById: FileRoutesById
@@ -143,6 +155,7 @@ export interface RootRouteChildren {
   SignUpRoute: typeof SignUpRoute
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiMcpRoute: typeof ApiMcpRoute
+  BSlugRoute: typeof BSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
 }
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/b/$slug': {
+      id: '/b/$slug'
+      path: '/b/$slug'
+      fullPath: '/b/$slug'
+      preLoaderRoute: typeof BSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -223,6 +243,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignUpRoute: SignUpRoute,
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiMcpRoute: ApiMcpRoute,
+  BSlugRoute: BSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
 }

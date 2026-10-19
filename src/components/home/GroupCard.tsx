@@ -48,7 +48,7 @@ export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 };
 
 export function GroupCard({ group, layout, onToggle }: Props) {
-	const { editing, openDialog, openAll, boards } = useHomeContext();
+	const { editing, openDialog, openAll, boards, readOnly } = useHomeContext();
 	const smart = group.kind === "smart" ? group.options.smart : undefined;
 	const widget = group.kind === "widget" ? group.options.widget : undefined;
 	const smartLinks = useMemo(
@@ -76,6 +76,8 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 	return (
 		<section
 			ref={sortable.setNodeRef}
+			data-group={group.name}
+			data-kind={group.kind}
 			style={
 				{
 					transform: CSS.Translate.toString(sortable.transform),
@@ -137,7 +139,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								<ExternalLink className="size-3.5" />
 							</button>
 						)}
-						{!smart && !widget && (
+						{!smart && !widget && !readOnly && (
 							<>
 								<button
 									type="button"
@@ -163,17 +165,19 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								</button>
 							</>
 						)}
-						<button
-							type="button"
-							className="icon-btn size-7 pointer-coarse:size-9"
-							aria-label="Group settings"
-							title="Group settings"
-							onClick={() =>
-								openDialog({ type: "group", boardId: group.boardId, group })
-							}
-						>
-							<Settings2 className="size-3.5" />
-						</button>
+						{!readOnly && (
+							<button
+								type="button"
+								className="icon-btn size-7 pointer-coarse:size-9"
+								aria-label="Group settings"
+								title="Group settings"
+								onClick={() =>
+									openDialog({ type: "group", boardId: group.boardId, group })
+								}
+							>
+								<Settings2 className="size-3.5" />
+							</button>
+						)}
 						<button
 							type="button"
 							className="icon-btn size-7 pointer-coarse:size-9"
@@ -238,7 +242,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 									size={layout.tileSize}
 								/>
 							))}
-							{(editing || group.bookmarks.length === 0) && (
+							{!readOnly && (editing || group.bookmarks.length === 0) && (
 								<button
 									type="button"
 									onClick={() =>

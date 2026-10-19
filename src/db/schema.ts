@@ -71,6 +71,8 @@ export const boards = sqliteTable(
 		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 		/** Set for boards mirrored from elsewhere (e.g. "browser" bookmarks sync). */
 		source: text("source"),
+		/** Public read-only link (/b/<slug>); null when not shared publicly. */
+		shareSlug: text("share_slug").unique(),
 		...timestamps,
 	},
 	(table) => [index("boards_user_idx").on(table.userId, table.position)],
@@ -267,3 +269,22 @@ export const webhooks = sqliteTable(
 
 export type ApiToken = typeof apiTokens.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
+
+/** Community themes: published appearance presets anyone can apply. */
+export const themes = sqliteTable(
+	"themes",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		/** The appearance subset of UserSettings (see THEME_KEYS). */
+		settings: json<Partial<UserSettings>>("settings", {}),
+		installs: integer("installs").default(0).notNull(),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [index("themes_installs_idx").on(table.installs)],
+);
+
+export type Theme = typeof themes.$inferSelect;

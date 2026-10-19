@@ -56,6 +56,7 @@ import {
 import { type HomeData, importBookmarks, updateBoard } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
+import { CommunityThemes, CustomCssEditor } from "./CommunityThemes";
 import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
 import { ApiTokens, Webhooks } from "./Developer";
@@ -579,6 +580,15 @@ export function SettingsPanel({
 							max={90}
 							suffix="%"
 							onChange={(dim) => setBackground({ dim }, false)}
+						/>
+					</Section>
+					<Section title="Community themes">
+						<CommunityThemes />
+					</Section>
+					<Section title="Custom CSS">
+						<CustomCssEditor
+							value={settings.customCss}
+							onChange={(customCss) => set({ customCss }, false)}
 						/>
 					</Section>
 				</div>

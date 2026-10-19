@@ -55,6 +55,7 @@ export function BookmarkTile({ item, style, size }: Props) {
 	return (
 		<div
 			ref={sortable.setNodeRef}
+			data-tile={item.kind}
 			style={{
 				transform: CSS.Translate.toString(sortable.transform),
 				transition: sortable.transition,
@@ -141,8 +142,15 @@ function FolderMosaic({
 }
 
 export function TileBody({ item, style, size, overlay }: Props) {
-	const { editing, settings, openDialog, onVisit, isIncognito, openLink } =
-		useHomeContext();
+	const {
+		editing,
+		settings,
+		openDialog,
+		onVisit,
+		isIncognito,
+		openLink,
+		readOnly,
+	} = useHomeContext();
 	const incognito = isIncognito(item);
 	const isFolder = item.kind === "folder";
 	// Folders add up the new posts of everything inside.
@@ -438,7 +446,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 					)}
 				</span>
 			)}
-			{!overlay && (
+			{!overlay && !readOnly && (
 				<button
 					type="button"
 					aria-label={`Edit ${item.title}`}

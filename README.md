@@ -73,6 +73,13 @@ Mark a link, or a whole folder, as always-incognito, or switch on "Open every li
 - **Rediscover**: three links you haven't opened in 30+ days, the same all day, with shuffle and quick trash.
 - **Monthly report**: every opened link is logged in `visits` (kept ~13 months). "Your month in tabz" (⌘K, or a banner in the first week of a month) shows opens, active days, a daily chart, most-opened links and habits (`src/server/report.ts`).
 
+## Sharing and themes
+
+- **Public links**: Edit board → "Anyone with the link can view" gives `/b/<slug>` (`boards.share_slug`), a server-rendered read-only page with Open Graph tags and **Copy to my tabz** (signs visitors up first, then finishes the copy). Only regular groups and links are shown: no widgets, smart groups or incognito links. Vault boards can't be shared.
+- **Collaborators**: invite existing users by username or email as editors or viewers (`board_members`, `src/server/sharing.ts`). Shared boards appear in their tabs with a 👥 marker; viewers get a read-only UI, and every write is checked server-side by `accessBoard`.
+- **Custom CSS** (Customize → Look): applied to your own home page with stable hooks (`[data-group]`, `[data-tile]`, `[data-clock]`, `[data-board]`, `.glass`, CSS variables).
+- **Community themes**: publish your look (colors, background, font, shape, custom CSS; never links). Published CSS is sanitized: no `@import`, no external `url()`, so applying a theme can't track you.
+
 ## REST API, tokens and webhooks
 
 Customize → Connect has personal API tokens and outgoing webhooks.

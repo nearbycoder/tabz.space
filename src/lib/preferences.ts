@@ -130,6 +130,8 @@ export const userSettingsSchema = z.object({
 	greetingName: z.string().max(40).default(""),
 	showTopSites: z.boolean().default(true),
 	showRediscover: z.boolean().default(true),
+	/** Extra CSS applied to the home page (Customize → Look → Custom CSS). */
+	customCss: z.string().max(20_000).default(""),
 	/** The browser's IANA time zone, so schedules work during server rendering. */
 	timeZone: z.string().max(64).optional(),
 	/** Last monthly report ("YYYY-MM") the user opened or dismissed. */
@@ -172,6 +174,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	greetingName: "",
 	showTopSites: true,
 	showRediscover: true,
+	customCss: "",
 	openInNewTab: false,
 	incognitoAll: false,
 	linkPreviews: true,
@@ -541,4 +544,28 @@ export function resolveLayout(stored: unknown): BoardLayout {
 	const merged = { ...DEFAULT_BOARD_LAYOUT, ...(stored as object) };
 	const parsed = boardLayoutSchema.safeParse(merged);
 	return parsed.success ? parsed.data : DEFAULT_BOARD_LAYOUT;
+}
+
+/** Settings a community theme carries: how tabz looks, never what it does. */
+export const THEME_KEYS = [
+	"theme",
+	"accent",
+	"background",
+	"font",
+	"radius",
+	"surface",
+	"customCss",
+] as const satisfies readonly (keyof UserSettings)[];
+
+/**
+ * Custom CSS can restyle the page but must not phone home or break out of
+ * its <style> tag: no @import, no external url(), no closing tags.
+ */
+export function sanitizeCss(css: string) {
+	return css
+		.replace(/<\/?\s*style/gi, "")
+		.replace(/@import[^;]*;?/gi, "")
+		.replace(/url\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none")
+		.replace(/expression\s*\(/gi, "")
+		.slice(0, 20_000);
 }

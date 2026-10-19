@@ -10,6 +10,7 @@ import {
 	Search,
 	SlidersHorizontal,
 	Sun,
+	Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Logo } from "#/components/Logo";
@@ -152,7 +153,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		boards.find((b) => b.id === (picked ?? scheduledId)) ??
 		boards.find((b) => b.id === settings.activeBoardId) ??
 		boards[0];
-	const [editing, setEditing] = useState(false);
+	const [editingState, setEditing] = useState(false);
+	const readOnly = board?.role === "viewer";
+	const editing = editingState && !readOnly;
 	const [dialog, setDialog] = useState<DialogState>(null);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const saveSettings = useSaveSettings();
@@ -435,8 +438,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			isIncognito,
 			openLink,
 			openAll,
+			readOnly,
 		}),
-		[settings, boards, editing, onVisit, isIncognito, openLink, openAll],
+		[
+			settings,
+			boards,
+			editing,
+			onVisit,
+			isIncognito,
+			openLink,
+			openAll,
+			readOnly,
+		],
 	);
 
 	if (!board) return null;
@@ -449,7 +462,11 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	return (
 		<HomeContext.Provider value={context}>
-			<div className="relative min-h-dvh">
+			<div className="relative min-h-dvh" data-board={board.name}>
+				{settings.customCss && (
+					// User-authored styles for their own page; can't close the tag.
+					<style>{settings.customCss.replace(/<\/?\s*style/gi, "")}</style>
+				)}
 				<Backdrop background={settings.background} />
 
 				<header className="sticky top-0 z-30 bg-[color-mix(in_srgb,var(--canvas)_60%,transparent)] pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:bg-transparent sm:backdrop-blur-none">
@@ -483,6 +500,16 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									{b.vault && <Lock className="size-3 text-accent" />}
 									{b.icon && <span>{b.icon}</span>}
 									{b.name}
+									{(b.ownerName || b.shareSlug) && (
+										<Users
+											className="size-3 text-muted"
+											aria-label={
+												b.ownerName
+													? `Shared by ${b.ownerName}`
+													: "Shared publicly"
+											}
+										/>
+									)}
 									{editing && b.id === board.id && (
 										<Pencil
 											className="size-3 text-muted"
@@ -537,7 +564,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									editing && "bg-accent text-white hover:bg-accent",
 								)}
 								onClick={() => setEditing((value) => !value)}
-								title="Edit layout (E)"
+								disabled={readOnly}
+								title={readOnly ? "This board is view-only" : "Edit layout (E)"}
 							>
 								{editing ? (
 									<Check className="size-4" />
@@ -553,7 +581,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								className="icon-btn"
 								aria-label="Add bookmark"
 								title="Add bookmark (N)"
-								disabled={!board.groups.find(isLinksGroup)}
+								disabled={readOnly || !board.groups.find(isLinksGroup)}
 								onClick={() =>
 									board.groups.find(isLinksGroup) &&
 									setDialog({
@@ -586,7 +614,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
 						{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
 						{/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users open the vault by typing the code */}
-						<div onClick={onClockTap} className="select-none">
+						<div onClick={onClockTap} className="select-none" data-clock>
 							<Clock
 								name={settings.greetingName || session.name}
 								showClock={settings.showClock}
@@ -691,10 +719,12 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					<BoardDialog
 						board={dialog.board}
 						canDelete={
-							Boolean(dialog.board?.vault) ||
-							boards.filter((b) => !b.vault).length > 1
+							(!dialog.board || dialog.board.role === "owner") &&
+							(Boolean(dialog.board?.vault) ||
+								boards.filter((b) => !b.vault && b.role === "owner").length > 1)
 						}
 						vaultUnlocked={vault.unlocked}
+						userId={data.userId}
 						onClose={close}
 					/>
 				)}

@@ -23,6 +23,7 @@ import {
 } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
+import { user } from "#/db/auth-schema";
 import {
 	activity,
 	type Board,
@@ -102,7 +103,7 @@ const memberships = (userId: string) =>
  * A board the caller can use: owned or shared with them, not deleted, and not
  * inside a locked vault. `write` additionally rejects viewers.
  */
-const accessBoard = (
+export const accessBoard = (
 	userId: string,
 	boardId: string,
 	options: { write?: boolean; includeDeleted?: boolean } = {},
@@ -228,7 +229,7 @@ const snapshot = (table: Snapshot["table"], ids: string[]) =>
 			);
 
 /** "Before" state of a row that is about to be created: it didn't exist. */
-const created = (table: Snapshot["table"], id: string): Snapshot => ({
+export const created = (table: Snapshot["table"], id: string): Snapshot => ({
 	table,
 	id,
 	values: { deletedAt: Date.now() },
@@ -241,7 +242,7 @@ const SINGULAR = {
 } as const;
 
 /** Logs an undoable change and notifies the user's webhooks. */
-const record = (
+export const record = (
 	userId: string,
 	action: string,
 	label: string,
@@ -274,10 +275,10 @@ const record = (
 				}
 			});
 
-const quote = (text: string) =>
+export const quote = (text: string) =>
 	`“${text.length > 40 ? `${text.slice(0, 39)}…` : text}”`;
 
-const nextPosition = (
+export const nextPosition = (
 	table: typeof boards | typeof groups | typeof bookmarks,
 	where: ReturnType<typeof eq>,
 ) =>
@@ -424,6 +425,25 @@ export const loadHome = (userId: string) =>
 			.filter((row) => !row.parentId)
 			.map((row) => ({ ...row, children: children.get(row.id) ?? [] }));
 		const roles = new Map(shared.map((m) => [m.boardId, m.role as Role]));
+		// Who shared each board with you.
+		const ownerIds = [
+			...new Set(
+				boardRows.map((board) => board.userId).filter((id) => id !== userId),
+			),
+		];
+		const owners = new Map(
+			ownerIds.length
+				? (yield* query((db) =>
+						db
+							.select({ id: user.id, name: user.name, username: user.username })
+							.from(user)
+							.where(inArray(user.id, ownerIds)),
+					)).map((row) => [
+						row.id,
+						row.username ? `@${row.username}` : row.name,
+					])
+				: [],
+		);
 		return {
 			userId,
 			vault: {
@@ -439,6 +459,8 @@ export const loadHome = (userId: string) =>
 					board.userId === userId
 						? ("owner" as Role)
 						: (roles.get(board.id) ?? "viewer"),
+				ownerName:
+					board.userId === userId ? null : (owners.get(board.userId) ?? null),
 				layout: resolveLayout(board.layout),
 				groups: groupRows
 					.filter((group) => group.boardId === board.id)

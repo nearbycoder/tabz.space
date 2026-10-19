@@ -1,7 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import * as library from "./library";
 import * as report from "./report";
-import { runAuthed } from "./runtime";
+import { runAuthed, runServer } from "./runtime";
+import * as sharing from "./sharing";
+import * as themes from "./themes";
 import * as widgets from "./widgets";
 
 /* RPC surface for the web app. All logic lives in ./library (shared with MCP). */
@@ -215,4 +218,67 @@ export const saveWidget = createServerFn({ method: "POST" })
 	.validator(library.saveWidgetInput)
 	.handler(({ data }) =>
 		runAuthed((user) => library.saveWidget(user.id, data)),
+	);
+
+/* Sharing: public links and collaborators. */
+
+export const setBoardPublic = createServerFn({ method: "POST" })
+	.validator(sharing.setPublicInput)
+	.handler(({ data }) => runAuthed((user) => sharing.setPublic(user.id, data)));
+
+/** Public: anyone with the link can read a shared board. */
+export const getPublicBoard = createServerFn()
+	.validator(z.object({ slug: z.string().min(4).max(32) }))
+	.handler(({ data }) => runServer(sharing.getPublicBoard(data.slug)));
+
+export const copyPublicBoard = createServerFn({ method: "POST" })
+	.validator(sharing.copyPublicInput)
+	.handler(({ data }) =>
+		runAuthed((user) => sharing.copyPublicBoard(user.id, data)),
+	);
+
+export const listBoardMembers = createServerFn()
+	.validator(z.object({ boardId: library.idSchema }))
+	.handler(({ data }) =>
+		runAuthed((user) => sharing.listMembers(user.id, data.boardId)),
+	);
+
+export const inviteBoardMember = createServerFn({ method: "POST" })
+	.validator(sharing.inviteInput)
+	.handler(({ data }) =>
+		runAuthed((user) => sharing.inviteMember(user.id, data)),
+	);
+
+export const updateBoardMember = createServerFn({ method: "POST" })
+	.validator(sharing.memberInput)
+	.handler(({ data }) =>
+		runAuthed((user) => sharing.updateMember(user.id, data)),
+	);
+
+export const removeBoardMember = createServerFn({ method: "POST" })
+	.validator(sharing.memberInput)
+	.handler(({ data }) =>
+		runAuthed((user) => sharing.removeMember(user.id, data)),
+	);
+
+/* Community themes. */
+
+export const listThemes = createServerFn()
+	.validator(themes.listThemesInput)
+	.handler(({ data }) => runAuthed((user) => themes.listThemes(user.id, data)));
+
+export const publishTheme = createServerFn({ method: "POST" })
+	.validator(themes.publishThemeInput)
+	.handler(({ data }) =>
+		runAuthed((user) => themes.publishTheme(user.id, data)),
+	);
+
+export const applyTheme = createServerFn({ method: "POST" })
+	.validator(themes.themeIdInput)
+	.handler(({ data }) => runAuthed((user) => themes.applyTheme(user.id, data)));
+
+export const deleteTheme = createServerFn({ method: "POST" })
+	.validator(themes.themeIdInput)
+	.handler(({ data }) =>
+		runAuthed((user) => themes.deleteTheme(user.id, data)),
 	);

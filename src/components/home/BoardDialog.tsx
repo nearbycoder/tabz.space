@@ -7,6 +7,7 @@ import { useHomeAction, useSaveSettings } from "#/lib/home-query";
 import type { BoardSchedule } from "#/lib/preferences";
 import { DAY_LETTERS, describeSchedule } from "#/lib/schedule";
 import { createBoard, deleteBoard, updateBoard } from "#/server/home";
+import { ShareBoard } from "./ShareBoard";
 import type { HomeBoard } from "./types";
 
 const ICONS = [
@@ -27,11 +28,13 @@ const ICONS = [
 export function BoardDialog({
 	board,
 	canDelete,
+	userId,
 	vaultUnlocked,
 	onClose,
 }: {
 	board?: HomeBoard;
 	canDelete: boolean;
+	userId: string;
 	/** When the vault is open, boards can be moved into or out of it. */
 	vaultUnlocked: boolean;
 	onClose: () => void;
@@ -110,14 +113,14 @@ export function BoardDialog({
 						/>
 					</div>
 				</Field>
-				{vaultUnlocked && (
+				{vaultUnlocked && (!board || board.role === "owner") && (
 					<Toggle
 						label="🔒 Keep in vault"
 						checked={inVault}
 						onChange={setInVault}
 					/>
 				)}
-				{board && !inVault && (
+				{board && !inVault && board.role === "owner" && (
 					<div className="space-y-3 rounded-2xl border border-line p-3">
 						<Toggle
 							label="🕘 Show this board automatically"
@@ -224,6 +227,11 @@ export function BoardDialog({
 					</button>
 				</div>
 			</form>
+			{board && !board.vault && (
+				<div className="mt-4">
+					<ShareBoard board={board} userId={userId} onLeft={onClose} />
+				</div>
+			)}
 		</Modal>
 	);
 }

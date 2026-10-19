@@ -14,6 +14,8 @@ type HomeContextValue = {
 	openLink: (bookmark: LinkItem, options?: { newTab?: boolean }) => void;
 	/** Opens many links: private ones in an incognito window, the rest as tabs. */
 	openAll: (bookmarks: LinkItem[]) => void;
+	/** The current board is shared with you as view-only. */
+	readOnly: boolean;
 };
 
 export const HomeContext = createContext<HomeContextValue | null>(null);

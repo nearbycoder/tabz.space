@@ -23,6 +23,7 @@ export function NotesWidget({
 	groupId: string;
 	widget: Of<"notes">;
 }) {
+	const { readOnly } = useHomeContext();
 	const save = useWidgetSaver(groupId);
 	const [text, setText] = useState(widget.text);
 	const ref = useRef<HTMLTextAreaElement>(null);
@@ -36,7 +37,8 @@ export function NotesWidget({
 				fit(event.target);
 				save({ ...widget, text: event.target.value });
 			}}
-			placeholder="Write anything…"
+			readOnly={readOnly}
+			placeholder={readOnly ? "" : "Write anything…"}
 			maxLength={20_000}
 			aria-label="Notes"
 			className="w-full resize-none rounded-xl bg-transparent p-1 text-sm leading-relaxed outline-none placeholder:text-muted focus:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)]"
@@ -52,7 +54,7 @@ export function TodoWidget({
 	groupId: string;
 	widget: Of<"todo">;
 }) {
-	const { settings } = useHomeContext();
+	const { settings, readOnly } = useHomeContext();
 	const save = useWidgetSaver(groupId, 300);
 	const [draft, setDraft] = useState("");
 	const items = [...widget.items].sort(
@@ -84,6 +86,7 @@ export function TodoWidget({
 						<button
 							type="button"
 							aria-pressed={item.done}
+							disabled={readOnly}
 							aria-label={
 								item.done
 									? `Mark ${item.text} not done`
@@ -118,20 +121,22 @@ export function TodoWidget({
 						>
 							{item.text}
 						</span>
-						<button
-							type="button"
-							aria-label={`Remove ${item.text}`}
-							onClick={() =>
-								update(widget.items.filter((i) => i.id !== item.id))
-							}
-							className="icon-btn size-6 opacity-0 group-hover/todo:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-60"
-						>
-							<X className="size-3.5" />
-						</button>
+						{!readOnly && (
+							<button
+								type="button"
+								aria-label={`Remove ${item.text}`}
+								onClick={() =>
+									update(widget.items.filter((i) => i.id !== item.id))
+								}
+								className="icon-btn size-6 opacity-0 group-hover/todo:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-60"
+							>
+								<X className="size-3.5" />
+							</button>
+						)}
 					</li>
 				))}
 			</ul>
-			<form onSubmit={add}>
+			<form onSubmit={add} hidden={readOnly}>
 				<input
 					value={draft}
 					onChange={(event) => setDraft(event.target.value)}
@@ -141,7 +146,7 @@ export function TodoWidget({
 					className="w-full rounded-lg bg-transparent px-1 py-1.5 text-sm outline-none placeholder:text-muted focus:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)]"
 				/>
 			</form>
-			{done > 0 && (
+			{done > 0 && !readOnly && (
 				<button
 					type="button"
 					onClick={() => update(widget.items.filter((item) => !item.done))}

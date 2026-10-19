@@ -26,6 +26,10 @@ import {
 } from "#/server/home";
 import { TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
+
+// View-only boards: nothing can be dragged.
+const NO_SENSORS: ReturnType<typeof useDragSensors> = [];
+
 import { GroupCard } from "./GroupCard";
 import type { HomeBoard, HomeGroup } from "./types";
 
@@ -34,7 +38,7 @@ const isGroupKey = (id: string) => id.startsWith("group:");
 const isIntoKey = (id: string) => id.startsWith("into:");
 
 export function BoardGrid({ board }: { board: HomeBoard }) {
-	const { editing, openDialog } = useHomeContext();
+	const { editing, openDialog, readOnly } = useHomeContext();
 	const [items, setItems] = useState<HomeGroup[]>(board.groups);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const dragOrigin = useRef<string | null>(null);
@@ -274,7 +278,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 	return (
 		<DndContext
 			id={`board-${board.id}`}
-			sensors={sensors}
+			sensors={readOnly ? NO_SENSORS : sensors}
 			collisionDetection={collisionDetection}
 			onDragStart={onDragStart}
 			onDragOver={onDragOver}
