@@ -1,7 +1,10 @@
-import { Loader2, Sparkles, Trash2 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, Loader2, Sparkles, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ColorSwatches, Field, Segmented } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
+import { call, run } from "#/lib/api";
 import { useHomeAction } from "#/lib/home-query";
 import {
 	ACCENTS,
@@ -13,14 +16,19 @@ import {
 	WIDGET_TYPES,
 	type Widget,
 } from "#/lib/preferences";
-import { createGroup, deleteGroup, updateGroup } from "#/server/home";
+import {
+	createGroup,
+	deleteGroup,
+	saveCustomWidget,
+	updateGroup,
+} from "#/server/home";
 import type { HomeBoard, HomeGroup } from "./types";
 import {
 	defaultWidget,
 	WidgetConfig,
-	WidgetTypePicker,
 	widgetReady,
 } from "./widgets/WidgetConfig";
+import { customWidgetsKey, WidgetGallery } from "./widgets/WidgetGallery";
 
 type Props = {
 	boards: HomeBoard[];
@@ -52,7 +60,29 @@ export function GroupDialog({
 	const [widget, setWidget] = useState<Widget>(
 		group?.options.widget ?? defaultWidget("notes"),
 	);
+	// New widget groups start in the gallery; picking one moves on to its settings.
+	const [picking, setPicking] = useState(!group);
 	const configurable = !["notes", "todo"].includes(widget.type);
+	const widgetIcon =
+		"data" in widget && typeof widget.data.icon === "string"
+			? widget.data.icon
+			: WIDGET_TYPES[widget.type].icon;
+	const queryClient = useQueryClient();
+	const keep = useMutation({
+		mutationFn: () =>
+			run(
+				call(saveCustomWidget, {
+					name: name.trim() || WIDGET_TYPES[widget.type].label,
+					icon: widgetIcon,
+					widget,
+				}),
+			),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: customWidgetsKey });
+			toast.success("Saved to My widgets");
+		},
+		onError: (error) => toast.error(error.message),
+	});
 	const [rules, setRules] = useState<SmartRules>(
 		group?.options.smart ?? DEFAULT_SMART_RULES,
 	);
@@ -136,162 +166,187 @@ export function GroupDialog({
 						]}
 					/>
 				)}
-				{kind === "widget" && !group && (
-					<WidgetTypePicker
-						value={widget.type}
-						onChange={(type) => setWidget(defaultWidget(type))}
+				{kind === "widget" && picking ? (
+					<WidgetGallery
+						onPick={(type) => {
+							setWidget(defaultWidget(type));
+							setPicking(false);
+						}}
+						onPickSaved={(saved) => {
+							setWidget(saved.widget);
+							setName(saved.name);
+							setPicking(false);
+						}}
 					/>
-				)}
-				<Field label="Name">
-					<input
-						className="field"
-						value={name}
-						onChange={(event) => setName(event.target.value)}
-						placeholder={
-							kind === "widget"
-								? WIDGET_TYPES[widget.type].label
-								: "Work, News, Tools…"
-						}
-						required={kind !== "widget"}
-						maxLength={60}
-						autoFocus
-					/>
-				</Field>
-				{kind === "smart" && (
-					<div className="space-y-3 rounded-2xl border border-line p-3">
-						<p className="flex items-center gap-1.5 text-xs text-muted">
-							<Sparkles className="size-3.5 text-accent" /> Fills itself from
-							all your boards and stays up to date.
-						</p>
-						<Field label="Show">
-							<select
-								className="field"
-								value={rules.sort}
-								onChange={(event) =>
-									setRules({ ...rules, sort: event.target.value as SmartSort })
-								}
+				) : (
+					<>
+						{kind === "widget" && !group && (
+							<button
+								type="button"
+								className="flex items-center gap-1 text-sm text-muted hover:text-ink"
+								onClick={() => setPicking(true)}
 							>
-								{Object.entries(SMART_SORTS).map(([value, label]) => (
-									<option key={value} value={value}>
-										{label}
-									</option>
-								))}
-							</select>
-						</Field>
-						<div className="grid gap-3 sm:grid-cols-2">
-							<Field label="With tags">
-								<input
-									className="field"
-									value={tagText}
-									onChange={(event) => setTagText(event.target.value)}
-									placeholder="Any (comma separated)"
-								/>
-							</Field>
-							<Field label="Containing">
-								<input
-									className="field"
-									value={rules.query ?? ""}
-									onChange={(event) =>
-										setRules({ ...rules, query: event.target.value })
-									}
-									placeholder="Any text"
-									maxLength={100}
-								/>
-							</Field>
-						</div>
-						{boards.length > 1 && (
-							<Field label="From">
-								<select
-									className="field"
-									value={rules.boardId ?? ""}
-									onChange={(event) =>
-										setRules({
-											...rules,
-											boardId: event.target.value || undefined,
-										})
-									}
-								>
-									<option value="">All boards</option>
-									{boards
-										.filter((b) => !b.vault)
-										.map((b) => (
-											<option key={b.id} value={b.id}>
-												{`${b.icon ?? ""} ${b.name}`.trim()}
-											</option>
-										))}
-								</select>
-							</Field>
+								<ChevronLeft className="size-4" /> All widgets
+								<span className="ml-1 text-ink">
+									{widgetIcon} {WIDGET_TYPES[widget.type].label}
+								</span>
+							</button>
 						)}
-						<Field label="Up to">
-							<Segmented
-								value={rules.limit}
-								onChange={(limit) => setRules({ ...rules, limit })}
-								options={[6, 12, 24, 48].map((value) => ({
-									value,
-									label: String(value),
-								}))}
+						<Field label="Name">
+							<input
+								className="field"
+								value={name}
+								onChange={(event) => setName(event.target.value)}
+								placeholder={
+									kind === "widget"
+										? WIDGET_TYPES[widget.type].label
+										: "Work, News, Tools…"
+								}
+								required={kind !== "widget"}
+								maxLength={60}
+								autoFocus
 							/>
 						</Field>
-					</div>
-				)}
-				{kind === "widget" && (
-					<WidgetConfig widget={widget} onChange={setWidget} />
-				)}
-				<Field label="Color">
-					<ColorSwatches
-						value={color}
-						colors={ACCENTS}
-						onChange={setColor}
-						allowNone
-					/>
-				</Field>
-				{group && (
-					<>
-						{group.kind !== "widget" && (
-							<Field label="Tile style">
-								<Segmented
-									value={style}
-									onChange={setStyle}
-									options={[
-										{ value: "inherit", label: "Board" },
-										{ value: "tile", label: "Tiles" },
-										{ value: "card", label: "Cards" },
-										{ value: "list", label: "List" },
-										{ value: "icon", label: "Icons" },
-										{ value: "gallery", label: "Previews" },
-									]}
-								/>
-							</Field>
+						{kind === "smart" && (
+							<div className="space-y-3 rounded-2xl border border-line p-3">
+								<p className="flex items-center gap-1.5 text-xs text-muted">
+									<Sparkles className="size-3.5 text-accent" /> Fills itself
+									from all your boards and stays up to date.
+								</p>
+								<Field label="Show">
+									<select
+										className="field"
+										value={rules.sort}
+										onChange={(event) =>
+											setRules({
+												...rules,
+												sort: event.target.value as SmartSort,
+											})
+										}
+									>
+										{Object.entries(SMART_SORTS).map(([value, label]) => (
+											<option key={value} value={value}>
+												{label}
+											</option>
+										))}
+									</select>
+								</Field>
+								<div className="grid gap-3 sm:grid-cols-2">
+									<Field label="With tags">
+										<input
+											className="field"
+											value={tagText}
+											onChange={(event) => setTagText(event.target.value)}
+											placeholder="Any (comma separated)"
+										/>
+									</Field>
+									<Field label="Containing">
+										<input
+											className="field"
+											value={rules.query ?? ""}
+											onChange={(event) =>
+												setRules({ ...rules, query: event.target.value })
+											}
+											placeholder="Any text"
+											maxLength={100}
+										/>
+									</Field>
+								</div>
+								{boards.length > 1 && (
+									<Field label="From">
+										<select
+											className="field"
+											value={rules.boardId ?? ""}
+											onChange={(event) =>
+												setRules({
+													...rules,
+													boardId: event.target.value || undefined,
+												})
+											}
+										>
+											<option value="">All boards</option>
+											{boards
+												.filter((b) => !b.vault)
+												.map((b) => (
+													<option key={b.id} value={b.id}>
+														{`${b.icon ?? ""} ${b.name}`.trim()}
+													</option>
+												))}
+										</select>
+									</Field>
+								)}
+								<Field label="Up to">
+									<Segmented
+										value={rules.limit}
+										onChange={(limit) => setRules({ ...rules, limit })}
+										options={[6, 12, 24, 48].map((value) => ({
+											value,
+											label: String(value),
+										}))}
+									/>
+								</Field>
+							</div>
 						)}
-						{maxSpan > 1 && (
-							<Field
-								label="Width"
-								hint="How many board columns this group spans on wide screens."
-							>
-								<Segmented
-									value={Math.min(span, maxSpan)}
-									onChange={setSpan}
-									options={Array.from({ length: maxSpan }, (_, i) => ({
-										value: i + 1,
-										label: `${i + 1}×`,
-									}))}
-								/>
-							</Field>
+						{kind === "widget" && (
+							<WidgetConfig widget={widget} onChange={setWidget} />
 						)}
-						{boards.length > 1 && (
-							<Field label="Board">
-								<select
-									className="field"
-									value={targetBoard}
-									onChange={(event) => setTargetBoard(event.target.value)}
-								>
-									{boards.map((b) => (
-										<option key={b.id} value={b.id}>
-											{`${b.icon ?? ""} ${b.name}`.trim()}
-										</option>
-									))}
-								</select>
-							</Field>
+						<Field label="Color">
+							<ColorSwatches
+								value={color}
+								colors={ACCENTS}
+								onChange={setColor}
+								allowNone
+							/>
+						</Field>
+						{group && (
+							<>
+								{group.kind !== "widget" && (
+									<Field label="Tile style">
+										<Segmented
+											value={style}
+											onChange={setStyle}
+											options={[
+												{ value: "inherit", label: "Board" },
+												{ value: "tile", label: "Tiles" },
+												{ value: "card", label: "Cards" },
+												{ value: "list", label: "List" },
+												{ value: "icon", label: "Icons" },
+												{ value: "gallery", label: "Previews" },
+											]}
+										/>
+									</Field>
+								)}
+								{maxSpan > 1 && (
+									<Field
+										label="Width"
+										hint="How many board columns this group spans on wide screens."
+									>
+										<Segmented
+											value={Math.min(span, maxSpan)}
+											onChange={setSpan}
+											options={Array.from({ length: maxSpan }, (_, i) => ({
+												value: i + 1,
+												label: `${i + 1}×`,
+											}))}
+										/>
+									</Field>
+								)}
+								{boards.length > 1 && (
+									<Field label="Board">
+										<select
+											className="field"
+											value={targetBoard}
+											onChange={(event) => setTargetBoard(event.target.value)}
+										>
+											{boards.map((b) => (
+												<option key={b.id} value={b.id}>
+													{`${b.icon ?? ""} ${b.name}`.trim()}
+												</option>
+											))}
+										</select>
+									</Field>
+								)}
+							</>
 						)}
 					</>
 				)}
@@ -316,6 +371,18 @@ export function GroupDialog({
 								<Trash2 className="size-4" /> Delete
 							</button>
 						))}
+					{kind === "widget" && !picking && "data" in widget && (
+						<button
+							type="button"
+							className="btn-ghost"
+							title="Keep this widget, with its settings, to add to any board later"
+							disabled={keep.isPending || !widgetReady(widget)}
+							onClick={() => keep.mutate()}
+						>
+							<Star className="size-4" />
+							<span className="max-sm:hidden">Save to My widgets</span>
+						</button>
+					)}
 					<button type="button" className="btn-ghost ml-auto" onClick={onClose}>
 						Cancel
 					</button>
@@ -324,7 +391,9 @@ export function GroupDialog({
 						className="btn-primary"
 						disabled={
 							pending ||
-							(kind === "widget" ? !widgetReady(widget) : !name.trim())
+							(kind === "widget"
+								? picking || !widgetReady(widget)
+								: !name.trim())
 						}
 					>
 						{pending && <Loader2 className="size-4 animate-spin" />}

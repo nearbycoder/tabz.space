@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import * as customWidgets from "./custom-widgets";
 import * as library from "./library";
 import * as report from "./report";
 import { runAuthed, runServer } from "./runtime";
@@ -213,6 +214,26 @@ export const getCalendar = createServerFn()
 export const getFeed = createServerFn()
 	.validator(widgets.feedInput)
 	.handler(({ data }) => runAuthed(() => widgets.feed(data)));
+
+export const getJsonData = createServerFn()
+	.validator(widgets.jsonInput)
+	.handler(({ data }) => runAuthed((user) => widgets.json(user.id, data)));
+
+export const listCustomWidgets = createServerFn().handler(() =>
+	runAuthed((user) => customWidgets.listCustomWidgets(user.id)),
+);
+
+export const saveCustomWidget = createServerFn({ method: "POST" })
+	.validator(customWidgets.saveCustomWidgetInput)
+	.handler(({ data }) =>
+		runAuthed((user) => customWidgets.saveCustomWidget(user.id, data)),
+	);
+
+export const deleteCustomWidget = createServerFn({ method: "POST" })
+	.validator(library.idInput)
+	.handler(({ data }) =>
+		runAuthed((user) => customWidgets.deleteCustomWidget(user.id, data.id)),
+	);
 
 export const saveWidget = createServerFn({ method: "POST" })
 	.validator(library.saveWidgetInput)

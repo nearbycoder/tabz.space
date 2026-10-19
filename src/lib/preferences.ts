@@ -341,16 +341,7 @@ export type SmartSort = keyof typeof SMART_SORTS;
 
 export const DEFAULT_SMART_RULES: SmartRules = { sort: "visits", limit: 12 };
 
-export const WIDGET_TYPES = {
-	notes: { label: "Notes", icon: "📝" },
-	todo: { label: "To-do", icon: "✅" },
-	pomodoro: { label: "Focus timer", icon: "🍅" },
-	weather: { label: "Weather", icon: "🌤️" },
-	calendar: { label: "Calendar", icon: "📅" },
-	stocks: { label: "Stocks", icon: "📈" },
-	feed: { label: "News feed", icon: "📰" },
-} as const;
-export type WidgetType = keyof typeof WIDGET_TYPES;
+export { WIDGET_TYPES, type WidgetType } from "./widget-catalog";
 
 export type BookmarkMeta = {
 	favicon?: string;

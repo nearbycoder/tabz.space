@@ -68,6 +68,7 @@ export const geocode = (data: z.infer<typeof geocodeInput>) =>
 				country?: string;
 				latitude: number;
 				longitude: number;
+				timezone?: string;
 			}[];
 		}>(
 			`https://geocoding-api.open-meteo.com/v1/search?count=6&name=${encodeURIComponent(data.name)}`,
@@ -80,6 +81,7 @@ export const geocode = (data: z.infer<typeof geocodeInput>) =>
 					.join(", "),
 				lat: place.latitude,
 				lon: place.longitude,
+				zone: place.timezone ?? "",
 			})),
 		),
 		Effect.mapError(unavailable("Place search")),
@@ -296,3 +298,114 @@ export const feed = (data: z.infer<typeof feedInput>) =>
 			Effect.fail(new InvalidInput({ message: "Couldn't read that feed" })),
 		),
 	);
+
+/* ------------------------------------ JSON ----------------------------------- */
+
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+export const jsonInput = z.object({
+	url: z
+		.string()
+		.trim()
+		.max(2048)
+		.regex(/^https?:\/\//i),
+	/**
+	 * Keep only these paths, so big responses stay on the server. `a.b` reads a
+	 * key, `list[]` maps over an array, `list[3]` keeps its first three items:
+	 * "hits[10].title" → { hits: [{ title }, …] }.
+	 */
+	pick: z.array(z.string().max(200)).max(30).optional(),
+	/** Seconds to cache the response (shared by everyone asking for this URL). */
+	ttl: z.number().int().min(30).max(86_400).optional(),
+});
+
+const segment = /^([^[\]]*)(?:\[(\d*)\])?$/;
+
+/** Copies `path` from `source` into `target` (see jsonInput.pick). */
+const copyPath = (source: Json, target: Json, parts: string[]): Json => {
+	if (parts.length === 0 || source === null || typeof source !== "object")
+		return source;
+	const [key, limit] = (parts[0].match(segment) ?? []).slice(1);
+	const rest = parts.slice(1);
+	const value = key ? (source as Record<string, Json>)[key] : source;
+	if (value === undefined) return target;
+	const into = (current: Json | undefined) =>
+		limit === undefined
+			? copyPath(value, current ?? null, rest)
+			: Array.isArray(value)
+				? value
+						.slice(0, limit ? Number(limit) : undefined)
+						.map((item, index) =>
+							copyPath(
+								item,
+								(Array.isArray(current) ? current[index] : null) ?? null,
+								rest,
+							),
+						)
+				: null;
+	if (!key) return into(target);
+	const base =
+		target && typeof target === "object" && !Array.isArray(target)
+			? target
+			: {};
+	return { ...base, [key]: into(base[key]) };
+};
+
+export const pickJson = (value: Json, paths: string[]) =>
+	paths.reduce<Json>(
+		(result, path) => copyPath(value, result, path.split(".")),
+		null,
+	);
+
+/* Each account may make 60 uncached fetches a minute (cache hits are free). */
+const recent = new Map<string, number[]>();
+const FETCHES_PER_MINUTE = 60;
+
+const allowFetch = (userId: string, url: string) => {
+	const hit = cache.get(`json:${url}`);
+	if (hit) return true;
+	const now = Date.now();
+	const times = (recent.get(userId) ?? []).filter((at) => now - at < 60_000);
+	if (times.length >= FETCHES_PER_MINUTE) return false;
+	times.push(now);
+	if (recent.size > 5000) recent.clear();
+	recent.set(userId, times);
+	return true;
+};
+
+/** Any public JSON API, fetched server-side (no CORS) and cached briefly. */
+export const json = (userId: string, data: z.infer<typeof jsonInput>) =>
+	!allowFetch(userId, data.url)
+		? Effect.fail(
+				new InvalidInput({
+					message: "Too many requests; try again in a minute",
+				}),
+			)
+		: cached(
+				`json:${data.url}`,
+				(data.ttl ?? 300) * 1000,
+				fetchText(new URL(data.url), "application/json", /./).pipe(
+					Effect.flatMap(({ body }) =>
+						Effect.try({
+							try: () => JSON.parse(body) as Json,
+							catch: () =>
+								new InvalidInput({
+									message: "That address didn't return JSON",
+								}),
+						}),
+					),
+				),
+			).pipe(
+				Effect.map((value) => ({
+					value: data.pick?.length ? pickJson(value, data.pick) : value,
+				})),
+				Effect.catchTag("FetchError", (error) =>
+					Effect.fail(
+						new InvalidInput({
+							message: error.reason.includes("private")
+								? "That address isn't reachable from tabz"
+								: `Couldn't load data (${error.reason.replace(/^Error: /, "")})`,
+						}),
+					),
+				),
+			);

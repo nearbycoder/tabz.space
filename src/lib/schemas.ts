@@ -10,6 +10,7 @@ import {
 	type SmartSort,
 	TILE_STYLES,
 } from "./preferences";
+import { CATALOG_TYPES } from "./widget-catalog";
 
 /*
  * Validation for everything users can customize. Used by the server (inputs,
@@ -114,7 +115,7 @@ const publicUrl = z
 	.max(2048)
 	.regex(/^(https?|webcal):\/\//i, "Use an http(s) or webcal:// address");
 
-export const widgetSchema = z.discriminatedUnion("type", [
+const legacyWidgetSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("notes"), text: z.string().max(20_000) }),
 	z.object({
 		type: z.literal("todo"),
@@ -165,7 +166,19 @@ export const widgetSchema = z.discriminatedUnion("type", [
 		count: z.number().int().min(1).max(20),
 	}),
 ]);
+/** Widget settings plus anything it keeps (counts, entries, …), as plain JSON. */
+export const catalogWidgetSchema = z
+	.object({
+		type: z.enum(CATALOG_TYPES),
+		data: z.record(z.string().max(60), z.json()),
+	})
+	.refine((widget) => JSON.stringify(widget.data).length <= 120_000, {
+		message: "This widget holds too much data",
+	});
+
+export const widgetSchema = z.union([legacyWidgetSchema, catalogWidgetSchema]);
 export type Widget = z.infer<typeof widgetSchema>;
+export type CatalogWidget = z.infer<typeof catalogWidgetSchema>;
 
 export const groupOptionsSchema = z.object({
 	tileStyle: z.enum(TILE_STYLES).optional(),

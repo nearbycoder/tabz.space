@@ -118,7 +118,9 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 					)}
 					{widget && (
 						<span className="text-sm leading-none" aria-hidden="true">
-							{WIDGET_TYPES[widget.type].icon}
+							{"data" in widget && typeof widget.data.icon === "string"
+								? widget.data.icon
+								: WIDGET_TYPES[widget.type].icon}
 						</span>
 					)}
 					<h2 className="truncate text-sm font-semibold">{group.name}</h2>

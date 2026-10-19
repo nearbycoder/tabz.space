@@ -341,6 +341,27 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		});
 	}, [vault.configured]);
 
+	// Widgets used on any board load in the background, so switching boards is instant.
+	const widgetTypes = [
+		...new Set(
+			data.boards.flatMap((b) =>
+				b.groups.flatMap((g) =>
+					g.options.widget ? [g.options.widget.type] : [],
+				),
+			),
+		),
+	]
+		.sort()
+		.join(",");
+	useEffect(() => {
+		if (!widgetTypes) return;
+		whenIdle(() => {
+			void import("./widgets/WidgetBody").then((module) =>
+				module.preloadWidgets(widgetTypes.split(",")),
+			);
+		}, 5000);
+	}, [widgetTypes]);
+
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
 

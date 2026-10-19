@@ -99,6 +99,13 @@
       "when": 1792417132356,
       "tag": "0013_security",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792418078325,
+      "tag": "0014_custom_widgets",
+      "breakpoints": true
     }
   ]
 }

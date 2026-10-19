@@ -3,11 +3,15 @@ import { Loader2, MapPin, Search } from "lucide-react";
 import { useState } from "react";
 import { Field, Segmented } from "#/components/ui/controls";
 import { call, run } from "#/lib/api";
-import { cn } from "#/lib/cn";
-import { WIDGET_TYPES, type Widget, type WidgetType } from "#/lib/preferences";
+import type { Widget, WidgetType } from "#/lib/preferences";
+import { isCatalogType } from "#/lib/widget-catalog";
 import { geocodePlace } from "#/server/home";
+import { CatalogConfig } from "./CatalogConfig";
+import { REGISTRY } from "./registry";
 
 export const defaultWidget = (type: WidgetType): Widget => {
+	if (isCatalogType(type))
+		return { type, data: structuredClone(REGISTRY[type].defaults) };
 	switch (type) {
 		case "notes":
 			return { type, text: "" };
@@ -28,6 +32,13 @@ export const defaultWidget = (type: WidgetType): Widget => {
 
 /** Whether the widget has everything it needs to be saved. */
 export const widgetReady = (widget: Widget) => {
+	if ("data" in widget)
+		return (
+			REGISTRY[widget.type].ready?.({
+				...REGISTRY[widget.type].defaults,
+				...widget.data,
+			}) ?? true
+		);
 	switch (widget.type) {
 		case "weather":
 			return Boolean(widget.place);
@@ -41,43 +52,19 @@ export const widgetReady = (widget: Widget) => {
 	}
 };
 
-export function WidgetTypePicker({
-	value,
-	onChange,
+/** City search; reports the chosen place's name and coordinates. */
+export function PlaceSearch({
+	place,
+	onPick,
 }: {
-	value: WidgetType;
-	onChange: (type: WidgetType) => void;
-}) {
-	return (
-		<div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7">
-			{(Object.keys(WIDGET_TYPES) as WidgetType[]).map((type) => (
-				<button
-					key={type}
-					type="button"
-					onClick={() => onChange(type)}
-					className={cn(
-						"focus-ring flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-[11px] transition",
-						type === value
-							? "border-accent bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]"
-							: "border-line hover:border-accent/50",
-					)}
-				>
-					<span className="text-xl leading-none">
-						{WIDGET_TYPES[type].icon}
-					</span>
-					{WIDGET_TYPES[type].label}
-				</button>
-			))}
-		</div>
-	);
-}
-
-function PlaceSearch({
-	widget,
-	onChange,
-}: {
-	widget: Extract<Widget, { type: "weather" }>;
-	onChange: (widget: Widget) => void;
+	place: string;
+	onPick: (place: {
+		place: string;
+		lat: number;
+		lon: number;
+		/** The place's IANA time zone, when known. */
+		zone: string;
+	}) => void;
 }) {
 	const [text, setText] = useState("");
 	const [submitted, setSubmitted] = useState("");
@@ -88,9 +75,9 @@ function PlaceSearch({
 	});
 	return (
 		<div className="space-y-2">
-			{widget.place && (
+			{place && (
 				<p className="flex items-center gap-1.5 text-sm">
-					<MapPin className="size-3.5 text-accent" /> {widget.place}
+					<MapPin className="size-3.5 text-accent" /> {place}
 				</p>
 			)}
 			<div className="flex gap-2">
@@ -104,7 +91,7 @@ function PlaceSearch({
 							setSubmitted(text.trim());
 						}
 					}}
-					placeholder={widget.place ? "Change city…" : "City, e.g. Lisbon"}
+					placeholder={place ? "Change city…" : "City, e.g. Lisbon"}
 				/>
 				<button
 					type="button"
@@ -123,23 +110,23 @@ function PlaceSearch({
 					{places.data.length === 0 && (
 						<li className="px-3 py-2 text-sm text-muted">No places found</li>
 					)}
-					{places.data.map((place) => (
-						<li key={`${place.lat},${place.lon}`}>
+					{places.data.map((result) => (
+						<li key={`${result.lat},${result.lon}`}>
 							<button
 								type="button"
 								className="w-full px-3 py-2 text-left text-sm hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]"
 								onClick={() => {
-									onChange({
-										...widget,
-										place: place.name,
-										lat: place.lat,
-										lon: place.lon,
+									onPick({
+										place: result.name,
+										lat: result.lat,
+										lon: result.lon,
+										zone: result.zone,
 									});
 									setSubmitted("");
 									setText("");
 								}}
 							>
-								{place.name}
+								{result.name}
 							</button>
 						</li>
 					))}
@@ -187,7 +174,12 @@ export function WidgetConfig({
 			return (
 				<div className="space-y-3">
 					<Field label="Location">
-						<PlaceSearch widget={widget} onChange={onChange} />
+						<PlaceSearch
+							place={widget.place}
+							onPick={({ place, lat, lon }) =>
+								onChange({ ...widget, place, lat, lon })
+							}
+						/>
 					</Field>
 					<Field label="Units">
 						<Segmented
@@ -282,6 +274,8 @@ export function WidgetConfig({
 				</div>
 			);
 		default:
-			return null;
+			return "data" in widget ? (
+				<CatalogConfig widget={widget} onChange={onChange} />
+			) : null;
 	}
 }

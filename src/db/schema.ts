@@ -15,6 +15,7 @@ import {
 	DEFAULT_SETTINGS,
 	type GroupOptions,
 	type UserSettings,
+	type Widget,
 } from "#/lib/preferences";
 import { user } from "./auth-schema.ts";
 
@@ -329,4 +330,20 @@ export const integrations = sqliteTable(
 		),
 		index("integrations_user_idx").on(table.userId),
 	],
+);
+
+/** "My widgets": widgets a user built or configured, ready to add to any board. */
+export const customWidgets = sqliteTable(
+	"custom_widgets",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		icon: text("icon").notNull(),
+		widget: json<Widget>("widget", { type: "notes", text: "" }),
+		...timestamps,
+	},
+	(table) => [index("custom_widgets_user_idx").on(table.userId)],
 );
