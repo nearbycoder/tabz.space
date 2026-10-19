@@ -18,6 +18,7 @@ import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
 import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
 import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
+import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
 import type { HomeData } from "#/server/home";
@@ -36,6 +37,8 @@ import { FolderDialog, NewFolderDialog } from "./FolderDialog";
 import { GroupDialog } from "./GroupDialog";
 import { HistoryDialog } from "./HistoryDialog";
 import { LinkHealthDialog } from "./LinkHealthDialog";
+import { MonthlyReportDialog, ReportBanner } from "./MonthlyReport";
+import { Rediscover } from "./Rediscover";
 import { SearchBar } from "./SearchBar";
 import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
@@ -139,8 +142,16 @@ const widths = {
 export function HomeScreen({ session }: { session: SessionInfo }) {
 	const data = useHome();
 	const { settings, boards, vault } = data;
+	const [now, setNow] = useState(() => Date.now());
+	// A scheduled board takes over during its window unless you pick another.
+	const scheduledId = scheduledBoardId(boards, now, settings.timeZone);
+	const [picked, setPicked] = useState<string | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset the manual pick whenever the schedule changes
+	useEffect(() => setPicked(null), [scheduledId]);
 	const board =
-		boards.find((b) => b.id === settings.activeBoardId) ?? boards[0];
+		boards.find((b) => b.id === (picked ?? scheduledId)) ??
+		boards.find((b) => b.id === settings.activeBoardId) ??
+		boards[0];
 	const [editing, setEditing] = useState(false);
 	const [dialog, setDialog] = useState<DialogState>(null);
 	const [paletteOpen, setPaletteOpen] = useState(false);
@@ -148,7 +159,6 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	const lockVault = useLockVault();
 	const undoLast = useUndo();
 	const typed = useRef("");
-	const [now, setNow] = useState(() => Date.now());
 
 	useEffect(() => {
 		applyTheme(settings.theme);
@@ -166,10 +176,27 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	const selectBoard = useCallback(
 		(id: string) => {
-			if (id !== board?.id) saveSettings.mutate({ activeBoardId: id });
+			if (scheduledId) setPicked(id);
+			if (id !== settings.activeBoardId)
+				saveSettings.mutate({ activeBoardId: id });
 		},
-		[board?.id, saveSettings],
+		[scheduledId, settings.activeBoardId, saveSettings],
 	);
+
+	// Re-check schedules every half minute, only if any board has one.
+	const hasSchedules = boards.some((b) => b.layout.schedule);
+	useEffect(() => {
+		if (!hasSchedules) return;
+		const tick = setInterval(() => setNow(Date.now()), 30_000);
+		return () => clearInterval(tick);
+	}, [hasSchedules]);
+
+	// Remember the browser's time zone so schedules also apply while rendering on the server.
+	useEffect(() => {
+		const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		if (zone && zone !== settings.timeZone)
+			saveSettings.mutate({ timeZone: zone });
+	}, [settings.timeZone, saveSettings]);
 
 	/** Secret entrance: the typed code (desktop) or 5 quick taps on the clock (phones). */
 	const openVault = useCallback(() => {
@@ -575,8 +602,12 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							/>
 						)}
 						<TopSites links={links.map((entry) => entry.bookmark)} />
+						<ReportBanner
+							onOpen={(month) => setDialog({ type: "report", month })}
+						/>
 					</div>
 					<BoardGrid board={board} />
+					<Rediscover />
 				</main>
 
 				<MobileDock
@@ -626,6 +657,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				)}
 				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
 				{dialog?.type === "link-health" && <LinkHealthDialog onClose={close} />}
+				{dialog?.type === "report" && (
+					<MonthlyReportDialog month={dialog.month} onClose={close} />
+				)}
 				{dialog?.type === "bulk-add" &&
 					(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
 						<BulkAddDialog

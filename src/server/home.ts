@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as library from "./library";
+import * as report from "./report";
 import { runAuthed } from "./runtime";
+import * as widgets from "./widgets";
 
 /* RPC surface for the web app. All logic lives in ./library (shared with MCP). */
 
@@ -179,4 +181,38 @@ export const checkLinks = createServerFn({ method: "POST" })
 	.validator(library.checkLinksInput)
 	.handler(({ data }) =>
 		runAuthed((user) => library.checkLinks(user.id, data)),
+	);
+
+export const monthlyReport = createServerFn()
+	.validator(report.reportInput)
+	.handler(({ data }) =>
+		runAuthed((user) => report.monthlyReport(user.id, data)),
+	);
+
+/* Widgets: data is fetched server-side and cached; signed-in users only. */
+
+export const geocodePlace = createServerFn()
+	.validator(widgets.geocodeInput)
+	.handler(({ data }) => runAuthed(() => widgets.geocode(data)));
+
+export const getWeather = createServerFn()
+	.validator(widgets.weatherInput)
+	.handler(({ data }) => runAuthed(() => widgets.weather(data)));
+
+export const getQuotes = createServerFn()
+	.validator(widgets.quotesInput)
+	.handler(({ data }) => runAuthed(() => widgets.quotes(data)));
+
+export const getCalendar = createServerFn()
+	.validator(widgets.calendarInput)
+	.handler(({ data }) => runAuthed(() => widgets.calendar(data)));
+
+export const getFeed = createServerFn()
+	.validator(widgets.feedInput)
+	.handler(({ data }) => runAuthed(() => widgets.feed(data)));
+
+export const saveWidget = createServerFn({ method: "POST" })
+	.validator(library.saveWidgetInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.saveWidget(user.id, data)),
 	);

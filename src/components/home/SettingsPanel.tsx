@@ -728,6 +728,11 @@ export function SettingsPanel({
 							onChange={(linkPreviews) => set({ linkPreviews })}
 						/>
 						<Toggle
+							label="Rediscover links you haven't opened in a while"
+							checked={settings.showRediscover}
+							onChange={(showRediscover) => set({ showRediscover })}
+						/>
+						<Toggle
 							label="Badges for new posts on sites with a feed"
 							checked={settings.feedBadges}
 							onChange={(feedBadges) => set({ feedBadges })}

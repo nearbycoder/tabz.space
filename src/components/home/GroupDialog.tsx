@@ -10,9 +10,17 @@ import {
 	type SmartRules,
 	type SmartSort,
 	type TileStyle,
+	WIDGET_TYPES,
+	type Widget,
 } from "#/lib/preferences";
 import { createGroup, deleteGroup, updateGroup } from "#/server/home";
 import type { HomeBoard, HomeGroup } from "./types";
+import {
+	defaultWidget,
+	WidgetConfig,
+	WidgetTypePicker,
+	widgetReady,
+} from "./widgets/WidgetConfig";
 
 type Props = {
 	boards: HomeBoard[];
@@ -30,9 +38,13 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 	);
 	const [span, setSpan] = useState(group?.options.span ?? 1);
 	const [targetBoard, setTargetBoard] = useState(boardId);
-	const [kind, setKind] = useState<"links" | "smart">(
-		group?.kind === "smart" ? "smart" : "links",
+	const [kind, setKind] = useState<"links" | "smart" | "widget">(
+		group?.kind ?? "links",
 	);
+	const [widget, setWidget] = useState<Widget>(
+		group?.options.widget ?? defaultWidget("notes"),
+	);
+	const configurable = !["notes", "todo"].includes(widget.type);
 	const [rules, setRules] = useState<SmartRules>(
 		group?.options.smart ?? DEFAULT_SMART_RULES,
 	);
@@ -77,7 +89,17 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 					tileStyle: style === "inherit" ? undefined : style,
 					span,
 					...(kind === "smart" ? smartOptions() : {}),
+					// Notes and to-dos keep their live content; only settings change here.
+					...(kind === "widget" && configurable ? { widget } : {}),
 				},
+			});
+		} else if (kind === "widget") {
+			create.mutate({
+				boardId,
+				name: name.trim() || WIDGET_TYPES[widget.type].label,
+				color,
+				kind,
+				options: { widget },
 			});
 		} else if (kind === "smart") {
 			create.mutate({ boardId, name, color, kind, options: smartOptions() });
@@ -102,7 +124,14 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 						options={[
 							{ value: "links", label: "Links" },
 							{ value: "smart", label: "✨ Smart" },
+							{ value: "widget", label: "🧩 Widget" },
 						]}
+					/>
+				)}
+				{kind === "widget" && !group && (
+					<WidgetTypePicker
+						value={widget.type}
+						onChange={(type) => setWidget(defaultWidget(type))}
 					/>
 				)}
 				<Field label="Name">
@@ -110,8 +139,12 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 						className="field"
 						value={name}
 						onChange={(event) => setName(event.target.value)}
-						placeholder="Work, News, Tools…"
-						required
+						placeholder={
+							kind === "widget"
+								? WIDGET_TYPES[widget.type].label
+								: "Work, News, Tools…"
+						}
+						required={kind !== "widget"}
 						maxLength={60}
 						autoFocus
 					/>
@@ -193,6 +226,9 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 						</Field>
 					</div>
 				)}
+				{kind === "widget" && (
+					<WidgetConfig widget={widget} onChange={setWidget} />
+				)}
 				<Field label="Color">
 					<ColorSwatches
 						value={color}
@@ -203,20 +239,22 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 				</Field>
 				{group && (
 					<>
-						<Field label="Tile style">
-							<Segmented
-								value={style}
-								onChange={setStyle}
-								options={[
-									{ value: "inherit", label: "Board" },
-									{ value: "tile", label: "Tiles" },
-									{ value: "card", label: "Cards" },
-									{ value: "list", label: "List" },
-									{ value: "icon", label: "Icons" },
-									{ value: "gallery", label: "Previews" },
-								]}
-							/>
-						</Field>
+						{group.kind !== "widget" && (
+							<Field label="Tile style">
+								<Segmented
+									value={style}
+									onChange={setStyle}
+									options={[
+										{ value: "inherit", label: "Board" },
+										{ value: "tile", label: "Tiles" },
+										{ value: "card", label: "Cards" },
+										{ value: "list", label: "List" },
+										{ value: "icon", label: "Icons" },
+										{ value: "gallery", label: "Previews" },
+									]}
+								/>
+							</Field>
+						)}
 						{maxSpan > 1 && (
 							<Field
 								label="Width"
@@ -257,7 +295,7 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 								className="btn bg-red-500 text-white"
 								onClick={() => remove.mutate({ id: group.id })}
 							>
-								{group.kind === "smart"
+								{group.kind !== "links"
 									? "Delete this group?"
 									: `Delete ${group.bookmarks.length} bookmarks?`}
 							</button>
@@ -276,7 +314,10 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 					<button
 						type="submit"
 						className="btn-primary"
-						disabled={pending || !name.trim()}
+						disabled={
+							pending ||
+							(kind === "widget" ? !widgetReady(widget) : !name.trim())
+						}
 					>
 						{pending && <Loader2 className="size-4 animate-spin" />}
 						{group ? "Save" : "Create"}

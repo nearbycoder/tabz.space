@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
+	BarChart3,
 	Bot,
 	ClipboardList,
 	Copy,
@@ -511,6 +512,15 @@ export function CommandPalette({
 							className={itemClass}
 						>
 							<Row icon={<Copy className="size-4" />}>Find duplicates</Row>
+						</Command.Item>
+						<Command.Item
+							value="monthly report stats month in review"
+							onSelect={() => run(() => openDialog({ type: "report" }))}
+							className={itemClass}
+						>
+							<Row icon={<BarChart3 className="size-4" />}>
+								Your month in tabz
+							</Row>
 						</Command.Item>
 						<Command.Item
 							value="broken links dead link health check"

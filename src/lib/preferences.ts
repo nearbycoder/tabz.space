@@ -129,6 +129,11 @@ export const userSettingsSchema = z.object({
 	clockFormat: z.enum(["12h", "24h"]),
 	greetingName: z.string().max(40).default(""),
 	showTopSites: z.boolean().default(true),
+	showRediscover: z.boolean().default(true),
+	/** The browser's IANA time zone, so schedules work during server rendering. */
+	timeZone: z.string().max(64).optional(),
+	/** Last monthly report ("YYYY-MM") the user opened or dismissed. */
+	reportSeen: z.string().max(7).optional(),
 	openInNewTab: z.boolean(),
 	/** Open every link in a private window (needs the browser extension). */
 	incognitoAll: z.boolean().default(false),
@@ -166,6 +171,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	clockFormat: "12h",
 	greetingName: "",
 	showTopSites: true,
+	showRediscover: true,
 	openInNewTab: false,
 	incognitoAll: false,
 	linkPreviews: true,
@@ -343,12 +349,24 @@ export const THEME_PRESETS: {
 export const TILE_STYLES = ["tile", "card", "list", "icon", "gallery"] as const;
 export type TileStyle = (typeof TILE_STYLES)[number];
 
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+/** When a board shows up on its own, e.g. weekdays 09:00–17:00. */
+export const boardScheduleSchema = z.object({
+	/** 0 = Sunday … 6 = Saturday. */
+	days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+	from: clockTime,
+	to: clockTime,
+});
+export type BoardSchedule = z.infer<typeof boardScheduleSchema>;
+
 export const boardLayoutSchema = z.object({
 	columns: z.number().int().min(1).max(6),
 	tileStyle: z.enum(TILE_STYLES),
 	tileSize: z.enum(["sm", "md", "lg"]),
 	width: z.enum(["narrow", "wide", "full"]),
 	showGroupTitles: z.boolean(),
+	schedule: boardScheduleSchema.nullable().optional(),
 });
 
 export type BoardLayout = z.infer<typeof boardLayoutSchema>;
@@ -386,10 +404,81 @@ export type SmartRules = z.infer<typeof smartRulesSchema>;
 
 export const DEFAULT_SMART_RULES: SmartRules = { sort: "visits", limit: 12 };
 
+export const WIDGET_TYPES = {
+	notes: { label: "Notes", icon: "📝" },
+	todo: { label: "To-do", icon: "✅" },
+	pomodoro: { label: "Focus timer", icon: "🍅" },
+	weather: { label: "Weather", icon: "🌤️" },
+	calendar: { label: "Calendar", icon: "📅" },
+	stocks: { label: "Stocks", icon: "📈" },
+	feed: { label: "News feed", icon: "📰" },
+} as const;
+export type WidgetType = keyof typeof WIDGET_TYPES;
+
+const publicUrl = z
+	.string()
+	.trim()
+	.max(2048)
+	.regex(/^(https?|webcal):\/\//i, "Use an http(s) or webcal:// address");
+
+export const widgetSchema = z.discriminatedUnion("type", [
+	z.object({ type: z.literal("notes"), text: z.string().max(20_000) }),
+	z.object({
+		type: z.literal("todo"),
+		items: z
+			.array(
+				z.object({
+					id: z.string().max(40),
+					text: z.string().trim().min(1).max(300),
+					done: z.boolean(),
+				}),
+			)
+			.max(200),
+	}),
+	z.object({
+		type: z.literal("pomodoro"),
+		work: z.number().int().min(1).max(120),
+		rest: z.number().int().min(1).max(60),
+	}),
+	z.object({
+		type: z.literal("weather"),
+		place: z.string().max(120),
+		lat: z.number().min(-90).max(90),
+		lon: z.number().min(-180).max(180),
+		unit: z.enum(["c", "f"]),
+	}),
+	z.object({
+		type: z.literal("calendar"),
+		url: publicUrl,
+		days: z.number().int().min(1).max(31),
+	}),
+	z.object({
+		type: z.literal("stocks"),
+		symbols: z
+			.array(
+				z
+					.string()
+					.trim()
+					.min(1)
+					.max(20)
+					.regex(/^[\w.^=-]+$/),
+			)
+			.min(1)
+			.max(12),
+	}),
+	z.object({
+		type: z.literal("feed"),
+		url: publicUrl,
+		count: z.number().int().min(1).max(20),
+	}),
+]);
+export type Widget = z.infer<typeof widgetSchema>;
+
 export const groupOptionsSchema = z.object({
 	tileStyle: z.enum(TILE_STYLES).optional(),
 	span: z.number().int().min(1).max(6).optional(),
 	smart: smartRulesSchema.optional(),
+	widget: widgetSchema.optional(),
 });
 
 export type GroupOptions = z.infer<typeof groupOptionsSchema>;

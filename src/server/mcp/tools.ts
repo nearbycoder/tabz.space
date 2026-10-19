@@ -74,6 +74,16 @@ const compactLibrary = (home: Home, boardId?: string) => ({
 				id: group.id,
 				name: group.name,
 				color: group.color,
+				...(group.kind === "widget" && group.options.widget
+					? {
+							widget: group.options.widget.type,
+							...(group.options.widget.type === "notes"
+								? { notes: group.options.widget.text }
+								: group.options.widget.type === "todo"
+									? { todos: group.options.widget.items }
+									: {}),
+						}
+					: {}),
 				...(group.kind === "smart"
 					? {
 							smart: group.options.smart,

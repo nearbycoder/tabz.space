@@ -184,6 +184,24 @@ export const activity = sqliteTable(
 	(table) => [index("activity_user_idx").on(table.userId, table.createdAt)],
 );
 
+/** One row per opened link; powers the monthly report. Kept for ~13 months. */
+export const visits = sqliteTable(
+	"visits",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		bookmarkId: text("bookmark_id")
+			.notNull()
+			.references(() => bookmarks.id, { onDelete: "cascade" }),
+		at: integer("at", { mode: "timestamp_ms" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [index("visits_user_at_idx").on(table.userId, table.at)],
+);
+
 /** People a board is shared with (the owner is boards.userId). */
 export const boardMembers = sqliteTable(
 	"board_members",

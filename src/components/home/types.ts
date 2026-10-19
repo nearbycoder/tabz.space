@@ -23,6 +23,7 @@ export type DialogState =
 	| { type: "history"; tab?: "history" | "trash" }
 	| { type: "duplicates" }
 	| { type: "link-health" }
+	| { type: "report"; month?: string }
 	| { type: "bulk-add"; text?: string; groupId?: string }
 	| null;
 

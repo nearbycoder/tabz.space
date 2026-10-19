@@ -66,6 +66,13 @@ Mark a link, or a whole folder, as always-incognito, or switch on "Open every li
 - **Link health** (`check-links` job, `src/server/monitors.ts`): re-checks each link weekly with HEAD/GET, following redirects through the private-network guard. A link is "broken" only after two failed checks in a row (404/410/unreachable); 401/403/429/5xx and intranet hosts count as inconclusive. Permanent same-site redirects are offered as "Update link". Customize → Data → Broken links, or ⌘K.
 - **Feeds** (`poll-feeds` job): links whose page advertises RSS/Atom get their latest items polled every couple of hours; tiles show a badge with posts newer than your last visit.
 
+## Widgets, schedules and your month
+
+- **Widgets** are groups with `kind = "widget"` and their settings/content in `groups.options.widget` (`widgetSchema` in `src/lib/preferences.ts`): notes, to-do, focus timer (Pomodoro, state in localStorage), weather (Open-Meteo), calendar (any iCal/.ics link, parsed by `src/server/ics.ts` with time zones, recurrence and exceptions), stocks (Yahoo Finance public chart endpoint; Stooq now blocks automated requests) and news feed. Network data is fetched server-side and cached in memory (`src/server/widgets.ts`). Notes/to-dos save through `saveWidget`, which skips the activity log.
+- **Time-based boards**: `boards.layout.schedule` (days + from/to). During the window tabz opens on that board; picking another board overrides it until the schedule changes. The browser's time zone is stored in settings so server rendering picks the same board.
+- **Rediscover**: three links you haven't opened in 30+ days, the same all day, with shuffle and quick trash.
+- **Monthly report**: every opened link is logged in `visits` (kept ~13 months). "Your month in tabz" (⌘K, or a banner in the first week of a month) shows opens, active days, a daily chart, most-opened links and habits (`src/server/report.ts`).
+
 ## REST API, tokens and webhooks
 
 Customize → Connect has personal API tokens and outgoing webhooks.

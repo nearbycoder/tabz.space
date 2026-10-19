@@ -35,6 +35,7 @@ import {
 	type Snapshot,
 	userSettings,
 	vaults,
+	visits,
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
 import {
@@ -44,6 +45,7 @@ import {
 	resolveLayout,
 	resolveSettings,
 	userSettingsSchema,
+	widgetSchema,
 } from "#/lib/preferences";
 import {
 	canonicalUrl,
@@ -738,6 +740,32 @@ export const updateGroup = (
 		return updated;
 	});
 
+export const saveWidgetInput = z.object({
+	id: idSchema,
+	widget: widgetSchema,
+});
+
+/**
+ * Saves a widget's content (notes, to-dos, settings). Unlike updateGroup it
+ * skips the activity log, since it fires on every keystroke.
+ */
+export const saveWidget = (
+	userId: string,
+	data: z.infer<typeof saveWidgetInput>,
+) =>
+	Effect.gen(function* () {
+		const { group } = yield* accessGroup(userId, data.id, { write: true });
+		if (group.kind !== "widget")
+			return yield* new InvalidInput({ message: "That group isn't a widget" });
+		yield* query((db) =>
+			db
+				.update(groups)
+				.set({ options: { ...group.options, widget: data.widget } })
+				.where(eq(groups.id, group.id)),
+		);
+		return { ok: true };
+	});
+
 export const deleteGroup = (userId: string, data: z.infer<typeof idInput>) =>
 	Effect.gen(function* () {
 		const { group } = yield* accessGroup(userId, data.id, { write: true });
@@ -1383,14 +1411,17 @@ export const recordVisit = (userId: string, data: z.infer<typeof idInput>) =>
 	accessBookmark(userId, data.id).pipe(
 		Effect.flatMap(({ bookmark }) =>
 			query((db) =>
-				db
-					.update(bookmarks)
-					.set({
-						visitCount: sql`${bookmarks.visitCount} + 1`,
-						lastVisitedAt: new Date(),
-						updatedAt: sql`${bookmarks.updatedAt}`,
-					})
-					.where(eq(bookmarks.id, bookmark.id)),
+				db.batch([
+					db
+						.update(bookmarks)
+						.set({
+							visitCount: sql`${bookmarks.visitCount} + 1`,
+							lastVisitedAt: new Date(),
+							updatedAt: sql`${bookmarks.updatedAt}`,
+						})
+						.where(eq(bookmarks.id, bookmark.id)),
+					db.insert(visits).values({ userId, bookmarkId: bookmark.id }),
+				]),
 			),
 		),
 		Effect.as({ ok: true }),
@@ -1986,6 +2017,10 @@ export const purgeExpired = () =>
 						and(isNotNull(boards.deletedAt), lt(boards.deletedAt, cutoff)),
 					);
 				await tx.delete(activity).where(lt(activity.createdAt, cutoff));
+				// Visit history only feeds monthly reports; keep about 13 months.
+				await tx
+					.delete(visits)
+					.where(lt(visits.at, new Date(Date.now() - 400 * 86_400_000)));
 			}),
 		);
 	});

@@ -17,11 +17,16 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { cn } from "#/lib/cn";
-import type { BoardLayout, TileStyle } from "#/lib/preferences";
+import {
+	type BoardLayout,
+	type TileStyle,
+	WIDGET_TYPES,
+} from "#/lib/preferences";
 import { SMART_EMPTY, smartItems } from "#/lib/smart";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import type { HomeGroup } from "./types";
+import { WidgetBody } from "./widgets/WidgetBody";
 
 type Props = {
 	group: HomeGroup;
@@ -45,6 +50,7 @@ export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 export function GroupCard({ group, layout, onToggle }: Props) {
 	const { editing, openDialog, openAll, boards } = useHomeContext();
 	const smart = group.kind === "smart" ? group.options.smart : undefined;
+	const widget = group.kind === "widget" ? group.options.widget : undefined;
 	const smartLinks = useMemo(
 		() => (smart ? smartItems(boards, smart) : []),
 		[boards, smart],
@@ -106,8 +112,13 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 							aria-label="Smart group"
 						/>
 					)}
+					{widget && (
+						<span className="text-sm leading-none" aria-hidden="true">
+							{WIDGET_TYPES[widget.type].icon}
+						</span>
+					)}
 					<h2 className="truncate text-sm font-semibold">{group.name}</h2>
-					<span className="text-xs text-muted">{total}</span>
+					{!widget && <span className="text-xs text-muted">{total}</span>}
 					<div
 						className={cn(
 							"ml-auto flex items-center transition",
@@ -126,7 +137,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								<ExternalLink className="size-3.5" />
 							</button>
 						)}
-						{!smart && (
+						{!smart && !widget && (
 							<>
 								<button
 									type="button"
@@ -196,7 +207,8 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 					)}
 				</div>
 			)}
-			{!group.collapsed && !smart && (
+			{!group.collapsed && widget && <WidgetBody group={group} />}
+			{!group.collapsed && !smart && !widget && (
 				<div
 					ref={drop.setNodeRef}
 					className={cn(

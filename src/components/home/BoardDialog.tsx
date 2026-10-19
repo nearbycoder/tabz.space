@@ -4,6 +4,8 @@ import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useHomeAction, useSaveSettings } from "#/lib/home-query";
+import type { BoardSchedule } from "#/lib/preferences";
+import { DAY_LETTERS, describeSchedule } from "#/lib/schedule";
 import { createBoard, deleteBoard, updateBoard } from "#/server/home";
 import type { HomeBoard } from "./types";
 
@@ -37,6 +39,9 @@ export function BoardDialog({
 	const [name, setName] = useState(board?.name ?? "");
 	const [inVault, setInVault] = useState(board?.vault ?? false);
 	const [icon, setIcon] = useState(board?.icon ?? ICONS[1]);
+	const [schedule, setSchedule] = useState<BoardSchedule | null>(
+		board?.layout.schedule ?? null,
+	);
 	const saveSettings = useSaveSettings();
 	const create = useHomeAction(createBoard, {
 		onSuccess: (result) => {
@@ -58,7 +63,14 @@ export function BoardDialog({
 				onSubmit={(event) => {
 					event.preventDefault();
 					const vault = vaultUnlocked ? inVault : undefined;
-					if (board) update.mutate({ id: board.id, name, icon, vault });
+					if (board)
+						update.mutate({
+							id: board.id,
+							name,
+							icon,
+							vault,
+							layout: { schedule: inVault ? null : schedule },
+						});
 					else create.mutate({ name, icon, vault });
 				}}
 			>
@@ -104,6 +116,90 @@ export function BoardDialog({
 						checked={inVault}
 						onChange={setInVault}
 					/>
+				)}
+				{board && !inVault && (
+					<div className="space-y-3 rounded-2xl border border-line p-3">
+						<Toggle
+							label="🕘 Show this board automatically"
+							checked={schedule !== null}
+							onChange={(on) =>
+								setSchedule(
+									on
+										? { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" }
+										: null,
+								)
+							}
+						/>
+						{schedule && (
+							<>
+								<div className="flex gap-1">
+									{DAY_LETTERS.map((letter, day) => {
+										const on = schedule.days.includes(day);
+										return (
+											<button
+												// biome-ignore lint/suspicious/noArrayIndexKey: weekday index is the identity
+												key={day}
+												type="button"
+												aria-pressed={on}
+												aria-label={
+													[
+														"Sunday",
+														"Monday",
+														"Tuesday",
+														"Wednesday",
+														"Thursday",
+														"Friday",
+														"Saturday",
+													][day]
+												}
+												onClick={() => {
+													const days = on
+														? schedule.days.filter((d) => d !== day)
+														: [...schedule.days, day];
+													if (days.length) setSchedule({ ...schedule, days });
+												}}
+												className={cn(
+													"focus-ring grid size-9 place-items-center rounded-full text-sm font-medium transition",
+													on
+														? "bg-accent text-white"
+														: "bg-[color-mix(in_srgb,var(--ink)_6%,transparent)] text-muted hover:text-ink",
+												)}
+											>
+												{letter}
+											</button>
+										);
+									})}
+								</div>
+								<div className="flex items-center gap-2 text-sm">
+									<input
+										type="time"
+										className="field w-auto"
+										value={schedule.from}
+										onChange={(event) =>
+											event.target.value &&
+											setSchedule({ ...schedule, from: event.target.value })
+										}
+										aria-label="From"
+									/>
+									<span className="text-muted">to</span>
+									<input
+										type="time"
+										className="field w-auto"
+										value={schedule.to}
+										onChange={(event) =>
+											event.target.value &&
+											setSchedule({ ...schedule, to: event.target.value })
+										}
+										aria-label="To"
+									/>
+								</div>
+								<p className="text-xs text-muted">
+									{describeSchedule(schedule)}. During this time tabz opens on
+									this board; you can still switch boards.
+								</p>
+							</>
+						)}
+					</div>
 				)}
 				<div className="flex items-center gap-2 pt-2">
 					{board && canDelete && (

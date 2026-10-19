@@ -125,7 +125,7 @@ const follow = (
 		});
 	});
 
-const fetchText = (start: URL, accept: string, accepts: RegExp) =>
+export const fetchText = (start: URL, accept: string, accepts: RegExp) =>
 	Effect.gen(function* () {
 		const { url, response } = yield* follow(start, accept);
 		if (!response.ok)
