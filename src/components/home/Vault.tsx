@@ -30,24 +30,20 @@ export type VaultState = HomeData["vault"];
 /** Drops vault boards from the cache right away, then refetches. */
 export function useLockVault() {
 	const queryClient = useQueryClient();
-	return useCallback(
-		async (quiet = false) => {
-			queryClient.setQueryData<HomeData>(homeKey, (data) =>
-				data
-					? {
-							...data,
-							boards: data.boards.filter((b) => !b.vault),
-							vault: { ...data.vault, unlocked: false, expiresAt: null },
-						}
-					: data,
-			);
-			clearVaultKey();
-			await run(call(lockVault)).catch(() => {});
-			await queryClient.invalidateQueries({ queryKey: homeKey });
-			if (!quiet) toast("Vault locked", { icon: "🔒" });
-		},
-		[queryClient],
-	);
+	return useCallback(async () => {
+		queryClient.setQueryData<HomeData>(homeKey, (data) =>
+			data
+				? {
+						...data,
+						boards: data.boards.filter((b) => !b.vault),
+						vault: { ...data.vault, unlocked: false, expiresAt: null },
+					}
+				: data,
+		);
+		clearVaultKey();
+		await run(call(lockVault)).catch(() => {});
+		await queryClient.invalidateQueries({ queryKey: homeKey });
+	}, [queryClient]);
 }
 
 /** Tries a vault password or PIN; resolves to an error message, or null when it opened. */
@@ -58,7 +54,6 @@ function useVaultUnlock(onUnlocked: (boardId: string) => void) {
 			const userId = queryClient.getQueryData<HomeData>(homeKey)?.userId ?? "";
 			const result = await unlockWithPassword(secret, userId, queryClient);
 			await queryClient.invalidateQueries({ queryKey: homeKey });
-			toast("Vault unlocked", { icon: "🔓" });
 			onUnlocked(result.boardId);
 			return null;
 		} catch (cause) {
