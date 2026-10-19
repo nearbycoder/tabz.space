@@ -6,12 +6,11 @@ import type { AppError } from "#/lib/effect/errors";
 import { NotFound } from "#/lib/effect/errors";
 import {
 	ACCENTS,
-	boardLayoutSchema,
 	SEARCH_ENGINES,
 	SMART_SORTS,
-	smartRulesSchema,
 	TILE_STYLES,
 } from "#/lib/preferences";
+import { boardLayoutSchema, smartRulesSchema } from "#/lib/schemas";
 import * as capture from "../capture";
 import * as library from "../library";
 import { runServer } from "../runtime";

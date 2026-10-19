@@ -4,12 +4,8 @@ import { z } from "zod";
 import { user } from "#/db/auth-schema";
 import { themes, userSettings } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
-import {
-	resolveSettings,
-	sanitizeCss,
-	THEME_KEYS,
-	type UserSettings,
-} from "#/lib/preferences";
+import { sanitizeCss, THEME_KEYS, type UserSettings } from "#/lib/preferences";
+import { resolveSettings } from "#/lib/schemas";
 import { idSchema, saveSettings } from "./library";
 import { query } from "./runtime";
 

@@ -16,6 +16,8 @@ export default defineConfig({
 			// One server bundle: Rolldown's lib-chunk splitting produced a circular
 			// import ("__commonJSMin is not a function") at boot.
 			inlineDynamicImports: true,
+			// Serve .br/.gz versions of JS, CSS and other static files.
+			compressPublicAssets: { gzip: true, brotli: true },
 		}),
 		tailwindcss(),
 		tanstackStart(),

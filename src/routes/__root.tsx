@@ -1,3 +1,4 @@
+import geistLatin from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url";
 import type { QueryClient } from "@tanstack/react-query";
 import {
 	createRootRouteWithContext,
@@ -51,10 +52,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 				{ rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
 				{ rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
 				{ rel: "manifest", href: "/site.webmanifest" },
-				{ rel: "preconnect", href: "https://fonts.googleapis.com" },
+				// The default font is self-hosted; fetch its Latin subset right away.
 				{
-					rel: "preconnect",
-					href: "https://fonts.gstatic.com",
+					rel: "preload",
+					href: geistLatin,
+					as: "font",
+					type: "font/woff2",
 					crossOrigin: "anonymous",
 				},
 				...splashLinks,

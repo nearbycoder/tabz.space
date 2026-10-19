@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { boards, bookmarks, groups, userSettings } from "#/db/schema";
 import { FetchError } from "#/lib/effect/errors";
-import { resolveSettings } from "#/lib/preferences";
+import { resolveSettings } from "#/lib/schemas";
 import { query } from "./runtime";
 
 /*

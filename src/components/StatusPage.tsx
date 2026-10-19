@@ -54,8 +54,11 @@ export function NotFoundPage() {
 
 export function ErrorPage({ error }: ErrorComponentProps) {
 	const router = useRouter();
+	// Surface render errors in the server logs (the page only shows a summary).
+	if (typeof window === "undefined") console.error("[render error]", error);
 	const message = error instanceof Error ? error.message : "";
-	const offline = typeof navigator !== "undefined" && !navigator.onLine;
+	const offline =
+		typeof navigator !== "undefined" && navigator.onLine === false;
 	return (
 		<StatusPage
 			emoji={offline ? "📡" : "🫠"}

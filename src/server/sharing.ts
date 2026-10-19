@@ -12,7 +12,7 @@ import {
 	userSettings,
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
-import { resolveLayout, resolveSettings } from "#/lib/preferences";
+import { resolveLayout, resolveSettings } from "#/lib/schemas";
 import { faviconFor } from "#/lib/url";
 import {
 	accessBoard,

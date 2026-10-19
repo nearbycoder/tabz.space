@@ -1,4 +1,26 @@
-import { z } from "zod";
+import type {
+	BoardLayout,
+	BoardSchedule,
+	GroupOptions,
+	SmartRules,
+	UserSettings,
+	Widget,
+} from "./schemas";
+
+/*
+ * Constants and types shared by the browser and the server. The zod schemas
+ * that validate them live in ./schemas (server-side), so the browser never
+ * downloads a validation library just to read these.
+ */
+
+export type {
+	BoardLayout,
+	BoardSchedule,
+	GroupOptions,
+	SmartRules,
+	UserSettings,
+	Widget,
+};
 
 export const SEARCH_ENGINES = {
 	google: { label: "Google", url: "https://www.google.com/search?q=" },
@@ -71,8 +93,9 @@ export const WALLPAPERS = [
 export const FONTS = {
 	geist: {
 		label: "Modern",
-		family: "'Geist', ui-sans-serif, system-ui, sans-serif",
-		google: "Geist:wght@400..700",
+		family: "'Geist Variable', 'Geist', ui-sans-serif, system-ui, sans-serif",
+		// Self-hosted (bundled CSS), so nothing to fetch from Google.
+		google: null,
 	},
 	grotesk: {
 		label: "Bold",
@@ -97,63 +120,6 @@ export const FONTS = {
 } as const;
 
 export type FontKey = keyof typeof FONTS;
-
-const searchEngineSchema = z.enum(
-	Object.keys(SEARCH_ENGINES) as [SearchEngine, ...SearchEngine[]],
-);
-
-const hex = z.string().regex(/^#[0-9a-f]{6}$/i);
-
-export const backgroundSchema = z.object({
-	type: z.enum(["preset", "pattern", "color", "image"]),
-	value: z.string().max(2048),
-	/** Darken/lighten overlay strength, 0–90 (%). */
-	dim: z.number().min(0).max(90).default(0),
-	/** Image blur in px. */
-	blur: z.number().min(0).max(30).default(0),
-	/** Slowly drift gradients. */
-	animate: z.boolean().default(false),
-});
-
-export const userSettingsSchema = z.object({
-	theme: z.enum(["system", "light", "dark"]),
-	accent: hex,
-	background: backgroundSchema,
-	font: z.enum(Object.keys(FONTS) as [FontKey, ...FontKey[]]).default("geist"),
-	radius: z.enum(["sharp", "soft", "round"]).default("soft"),
-	surface: z.enum(["glass", "solid", "outline"]).default("glass"),
-	searchEngine: searchEngineSchema,
-	showSearch: z.boolean(),
-	showClock: z.boolean(),
-	showGreeting: z.boolean(),
-	clockFormat: z.enum(["12h", "24h"]),
-	greetingName: z.string().max(40).default(""),
-	showTopSites: z.boolean().default(true),
-	showRediscover: z.boolean().default(true),
-	/** Extra CSS applied to the home page (Customize → Look → Custom CSS). */
-	customCss: z.string().max(20_000).default(""),
-	/** The browser's IANA time zone, so schedules work during server rendering. */
-	timeZone: z.string().max(64).optional(),
-	/** Last monthly report ("YYYY-MM") the user opened or dismissed. */
-	reportSeen: z.string().max(7).optional(),
-	openInNewTab: z.boolean(),
-	/** Open every link in a private window (needs the browser extension). */
-	incognitoAll: z.boolean().default(false),
-	linkPreviews: z.boolean().default(true),
-	feedBadges: z.boolean().default(true),
-	/** Tag new links with AI (only offered when the server has a Claude key). */
-	autoTag: z.boolean().default(false),
-	celebrate: z.boolean().default(true),
-	tilt: z.boolean().default(true),
-	activeBoardId: z.string().nullable(),
-	/** Letters typed anywhere on the home page to open the vault. */
-	vaultCode: z
-		.string()
-		.regex(/^[a-z0-9]{3,24}$/i)
-		.default("vault"),
-});
-
-export type UserSettings = z.output<typeof userSettingsSchema>;
 
 export const DEFAULT_SETTINGS: UserSettings = {
 	theme: "system",
@@ -355,28 +321,6 @@ export const THEME_PRESETS: {
 export const TILE_STYLES = ["tile", "card", "list", "icon", "gallery"] as const;
 export type TileStyle = (typeof TILE_STYLES)[number];
 
-const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
-
-/** When a board shows up on its own, e.g. weekdays 09:00–17:00. */
-export const boardScheduleSchema = z.object({
-	/** 0 = Sunday … 6 = Saturday. */
-	days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
-	from: clockTime,
-	to: clockTime,
-});
-export type BoardSchedule = z.infer<typeof boardScheduleSchema>;
-
-export const boardLayoutSchema = z.object({
-	columns: z.number().int().min(1).max(6),
-	tileStyle: z.enum(TILE_STYLES),
-	tileSize: z.enum(["sm", "md", "lg"]),
-	width: z.enum(["narrow", "wide", "full"]),
-	showGroupTitles: z.boolean(),
-	schedule: boardScheduleSchema.nullable().optional(),
-});
-
-export type BoardLayout = z.infer<typeof boardLayoutSchema>;
-
 export const DEFAULT_BOARD_LAYOUT: BoardLayout = {
 	columns: 3,
 	tileStyle: "tile",
@@ -395,19 +339,6 @@ export const SMART_SORTS = {
 } as const;
 export type SmartSort = keyof typeof SMART_SORTS;
 
-/** Rules for a smart group: a live view over every non-vault board. */
-export const smartRulesSchema = z.object({
-	sort: z.enum(Object.keys(SMART_SORTS) as [SmartSort, ...SmartSort[]]),
-	/** Only links carrying any of these tags. */
-	tags: z.array(z.string().trim().min(1).max(32)).max(10).optional(),
-	/** Only links whose title, URL or description contain this text. */
-	query: z.string().trim().max(100).optional(),
-	/** Only links from this board. */
-	boardId: z.string().max(64).optional(),
-	limit: z.number().int().min(1).max(60),
-});
-export type SmartRules = z.infer<typeof smartRulesSchema>;
-
 export const DEFAULT_SMART_RULES: SmartRules = { sort: "visits", limit: 12 };
 
 export const WIDGET_TYPES = {
@@ -420,74 +351,6 @@ export const WIDGET_TYPES = {
 	feed: { label: "News feed", icon: "📰" },
 } as const;
 export type WidgetType = keyof typeof WIDGET_TYPES;
-
-const publicUrl = z
-	.string()
-	.trim()
-	.max(2048)
-	.regex(/^(https?|webcal):\/\//i, "Use an http(s) or webcal:// address");
-
-export const widgetSchema = z.discriminatedUnion("type", [
-	z.object({ type: z.literal("notes"), text: z.string().max(20_000) }),
-	z.object({
-		type: z.literal("todo"),
-		items: z
-			.array(
-				z.object({
-					id: z.string().max(40),
-					text: z.string().trim().min(1).max(300),
-					done: z.boolean(),
-				}),
-			)
-			.max(200),
-	}),
-	z.object({
-		type: z.literal("pomodoro"),
-		work: z.number().int().min(1).max(120),
-		rest: z.number().int().min(1).max(60),
-	}),
-	z.object({
-		type: z.literal("weather"),
-		place: z.string().max(120),
-		lat: z.number().min(-90).max(90),
-		lon: z.number().min(-180).max(180),
-		unit: z.enum(["c", "f"]),
-	}),
-	z.object({
-		type: z.literal("calendar"),
-		url: publicUrl,
-		days: z.number().int().min(1).max(31),
-	}),
-	z.object({
-		type: z.literal("stocks"),
-		symbols: z
-			.array(
-				z
-					.string()
-					.trim()
-					.min(1)
-					.max(20)
-					.regex(/^[\w.^=-]+$/),
-			)
-			.min(1)
-			.max(12),
-	}),
-	z.object({
-		type: z.literal("feed"),
-		url: publicUrl,
-		count: z.number().int().min(1).max(20),
-	}),
-]);
-export type Widget = z.infer<typeof widgetSchema>;
-
-export const groupOptionsSchema = z.object({
-	tileStyle: z.enum(TILE_STYLES).optional(),
-	span: z.number().int().min(1).max(6).optional(),
-	smart: smartRulesSchema.optional(),
-	widget: widgetSchema.optional(),
-});
-
-export type GroupOptions = z.infer<typeof groupOptionsSchema>;
 
 export type BookmarkMeta = {
 	favicon?: string;
@@ -536,22 +399,14 @@ export function unreadCount(bookmark: {
 	return items.filter((item) => item.at > since).length;
 }
 
-/** Merges stored (possibly older-shaped) JSON with current defaults. */
-export function resolveSettings(stored: unknown): UserSettings {
+/** Stored settings over the defaults (no validation; the server validates). */
+export function mergeSettings(stored: unknown): UserSettings {
 	const value = (stored ?? {}) as Partial<UserSettings>;
-	const merged = {
+	return {
 		...DEFAULT_SETTINGS,
 		...value,
 		background: { ...DEFAULT_SETTINGS.background, ...value.background },
 	};
-	const parsed = userSettingsSchema.safeParse(merged);
-	return parsed.success ? parsed.data : DEFAULT_SETTINGS;
-}
-
-export function resolveLayout(stored: unknown): BoardLayout {
-	const merged = { ...DEFAULT_BOARD_LAYOUT, ...(stored as object) };
-	const parsed = boardLayoutSchema.safeParse(merged);
-	return parsed.success ? parsed.data : DEFAULT_BOARD_LAYOUT;
 }
 
 /** Settings a community theme carries: how tabz looks, never what it does. */

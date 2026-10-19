@@ -104,16 +104,24 @@ Customize → Connect has personal API tokens and outgoing webhooks.
 
 ## Data model
 
-`user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links and other folders point at them via `parent_id`, so folders nest to any depth; moves are cycle-checked and a folder's whole subtree travels with it) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
+`user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links and other folders point at them via `parent_id`, so folders nest to any depth; moves are cycle-checked and a folder's whole subtree travels with it) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/schemas.ts` (server only; the browser imports just the types from `src/lib/preferences.ts`), so new options don't need migrations.
 
 ## Where things live
 
 - `src/server/library.ts`: all bookmark/board/group logic as Effect programs (typed errors in `src/lib/effect/errors.ts`)
 - `src/server/home.ts`: thin server-function wrappers used by the web app
 - `src/server/metadata.ts`: page title/favicon lookup with timeout, retry and private-network blocking
-- `src/lib/api.ts`: browser → server calls as Effects (retry on network failure, time-boxed)
+- `src/lib/api.ts`: browser → server calls (retry on network failure, time-boxed). Effect stays on the server to keep the client bundle small
 - `src/components/home/*`: the start page UI
 - `extension/`: Chrome/Edge/Brave/Firefox MV3 extension (see its README); `scripts/build-extension.mjs` packages it into `public/downloads/`
+
+## Performance
+
+- HTML and server-function responses are gzipped in `src/server.ts`; static assets are served as precompressed brotli/gzip with immutable caching.
+- The home page loads only what the first paint needs. Dialogs, the ⌘K palette, settings and widget bodies are code-split (`src/lib/lazy.ts`) and prefetched when the browser is idle, so they still open instantly.
+- Geist is self-hosted and its Latin file is preloaded, so there's no request to Google Fonts and no font swap. The other optional fonts still load from Google when picked.
+- Unsplash wallpapers render as an `<img>` with a `srcset`, so phones download a phone-sized photo.
+- Confetti, zod and Effect stay out of the initial bundle.
 
 ## Deploy (Railway)
 

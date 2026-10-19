@@ -4,14 +4,10 @@ import type { UserSettings } from "./preferences";
 
 const KEY = "tabz-theme";
 
-const FONT_CSS =
-	"https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap";
-
 /**
- * Inline script that applies the last theme before first paint, and loads the
- * web font without blocking rendering (text shows in the fallback font first).
+ * Inline script that applies the last theme before first paint.
  */
-export const themeInitScript = `(function(){try{var t=localStorage.getItem("${KEY}")||"system";var d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}var l=document.createElement("link");l.rel="stylesheet";l.href="${FONT_CSS}";document.head.appendChild(l)})()`;
+export const themeInitScript = `(function(){try{var t=localStorage.getItem("${KEY}")||"system";var d=t==="dark"||(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}})()`;
 
 export function applyTheme(theme: UserSettings["theme"]) {
 	localStorage.setItem(KEY, theme);

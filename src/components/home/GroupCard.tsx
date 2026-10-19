@@ -15,8 +15,9 @@ import {
 	Settings2,
 	Sparkles,
 } from "lucide-react";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { cn } from "#/lib/cn";
+import { lazyNamed } from "#/lib/lazy";
 import {
 	type BoardLayout,
 	type TileStyle,
@@ -26,7 +27,12 @@ import { SMART_EMPTY, smartItems } from "#/lib/smart";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import { type HomeGroup, linksIn } from "./types";
-import { WidgetBody } from "./widgets/WidgetBody";
+
+// Widget code only loads on boards that have widgets.
+const WidgetBody = lazyNamed(
+	() => import("./widgets/WidgetBody"),
+	"WidgetBody",
+);
 
 type Props = {
 	group: HomeGroup;
@@ -207,7 +213,11 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 					)}
 				</div>
 			)}
-			{!group.collapsed && widget && <WidgetBody group={group} />}
+			{!group.collapsed && widget && (
+				<Suspense fallback={<div className="min-h-24" />}>
+					<WidgetBody group={group} />
+				</Suspense>
+			)}
 			{!group.collapsed && !smart && !widget && (
 				<div
 					ref={drop.setNodeRef}

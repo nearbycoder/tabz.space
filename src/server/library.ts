@@ -39,15 +39,15 @@ import {
 	visits,
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
+import { DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
 import {
 	boardLayoutSchema,
-	DEFAULT_BOARD_LAYOUT,
 	groupOptionsSchema,
 	resolveLayout,
 	resolveSettings,
 	userSettingsSchema,
 	widgetSchema,
-} from "#/lib/preferences";
+} from "#/lib/schemas";
 import {
 	canonicalUrl,
 	faviconFor,

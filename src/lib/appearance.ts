@@ -4,7 +4,7 @@ const loadedFonts = new Set<string>(["geist"]);
 
 /** Loads a Google font the first time it's needed. */
 export function loadFont(key: FontKey) {
-	if (loadedFonts.has(key)) return;
+	if (loadedFonts.has(key) || !FONTS[key].google) return;
 	loadedFonts.add(key);
 	const link = document.createElement("link");
 	link.rel = "stylesheet";

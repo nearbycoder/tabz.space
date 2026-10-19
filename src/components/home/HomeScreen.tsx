@@ -1,5 +1,4 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Effect } from "effect";
 import {
 	Check,
 	Command,
@@ -12,17 +11,26 @@ import {
 	Sun,
 	Users,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	Suspense,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Logo } from "#/components/Logo";
-import { call } from "#/lib/api";
+import { call, run } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
 import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
 import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
+import { lazyNamed, whenIdle } from "#/lib/lazy";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
 import { useVisibleArea } from "#/lib/use-keyboard-inset";
+import { useLockVault } from "#/lib/vault-lock";
 import {
 	resumeVault,
 	startVaultSync,
@@ -33,23 +41,12 @@ import type { HomeData } from "#/server/home";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
-import { BoardDialog } from "./BoardDialog";
 import { BoardGrid } from "./BoardGrid";
-import { BookmarkDialog } from "./BookmarkDialog";
-import { BulkAddDialog } from "./BulkAddDialog";
 import { Clock } from "./Clock";
-import { CommandPalette } from "./CommandPalette";
 import { HomeContext } from "./context";
-import { DuplicatesDialog } from "./DuplicatesDialog";
-import { FolderDialog, NewFolderDialog } from "./FolderDialog";
-import { GroupDialog } from "./GroupDialog";
-import { HistoryDialog } from "./HistoryDialog";
-import { LinkHealthDialog } from "./LinkHealthDialog";
-import { MonthlyReportDialog, ReportBanner } from "./MonthlyReport";
+import { ReportBanner } from "./MonthlyReport";
 import { Rediscover } from "./Rediscover";
 import { SearchBar } from "./SearchBar";
-import { SettingsPanel } from "./SettingsPanel";
-import { ShortcutsDialog } from "./ShortcutsDialog";
 import { TopSites } from "./TopSites";
 import {
 	type DialogState,
@@ -62,9 +59,58 @@ import {
 	mapTree,
 	type TreeItem,
 } from "./types";
-import { useLockVault, VaultUnlockDialog } from "./Vault";
 
 /** Thumb-reach actions for phones; the header holds these on larger screens. */
+// Dialogs load on first use (and are prefetched when the browser is idle),
+// keeping the first page load small.
+const BookmarkDialog = lazyNamed(
+	() => import("./BookmarkDialog"),
+	"BookmarkDialog",
+);
+const CommandPalette = lazyNamed(
+	() => import("./CommandPalette"),
+	"CommandPalette",
+);
+const FolderDialog = lazyNamed(() => import("./FolderDialog"), "FolderDialog");
+const NewFolderDialog = lazyNamed(
+	() => import("./FolderDialog"),
+	"NewFolderDialog",
+);
+const GroupDialog = lazyNamed(() => import("./GroupDialog"), "GroupDialog");
+const BoardDialog = lazyNamed(() => import("./BoardDialog"), "BoardDialog");
+const SettingsPanel = lazyNamed(
+	() => import("./SettingsPanel"),
+	"SettingsPanel",
+);
+const VaultUnlockDialog = lazyNamed(
+	() => import("./Vault"),
+	"VaultUnlockDialog",
+);
+const BulkAddDialog = lazyNamed(
+	() => import("./BulkAddDialog"),
+	"BulkAddDialog",
+);
+const HistoryDialog = lazyNamed(
+	() => import("./HistoryDialog"),
+	"HistoryDialog",
+);
+const DuplicatesDialog = lazyNamed(
+	() => import("./DuplicatesDialog"),
+	"DuplicatesDialog",
+);
+const LinkHealthDialog = lazyNamed(
+	() => import("./LinkHealthDialog"),
+	"LinkHealthDialog",
+);
+const MonthlyReportDialog = lazyNamed(
+	() => import("./MonthlyReport"),
+	"MonthlyReportDialog",
+);
+const ShortcutsDialog = lazyNamed(
+	() => import("./ShortcutsDialog"),
+	"ShortcutsDialog",
+);
+
 function MobileDock(props: {
 	editing: boolean;
 	vaultUnlocked: boolean;
@@ -271,6 +317,30 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		document.title = `${board.vault ? "tabz" : `${board.icon ? `${board.icon} ` : ""}${board.name} · tabz`}`;
 	}, [board]);
 
+	// ⌘K / Ctrl+K toggles the palette (which only loads once it's needed).
+	useEffect(() => {
+		const onKey = (event: KeyboardEvent) => {
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+				event.preventDefault();
+				setPaletteOpen((open) => !open);
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	// Fetch the common dialogs in the background so they open instantly.
+	useEffect(() => {
+		whenIdle(() => {
+			CommandPalette.preload();
+			BookmarkDialog.preload();
+			FolderDialog.preload();
+			SettingsPanel.preload();
+			GroupDialog.preload();
+			if (vault.configured) VaultUnlockDialog.preload();
+		});
+	}, [vault.configured]);
+
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
 
@@ -464,9 +534,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	const onVisit = useCallback(
 		(bookmark: LinkItem) => {
 			// Fire-and-forget; visit counts power search ranking and the most-visited strip.
-			Effect.runFork(
-				call(recordVisit, { id: bookmark.id }).pipe(Effect.ignore),
-			);
+			run(call(recordVisit, { id: bookmark.id })).catch(() => {});
 			// Clear "new posts" badges right away when the link opens in another tab.
 			const visited = <T extends LinkItem>(item: T): T =>
 				item.id === bookmark.id
@@ -806,112 +874,121 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					}
 				/>
 
-				<CommandPalette
-					open={paletteOpen}
-					onOpenChange={setPaletteOpen}
-					board={board}
-					onSelectBoard={selectBoard}
-					onToggleEdit={() => setEditing((value) => !value)}
-					onSaveSettings={(patch) => saveSettings.mutate(patch)}
-					onLockVault={vault.unlocked ? () => lockVault() : undefined}
-					onUndo={() => undoLast()}
-				/>
+				<Suspense fallback={null}>
+					{paletteOpen && (
+						<CommandPalette
+							open={paletteOpen}
+							onOpenChange={setPaletteOpen}
+							board={board}
+							onSelectBoard={selectBoard}
+							onToggleEdit={() => setEditing((value) => !value)}
+							onSaveSettings={(patch) => saveSettings.mutate(patch)}
+							onLockVault={vault.unlocked ? () => lockVault() : undefined}
+							onUndo={() => undoLast()}
+						/>
+					)}
 
-				{dialog?.type === "bookmark" && (
-					<BookmarkDialog
-						boards={boards}
-						groupId={dialog.groupId}
-						bookmark={dialog.bookmark}
-						parentId={dialog.parentId}
-						initialUrl={dialog.url}
-						festive={settings.celebrate}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "history" && (
-					<HistoryDialog initialTab={dialog.tab} onClose={close} />
-				)}
-				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
-				{dialog?.type === "link-health" && <LinkHealthDialog onClose={close} />}
-				{dialog?.type === "shortcuts" && (
-					<ShortcutsDialog
-						showVault={!vault.configured || vault.unlocked}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "report" && (
-					<MonthlyReportDialog month={dialog.month} onClose={close} />
-				)}
-				{dialog?.type === "bulk-add" &&
-					(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
-						<BulkAddDialog
+					{dialog?.type === "bookmark" && (
+						<BookmarkDialog
 							boards={boards}
-							groupId={
-								(dialog.groupId ??
-									board.groups.find(isLinksGroup)?.id) as string
-							}
-							initialText={dialog.text}
+							groupId={dialog.groupId}
+							bookmark={dialog.bookmark}
+							parentId={dialog.parentId}
+							initialUrl={dialog.url}
 							festive={settings.celebrate}
 							onClose={close}
 						/>
 					)}
-				{dialog?.type === "folder" && (
-					<FolderDialog
-						key={dialog.folderId}
-						folderId={dialog.folderId}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "new-folder" && (
-					<NewFolderDialog
-						groupId={dialog.groupId}
-						parentId={dialog.parentId}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "group" && (
-					<GroupDialog
-						boards={boards}
-						boardId={dialog.boardId}
-						group={dialog.group}
-						initialKind={dialog.kind}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "board" && (
-					<BoardDialog
-						board={dialog.board}
-						canDelete={
-							(!dialog.board || dialog.board.role === "owner") &&
-							(Boolean(dialog.board?.vault) ||
-								boards.filter((b) => !b.vault && b.role === "owner").length > 1)
-						}
-						vaultUnlocked={vault.unlocked}
-						userId={data.userId}
-						onClose={close}
-					/>
-				)}
-				{dialog?.type === "vault-unlock" && (
-					<VaultUnlockDialog
-						onClose={close}
-						onUnlocked={(boardId) => {
-							close();
-							saveSettings.mutate({ activeBoardId: boardId });
-						}}
-					/>
-				)}
-				{dialog?.type === "settings" && (
-					<SettingsPanel
-						settings={settings}
-						vault={vault}
-						board={board}
-						boards={boards}
-						session={session}
-						aiAvailable={data.features.ai}
-						initialTab={dialog.tab}
-						onClose={close}
-					/>
-				)}
+					{dialog?.type === "history" && (
+						<HistoryDialog initialTab={dialog.tab} onClose={close} />
+					)}
+					{dialog?.type === "duplicates" && (
+						<DuplicatesDialog onClose={close} />
+					)}
+					{dialog?.type === "link-health" && (
+						<LinkHealthDialog onClose={close} />
+					)}
+					{dialog?.type === "shortcuts" && (
+						<ShortcutsDialog
+							showVault={!vault.configured || vault.unlocked}
+							onClose={close}
+						/>
+					)}
+					{dialog?.type === "report" && (
+						<MonthlyReportDialog month={dialog.month} onClose={close} />
+					)}
+					{dialog?.type === "bulk-add" &&
+						(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
+							<BulkAddDialog
+								boards={boards}
+								groupId={
+									(dialog.groupId ??
+										board.groups.find(isLinksGroup)?.id) as string
+								}
+								initialText={dialog.text}
+								festive={settings.celebrate}
+								onClose={close}
+							/>
+						)}
+					{dialog?.type === "folder" && (
+						<FolderDialog
+							key={dialog.folderId}
+							folderId={dialog.folderId}
+							onClose={close}
+						/>
+					)}
+					{dialog?.type === "new-folder" && (
+						<NewFolderDialog
+							groupId={dialog.groupId}
+							parentId={dialog.parentId}
+							onClose={close}
+						/>
+					)}
+					{dialog?.type === "group" && (
+						<GroupDialog
+							boards={boards}
+							boardId={dialog.boardId}
+							group={dialog.group}
+							initialKind={dialog.kind}
+							onClose={close}
+						/>
+					)}
+					{dialog?.type === "board" && (
+						<BoardDialog
+							board={dialog.board}
+							canDelete={
+								(!dialog.board || dialog.board.role === "owner") &&
+								(Boolean(dialog.board?.vault) ||
+									boards.filter((b) => !b.vault && b.role === "owner").length >
+										1)
+							}
+							vaultUnlocked={vault.unlocked}
+							userId={data.userId}
+							onClose={close}
+						/>
+					)}
+					{dialog?.type === "vault-unlock" && (
+						<VaultUnlockDialog
+							onClose={close}
+							onUnlocked={(boardId) => {
+								close();
+								saveSettings.mutate({ activeBoardId: boardId });
+							}}
+						/>
+					)}
+					{dialog?.type === "settings" && (
+						<SettingsPanel
+							settings={settings}
+							vault={vault}
+							board={board}
+							boards={boards}
+							session={session}
+							aiAvailable={data.features.ai}
+							initialTab={dialog.tab}
+							onClose={close}
+						/>
+					)}
+				</Suspense>
 			</div>
 		</HomeContext.Provider>
 	);

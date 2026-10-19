@@ -22,30 +22,14 @@ import {
 	setDecoyPassword,
 	unlockWithPassword,
 } from "#/lib/vault-actions";
+import { useLockVault } from "#/lib/vault-lock";
 import { clearVaultKey } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
-import { lockVault, resetVault, updateVaultSettings } from "#/server/vault";
+import { resetVault, updateVaultSettings } from "#/server/vault";
+
+export { useLockVault };
 
 export type VaultState = HomeData["vault"];
-
-/** Drops vault boards from the cache right away, then refetches. */
-export function useLockVault() {
-	const queryClient = useQueryClient();
-	return useCallback(async () => {
-		queryClient.setQueryData<HomeData>(homeKey, (data) =>
-			data
-				? {
-						...data,
-						boards: data.boards.filter((b) => !b.vault),
-						vault: { ...data.vault, unlocked: false, expiresAt: null },
-					}
-				: data,
-		);
-		clearVaultKey();
-		await run(call(lockVault)).catch(() => {});
-		await queryClient.invalidateQueries({ queryKey: homeKey });
-	}, [queryClient]);
-}
 
 /** Tries a vault password or PIN; resolves to an error message, or null when it opened. */
 function useVaultUnlock(onUnlocked: (boardId: string) => void) {

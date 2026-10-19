@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
 import { homeKey } from "#/lib/home-query";
-import { resolveSettings, type UserSettings } from "#/lib/preferences";
+import { mergeSettings, type UserSettings } from "#/lib/preferences";
 import {
 	applyTheme,
 	deleteTheme,
@@ -76,7 +76,7 @@ export function CommunityThemes() {
 			) : (
 				<div className="grid grid-cols-2 gap-2">
 					{themes.data?.map((theme) => {
-						const look: UserSettings = resolveSettings(theme.settings);
+						const look: UserSettings = mergeSettings(theme.settings);
 						return (
 							<div
 								key={theme.id}

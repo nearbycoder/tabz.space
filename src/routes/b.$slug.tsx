@@ -1,12 +1,14 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { z } from "zod";
 import { PublicBoardView } from "#/components/PublicBoard";
+import { optionalFlag } from "#/lib/search-params";
 import { getPublicBoard } from "#/server/home";
 import { getSession } from "#/server/session";
 
 /** A board shared publicly: read-only, with "Copy to my tabz". */
 export const Route = createFileRoute("/b/$slug")({
-	validateSearch: z.object({ copy: z.coerce.boolean().optional() }),
+	validateSearch: (search: Record<string, unknown>): { copy?: boolean } => ({
+		copy: optionalFlag(search.copy),
+	}),
 	loader: async ({ params }) => {
 		const [board, session] = await Promise.all([
 			getPublicBoard({ data: { slug: params.slug } }).catch(() => null),

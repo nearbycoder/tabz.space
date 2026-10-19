@@ -1,11 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { z } from "zod";
 import { AuthForm } from "#/components/AuthForm";
+import { withRedirect } from "#/lib/search-params";
 import { getAuthProviders, getSession } from "#/server/session";
 
 export const Route = createFileRoute("/sign-up")({
 	// Loose: OAuth authorization params (client_id, sig, …) must pass through untouched.
-	validateSearch: z.looseObject({ redirect: z.string().optional() }),
+	validateSearch: withRedirect,
 	loader: async () => {
 		if (await getSession()) throw redirect({ to: "/" });
 		return { providers: await getAuthProviders() };

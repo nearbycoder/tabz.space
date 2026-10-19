@@ -44,12 +44,15 @@ export function Backdrop({
 				<div className="absolute inset-0" style={{ background: value }} />
 			)}
 			{type === "image" && (
-				<div
-					className="absolute -inset-8 bg-cover bg-center"
-					style={{
-						backgroundImage: `url("${value.replace(/["\\]/g, "")}")`,
-						filter: blur ? `blur(${blur}px)` : undefined,
-					}}
+				<img
+					alt=""
+					src={value}
+					srcSet={wallpaperSrcSet(value)}
+					sizes="100vw"
+					decoding="async"
+					fetchPriority="high"
+					className="absolute -inset-8 size-[calc(100%+4rem)] max-w-none object-cover"
+					style={{ filter: blur ? `blur(${blur}px)` : undefined }}
 				/>
 			)}
 			{dim > 0 && (
@@ -60,4 +63,20 @@ export function Backdrop({
 			)}
 		</div>
 	);
+}
+
+const WIDTHS = [640, 1080, 1600, 2400];
+
+/** Unsplash photos can be resized on the fly, so phones get a phone-sized file. */
+function wallpaperSrcSet(url: string) {
+	if (!url.startsWith("https://images.unsplash.com/")) return undefined;
+	try {
+		return WIDTHS.map((width) => {
+			const sized = new URL(url);
+			sized.searchParams.set("w", String(width));
+			return `${sized} ${width}w`;
+		}).join(", ");
+	} catch {
+		return undefined;
+	}
 }
