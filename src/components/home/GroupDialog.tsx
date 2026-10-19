@@ -10,6 +10,7 @@ import { useHomeAction } from "#/lib/home-query";
 import {
 	ACCENTS,
 	DEFAULT_SMART_RULES,
+	type GroupWidth,
 	SMART_SORTS,
 	type SmartRules,
 	type SmartSort,
@@ -47,13 +48,14 @@ export function GroupDialog({
 	initialKind,
 	onClose,
 }: Props) {
-	const board = boards.find((b) => b.id === boardId);
 	const [name, setName] = useState(group?.name ?? "");
 	const [color, setColor] = useState<string | null>(group?.color ?? ACCENTS[0]);
 	const [style, setStyle] = useState<TileStyle | "inherit">(
 		group?.options.tileStyle ?? "inherit",
 	);
-	const [span, setSpan] = useState(group?.options.span ?? 1);
+	const [width, setWidth] = useState<GroupWidth>(
+		group?.options.width ?? "auto",
+	);
 	const [targetBoard, setTargetBoard] = useState(boardId);
 	const [kind, setKind] = useState<"links" | "smart" | "widget">(
 		group?.kind ?? initialKind ?? "links",
@@ -115,7 +117,6 @@ export function GroupDialog({
 		onSuccess: onClose,
 	});
 	const pending = create.isPending || update.isPending;
-	const maxSpan = board?.layout.columns ?? 3;
 
 	const submit = () => {
 		if (group) {
@@ -126,7 +127,7 @@ export function GroupDialog({
 				boardId: targetBoard,
 				options: {
 					tileStyle: style === "inherit" ? undefined : style,
-					span,
+					width,
 					...(kind === "smart" ? smartOptions() : {}),
 					// Notes and to-dos keep their live content; only settings change here.
 					...(kind === "widget" && configurable ? { widget } : {}),
@@ -356,21 +357,24 @@ export function GroupDialog({
 										/>
 									</Field>
 								)}
-								{maxSpan > 1 && (
-									<Field
-										label="Width"
-										hint="How many board columns this group spans on wide screens."
-									>
-										<Segmented
-											value={Math.min(span, maxSpan)}
-											onChange={setSpan}
-											options={Array.from({ length: maxSpan }, (_, i) => ({
-												value: i + 1,
-												label: `${i + 1}×`,
-											}))}
-										/>
-									</Field>
-								)}
+								<Field
+									label="Width"
+									hint="Its share of a row on wide screens. Auto follows the board's columns. You can also drag a group's right edge while editing."
+								>
+									<Segmented
+										value={width}
+										onChange={setWidth}
+										options={[
+											{ value: "auto", label: "Auto" },
+											{ value: "1/4", label: "¼" },
+											{ value: "1/3", label: "⅓" },
+											{ value: "1/2", label: "½" },
+											{ value: "2/3", label: "⅔" },
+											{ value: "3/4", label: "¾" },
+											{ value: "1", label: "Full" },
+										]}
+									/>
+								</Field>
 								{boards.length > 1 && (
 									<Field label="Board">
 										<select

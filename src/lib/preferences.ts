@@ -329,6 +329,50 @@ export const DEFAULT_BOARD_LAYOUT: BoardLayout = {
 	showGroupTitles: true,
 };
 
+/**
+ * How much of a board row a group takes on wide screens. "auto" follows the
+ * board's column count (and the group's older `span`).
+ */
+export const GROUP_WIDTHS = [
+	"auto",
+	"1/4",
+	"1/3",
+	"1/2",
+	"2/3",
+	"3/4",
+	"1",
+] as const;
+export type GroupWidth = (typeof GROUP_WIDTHS)[number];
+
+const fractionOf = (width: Exclude<GroupWidth, "auto">) => {
+	const [top, bottom = "1"] = width.split("/");
+	return Number(top) / Number(bottom);
+};
+
+/** A group's share of the row on wide screens (0–1). */
+export function groupFraction(
+	options: { width?: GroupWidth; span?: number },
+	columns: number,
+) {
+	if (options.width && options.width !== "auto")
+		return fractionOf(options.width);
+	return Math.min(options.span ?? 1, columns) / columns;
+}
+
+/** The nearest allowed width to a fraction of the row (for drag-to-resize). */
+export function nearestWidth(fraction: number): Exclude<GroupWidth, "auto"> {
+	let best: Exclude<GroupWidth, "auto"> = "1";
+	for (const width of GROUP_WIDTHS) {
+		if (width === "auto") continue;
+		if (
+			Math.abs(fractionOf(width) - fraction) <
+			Math.abs(fractionOf(best) - fraction)
+		)
+			best = width;
+	}
+	return best;
+}
+
 export const SMART_SORTS = {
 	visits: "Most visited",
 	recent: "Recently opened",

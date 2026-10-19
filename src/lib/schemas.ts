@@ -4,6 +4,7 @@ import {
 	DEFAULT_SETTINGS,
 	FONTS,
 	type FontKey,
+	GROUP_WIDTHS,
 	SEARCH_ENGINES,
 	type SearchEngine,
 	SMART_SORTS,
@@ -183,6 +184,7 @@ export type CatalogWidget = z.infer<typeof catalogWidgetSchema>;
 export const groupOptionsSchema = z.object({
 	tileStyle: z.enum(TILE_STYLES).optional(),
 	span: z.number().int().min(1).max(6).optional(),
+	width: z.enum(GROUP_WIDTHS).optional(),
 	smart: smartRulesSchema.optional(),
 	widget: widgetSchema.optional(),
 });

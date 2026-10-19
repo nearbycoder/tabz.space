@@ -15,12 +15,15 @@ import {
 	Settings2,
 	Sparkles,
 } from "lucide-react";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
 import { lazyNamed } from "#/lib/lazy";
 import {
 	type BoardLayout,
+	type GroupWidth,
+	groupFraction,
+	nearestWidth,
 	type TileStyle,
 	WIDGET_TYPES,
 } from "#/lib/preferences";
@@ -55,6 +58,29 @@ export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 	};
 };
 
+/*
+ * Group widths: the board is a wrapping row, and each group takes a fraction
+ * of it on wide screens (halves on tablets, full width on phones). With a
+ * 1rem gap, fractions that add up to 1 fill a row exactly.
+ */
+export const GROUP_WIDTH_CLASS =
+	"w-full sm:w-[calc((100%_+_1rem)_*_var(--w-sm)_-_1rem)] lg:w-[calc((100%_+_1rem)_*_var(--w)_-_1rem)]";
+
+export const groupWidthStyle = (fraction: number) =>
+	({
+		"--w": fraction,
+		"--w-sm": fraction <= 0.5 ? 0.5 : 1,
+	}) as React.CSSProperties;
+
+const WIDTH_LABEL: Record<string, string> = {
+	"1/4": "¼",
+	"1/3": "⅓",
+	"1/2": "½",
+	"2/3": "⅔",
+	"3/4": "¾",
+	"1": "Full",
+};
+
 export function GroupCard({ group, layout, onToggle }: Props) {
 	const { editing, openDialog, openAll, boards, readOnly } = useHomeContext();
 	const smart = group.kind === "smart" ? group.options.smart : undefined;
@@ -64,7 +90,52 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		[boards, smart],
 	);
 	const style = group.options.tileStyle ?? layout.tileStyle;
-	const span = Math.min(group.options.span ?? 1, layout.columns);
+	// While resizing, the card follows the pointer before the width is saved.
+	const [resizing, setResizing] = useState<GroupWidth | null>(null);
+	const fraction = resizing
+		? groupFraction({ width: resizing }, layout.columns)
+		: groupFraction(group.options, layout.columns);
+	const card = useRef<HTMLElement | null>(null);
+	const resize = useHomeAction(updateGroup, {
+		optimistic: (data, input) => ({
+			...data,
+			boards: data.boards.map((board) => ({
+				...board,
+				groups: board.groups.map((g) =>
+					g.id === input.id && input.options
+						? { ...g, options: { ...g.options, ...input.options } }
+						: g,
+				),
+			})),
+		}),
+	});
+	const startResize = (event: React.PointerEvent) => {
+		const node = card.current;
+		const row = node?.parentElement;
+		if (!node || !row) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const left = node.getBoundingClientRect().left;
+		const total = row.getBoundingClientRect().width;
+		const gap = 16;
+		let chosen: GroupWidth | null = null;
+		const move = (moveEvent: PointerEvent) => {
+			const width = Math.max(40, moveEvent.clientX - left);
+			chosen = nearestWidth((width + gap) / (total + gap));
+			setResizing(chosen);
+		};
+		const end = () => {
+			window.removeEventListener("pointermove", move);
+			window.removeEventListener("pointerup", end);
+			window.removeEventListener("pointercancel", end);
+			setResizing(null);
+			if (chosen && chosen !== group.options.width)
+				resize.mutate({ id: group.id, options: { width: chosen } });
+		};
+		window.addEventListener("pointermove", move);
+		window.addEventListener("pointerup", end);
+		window.addEventListener("pointercancel", end);
+	};
 	const sortable = useSortable({
 		id: `group:${group.id}`,
 		data: { type: "group" },
@@ -79,21 +150,43 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 
 	return (
 		<section
-			ref={sortable.setNodeRef}
+			ref={(node) => {
+				sortable.setNodeRef(node);
+				card.current = node;
+			}}
 			data-group={group.name}
 			data-kind={group.kind}
 			style={
 				{
 					transform: CSS.Translate.toString(sortable.transform),
-					transition: sortable.transition,
-					"--span": span,
+					transition: resizing ? undefined : sortable.transition,
+					...groupWidthStyle(fraction),
 				} as React.CSSProperties
 			}
 			className={cn(
-				"glass group/card min-w-0 rounded-3xl p-4 shadow-sm lg:[grid-column:span_var(--span)/span_var(--span)]",
+				"glass group/card relative min-w-0 rounded-3xl p-4 shadow-sm",
+				GROUP_WIDTH_CLASS,
 				sortable.isDragging && "z-10 opacity-60 shadow-2xl",
+				resizing &&
+					"ring-2 ring-[color-mix(in_srgb,var(--accent)_60%,transparent)]",
 			)}
 		>
+			{editing && !readOnly && (
+				<button
+					type="button"
+					aria-label="Resize group"
+					title="Drag to resize"
+					onPointerDown={startResize}
+					className="absolute top-1/2 -right-2 z-10 hidden h-14 w-4 -translate-y-1/2 cursor-ew-resize touch-none place-items-center lg:grid"
+				>
+					<span className="h-10 w-1.5 rounded-full bg-[color-mix(in_srgb,var(--ink)_25%,transparent)] transition hover:bg-accent" />
+				</button>
+			)}
+			{resizing && (
+				<span className="pointer-events-none absolute top-3 right-6 z-10 rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-white shadow">
+					{WIDTH_LABEL[resizing] ?? resizing}
+				</span>
+			)}
 			{(layout.showGroupTitles || editing) && (
 				<header className="mb-3 flex items-center gap-1.5">
 					<button

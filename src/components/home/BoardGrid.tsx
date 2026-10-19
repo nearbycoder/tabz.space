@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { FolderPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { cn } from "#/lib/cn";
 import { buzz, useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
 import {
@@ -30,7 +31,7 @@ import { useHomeContext } from "./context";
 // View-only boards: nothing can be dragged.
 const NO_SENSORS: ReturnType<typeof useDragSensors> = [];
 
-import { GroupCard } from "./GroupCard";
+import { GROUP_WIDTH_CLASS, GroupCard, groupWidthStyle } from "./GroupCard";
 import type { HomeBoard, HomeGroup } from "./types";
 
 const groupKey = (id: string) => `group:${id}`;
@@ -306,15 +307,8 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 				items={items.map((g) => groupKey(g.id))}
 				strategy={rectSortingStrategy}
 			>
-				<div
-					className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 sm:[grid-template-columns:repeat(var(--cols-sm),minmax(0,1fr))] lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]"
-					style={
-						{
-							"--cols": columns,
-							"--cols-sm": Math.min(columns, 2),
-						} as React.CSSProperties
-					}
-				>
+				{/* A wrapping row: each group sizes itself (see groupWidthStyle). */}
+				<div className="flex flex-wrap items-start gap-4">
 					{items.map((group) => (
 						<GroupCard
 							key={group.id}
@@ -329,7 +323,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 						/>
 					))}
 					{items.length === 0 && !editing && !readOnly && (
-						<div className="glass col-span-full flex flex-col items-center gap-4 rounded-3xl px-6 py-10 text-center">
+						<div className="glass flex w-full flex-col items-center gap-4 rounded-3xl px-6 py-10 text-center">
 							<span className="grid size-14 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-2xl">
 								{board.icon ?? "✨"}
 							</span>
@@ -377,7 +371,11 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 						<button
 							type="button"
 							onClick={() => openDialog({ type: "group", boardId: board.id })}
-							className="focus-ring flex min-h-32 flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-line text-sm text-muted transition hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:text-ink"
+							style={groupWidthStyle(1 / columns)}
+							className={cn(
+								"focus-ring flex min-h-32 flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-line text-sm text-muted transition hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:text-ink",
+								GROUP_WIDTH_CLASS,
+							)}
 						>
 							<FolderPlus className="size-5" /> New group
 						</button>
