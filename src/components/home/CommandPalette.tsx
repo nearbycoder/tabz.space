@@ -192,6 +192,16 @@ export function CommandPalette({
 		});
 	}, [pageHits.data, links, textQuery]);
 
+	// Escape closes it even when focus has wandered off the input.
+	useEffect(() => {
+		if (!open) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") onOpenChange(false);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [open, onOpenChange]);
+
 	if (!open || typeof document === "undefined") return null;
 
 	const close = () => onOpenChange(false);

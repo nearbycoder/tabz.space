@@ -295,7 +295,7 @@ export function CatalogConfig({
 				hint="Shown next to the widget's name. Leave empty for the default."
 			>
 				<input
-					className="field w-20 text-center text-lg"
+					className="field block w-20 text-center text-lg"
 					value={typeof data.icon === "string" ? data.icon : ""}
 					onChange={(event) => {
 						const icon = [...event.target.value.trim()].slice(0, 2).join("");
