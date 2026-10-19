@@ -22,6 +22,7 @@ import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useDragSensors } from "#/lib/dnd-sensors";
 import { homeKey, useHomeAction } from "#/lib/home-query";
+import { useVisibleArea } from "#/lib/use-keyboard-inset";
 import { sealContents } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
 import {
@@ -87,6 +88,8 @@ export function FolderDialog({
 		undoable: () => `Deleted folder “${folder?.title}”`,
 	});
 	const sensors = useDragSensors();
+	// With the keyboard up (renaming), sit in the visible area above it.
+	const visible = useVisibleArea();
 
 	if (!folder) return null;
 
@@ -149,7 +152,14 @@ export function FolderDialog({
 	};
 
 	return createPortal(
-		<div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+		<div
+			className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+			style={
+				visible
+					? { top: visible.top, height: visible.height, bottom: "auto" }
+					: undefined
+			}
+		>
 			<button
 				type="button"
 				aria-label="Close"
@@ -159,6 +169,7 @@ export function FolderDialog({
 			<div
 				role="dialog"
 				aria-label={folder.title}
+				style={visible ? { maxHeight: visible.height - 8 } : undefined}
 				className="glass animate-folder relative max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-t-[2rem] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[2rem] sm:pb-6"
 			>
 				{found && (

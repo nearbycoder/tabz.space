@@ -8,7 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "#/lib/cn";
-import { useKeyboardInset } from "#/lib/use-keyboard-inset";
+import { useVisibleArea } from "#/lib/use-keyboard-inset";
 
 type Props = {
 	open: boolean;
@@ -31,7 +31,20 @@ export function Modal({
 	side,
 	className,
 }: Props) {
-	const keyboard = useKeyboardInset(open);
+	// With the keyboard up, the sheet sits exactly in the visible area above it.
+	const visible = useVisibleArea(open);
+	const sheet = useRef<HTMLDivElement>(null);
+	// Keep the field being typed in on screen once the keyboard has opened.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the visible area changes
+	useEffect(() => {
+		const focused = document.activeElement;
+		if (
+			visible &&
+			focused instanceof HTMLElement &&
+			sheet.current?.contains(focused)
+		)
+			focused.scrollIntoView({ block: "nearest" });
+	}, [visible?.height]);
 	// Phones: drag the sheet down by its handle/title bar to dismiss it.
 	const [drag, setDrag] = useState(0);
 	const start = useRef<{ y: number; t: number } | null>(null);
@@ -77,7 +90,11 @@ export function Modal({
 					? "sm:items-stretch sm:justify-end sm:p-0"
 					: "sm:items-start sm:pt-[12vh]",
 			)}
-			style={{ paddingBottom: keyboard }}
+			style={
+				visible
+					? { top: visible.top, height: visible.height, bottom: "auto" }
+					: undefined
+			}
 		>
 			<button
 				type="button"
@@ -96,10 +113,9 @@ export function Modal({
 						: "max-h-[88dvh] sm:max-h-[80vh] sm:max-w-md sm:rounded-3xl",
 					className,
 				)}
+				ref={sheet}
 				style={{
-					maxHeight: keyboard
-						? `calc(100dvh - ${keyboard}px - 1rem)`
-						: undefined,
+					maxHeight: visible ? visible.height - 8 : undefined,
 					transform: drag ? `translateY(${drag}px)` : undefined,
 					transition: drag ? "none" : "transform 200ms ease-out",
 				}}
@@ -127,7 +143,7 @@ export function Modal({
 						</button>
 					</div>
 				</div>
-				<div className="overflow-y-auto overscroll-contain px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
 					{children}
 				</div>
 			</div>

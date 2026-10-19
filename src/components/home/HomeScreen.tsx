@@ -22,6 +22,7 @@ import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
+import { useVisibleArea } from "#/lib/use-keyboard-inset";
 import {
 	resumeVault,
 	startVaultSync,
@@ -77,6 +78,9 @@ function MobileDock(props: {
 }) {
 	const item =
 		"focus-ring grid size-12 place-items-center rounded-2xl text-muted transition active:scale-90 active:text-ink";
+	// Out of the way while typing (iOS would float it above the keyboard).
+	const keyboardOpen = useVisibleArea() !== null;
+	if (keyboardOpen) return null;
 	return (
 		<nav
 			aria-label="Quick actions"

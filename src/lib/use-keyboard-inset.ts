@@ -1,18 +1,25 @@
 import { useEffect, useState } from "react";
 
+export type VisibleArea = { top: number; height: number };
+
 /**
- * Height of the on-screen keyboard (iOS/Android), from the visual viewport.
- * Bottom sheets add it as padding so focused inputs stay visible.
+ * The part of the screen not covered by the on-screen keyboard, from the
+ * visual viewport, or null while no keyboard is up. iOS Safari doesn't shrink
+ * the layout viewport for the keyboard (and scrolls the page under it), so
+ * bottom sheets position themselves against this area instead.
  */
-export function useKeyboardInset(active = true) {
-	const [inset, setInset] = useState(0);
+export function useVisibleArea(active = true) {
+	const [area, setArea] = useState<VisibleArea | null>(null);
 	useEffect(() => {
 		const viewport = window.visualViewport;
 		if (!active || !viewport) return;
-		const update = () =>
-			setInset(
-				Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop),
+		const update = () => {
+			// A keyboard takes well over 100px; smaller changes are browser chrome.
+			const keyboard = window.innerHeight - viewport.height > 120;
+			setArea(
+				keyboard ? { top: viewport.offsetTop, height: viewport.height } : null,
 			);
+		};
 		update();
 		viewport.addEventListener("resize", update);
 		viewport.addEventListener("scroll", update);
@@ -21,5 +28,5 @@ export function useKeyboardInset(active = true) {
 			viewport.removeEventListener("scroll", update);
 		};
 	}, [active]);
-	return inset;
+	return area;
 }

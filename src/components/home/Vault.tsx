@@ -15,6 +15,7 @@ import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
 import { homeKey, useSaveSettings } from "#/lib/home-query";
 import type { UserSettings } from "#/lib/preferences";
+import { useVisibleArea } from "#/lib/use-keyboard-inset";
 import {
 	changeVaultPassword,
 	createVault,
@@ -115,7 +116,7 @@ function ResetPrompt({
 	const [text, setText] = useState("");
 	const [pending, setPending] = useState(false);
 	return createPortal(
-		<div className="fixed inset-0 z-[80] flex items-start justify-center p-4 pt-[18dvh] sm:items-center sm:pt-4">
+		<PromptLayer>
 			<button
 				type="button"
 				aria-label="Close"
@@ -170,7 +171,7 @@ function ResetPrompt({
 					Back
 				</button>
 			</div>
-		</div>,
+		</PromptLayer>,
 		document.body,
 	);
 }
@@ -203,7 +204,7 @@ function PasswordPrompt({
 	};
 
 	return createPortal(
-		<div className="fixed inset-0 z-[80] flex items-start justify-center p-4 pt-[18dvh] sm:items-center sm:pt-4">
+		<PromptLayer>
 			<button
 				type="button"
 				aria-label="Close"
@@ -255,7 +256,7 @@ function PasswordPrompt({
 					Forgot password?
 				</button>
 			</form>
-		</div>,
+		</PromptLayer>,
 		document.body,
 	);
 }
@@ -851,6 +852,29 @@ function DecoySettings({ pinLength }: { pinLength: 4 | 6 | null }) {
 					Set a decoy {pinLength ? "PIN" : "password"}
 				</button>
 			)}
+		</div>
+	);
+}
+
+/**
+ * Full-screen layer for the small vault prompts: near the top normally, and
+ * centered in the visible area while the keyboard is up.
+ */
+function PromptLayer({ children }: { children: React.ReactNode }) {
+	const visible = useVisibleArea();
+	return (
+		<div
+			className={cn(
+				"fixed inset-0 z-[80] flex justify-center p-4 sm:items-center sm:pt-4",
+				visible ? "items-center" : "items-start pt-[18dvh]",
+			)}
+			style={
+				visible
+					? { top: visible.top, height: visible.height, bottom: "auto" }
+					: undefined
+			}
+		>
+			{children}
 		</div>
 	);
 }
