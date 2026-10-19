@@ -8,12 +8,14 @@ type Props = {
 	mode: "sign-in" | "sign-up";
 	providers: { github: boolean };
 	redirectTo?: string;
+	/** Full query string, kept when switching pages so OAuth params survive. */
+	search: Record<string, unknown>;
 };
 
 const safeRedirect = (to?: string) =>
 	to?.startsWith("/") && !to.startsWith("//") ? to : "/";
 
-export function AuthForm({ mode, providers, redirectTo }: Props) {
+export function AuthForm({ mode, providers, redirectTo, search }: Props) {
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const destination = safeRedirect(redirectTo);
@@ -42,7 +44,10 @@ export function AuthForm({ mode, providers, redirectTo }: Props) {
 			setPending(false);
 			return;
 		}
-		window.location.assign(destination);
+		// Mid-OAuth (an MCP client connecting), the server answers with the next
+		// step of the authorization flow instead of a plain session.
+		const next = result.data as { redirect?: boolean; url?: string } | null;
+		window.location.assign(next?.redirect && next.url ? next.url : destination);
 	};
 
 	const github = () =>
@@ -153,7 +158,7 @@ export function AuthForm({ mode, providers, redirectTo }: Props) {
 					{isSignUp ? "Already have an account? " : "New to tabz? "}
 					<Link
 						to={isSignUp ? "/sign-in" : "/sign-up"}
-						search={{ redirect: redirectTo }}
+						search={search}
 						className="font-medium text-accent hover:underline"
 					>
 						{isSignUp ? "Sign in" : "Create one"}

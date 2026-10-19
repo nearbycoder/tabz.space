@@ -30,6 +30,7 @@ import {
 } from "#/lib/preferences";
 import { importBookmarks, updateBoard } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
+import { ConnectAI } from "./ConnectAI";
 import type { HomeBoard } from "./types";
 
 type Props = {
@@ -318,6 +319,10 @@ export function SettingsPanel({
 							onChange={(openInNewTab) => set({ openInNewTab })}
 						/>
 					</div>
+				</Section>
+
+				<Section title="Connect AI (MCP)">
+					<ConnectAI />
 				</Section>
 
 				<Section title="Browser">

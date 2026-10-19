@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, LayoutGrid, Puzzle, Search, Sparkles } from "lucide-react";
+import {
+	ArrowRight,
+	Bot,
+	LayoutGrid,
+	Puzzle,
+	Search,
+	Sparkles,
+} from "lucide-react";
 import { Logo } from "./Logo";
 
 const demo = [
@@ -50,6 +57,11 @@ const features = [
 		icon: Sparkles,
 		title: "Make it yours",
 		body: "Themes, accents, backgrounds, clock, greeting — all optional.",
+	},
+	{
+		icon: Bot,
+		title: "Works with your AI",
+		body: "Connect Claude, Cursor or any MCP client. Sign in once, no API keys.",
 	},
 ];
 
@@ -130,7 +142,7 @@ export function Landing() {
 					</div>
 				</section>
 
-				<section className="mx-auto mt-20 grid max-w-4xl gap-6 sm:grid-cols-2">
+				<section className="mx-auto mt-20 grid max-w-5xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
 					{features.map(({ icon: Icon, title, body }) => (
 						<div key={title} className="flex gap-4">
 							<div className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">

@@ -4,14 +4,22 @@ import { AuthForm } from "#/components/AuthForm";
 import { getAuthProviders, getSession } from "#/server/session";
 
 export const Route = createFileRoute("/sign-in")({
-	validateSearch: z.object({ redirect: z.string().optional() }),
+	// Loose: OAuth authorization params (client_id, sig, …) must pass through untouched.
+	validateSearch: z.looseObject({ redirect: z.string().optional() }),
 	loader: async () => {
 		if (await getSession()) throw redirect({ to: "/" });
 		return { providers: await getAuthProviders() };
 	},
 	component: () => {
 		const { providers } = Route.useLoaderData();
-		const { redirect: to } = Route.useSearch();
-		return <AuthForm mode="sign-in" providers={providers} redirectTo={to} />;
+		const search = Route.useSearch();
+		return (
+			<AuthForm
+				mode="sign-in"
+				providers={providers}
+				redirectTo={search.redirect}
+				search={search}
+			/>
+		);
 	},
 });
