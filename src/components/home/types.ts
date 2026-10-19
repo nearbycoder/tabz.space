@@ -16,7 +16,12 @@ export type DialogState =
 	  }
 	| { type: "folder"; folderId: string }
 	| { type: "new-folder"; groupId: string; parentId?: string }
-	| { type: "group"; boardId: string; group?: HomeGroup }
+	| {
+			type: "group";
+			boardId: string;
+			group?: HomeGroup;
+			kind?: "links" | "smart" | "widget";
+	  }
 	| { type: "board"; board?: HomeBoard }
 	| { type: "settings"; tab?: string }
 	| { type: "vault-unlock" }
@@ -24,6 +29,7 @@ export type DialogState =
 	| { type: "duplicates" }
 	| { type: "link-health" }
 	| { type: "report"; month?: string }
+	| { type: "shortcuts" }
 	| { type: "bulk-add"; text?: string; groupId?: string }
 	| null;
 

@@ -314,7 +314,52 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 							}
 						/>
 					))}
-					{(editing || items.length === 0) && (
+					{items.length === 0 && !editing && !readOnly && (
+						<div className="glass col-span-full flex flex-col items-center gap-4 rounded-3xl px-6 py-10 text-center">
+							<span className="grid size-14 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-2xl">
+								{board.icon ?? "✨"}
+							</span>
+							<div>
+								<p className="font-semibold">This board is empty</p>
+								<p className="mt-1 text-sm text-muted">
+									Add a group of links, a widget, or bring in bookmarks from
+									your browser.
+								</p>
+							</div>
+							<div className="flex flex-wrap justify-center gap-2">
+								<button
+									type="button"
+									className="btn-primary"
+									onClick={() =>
+										openDialog({ type: "group", boardId: board.id })
+									}
+								>
+									<FolderPlus className="size-4" /> New group
+								</button>
+								<button
+									type="button"
+									className="btn-outline"
+									onClick={() =>
+										openDialog({
+											type: "group",
+											boardId: board.id,
+											kind: "widget",
+										})
+									}
+								>
+									🧩 Add a widget
+								</button>
+								<button
+									type="button"
+									className="btn-outline"
+									onClick={() => openDialog({ type: "settings", tab: "data" })}
+								>
+									Import bookmarks
+								</button>
+							</div>
+						</div>
+					)}
+					{editing && (
 						<button
 							type="button"
 							onClick={() => openDialog({ type: "group", boardId: board.id })}

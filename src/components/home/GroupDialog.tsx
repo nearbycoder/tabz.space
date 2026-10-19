@@ -26,10 +26,18 @@ type Props = {
 	boards: HomeBoard[];
 	boardId: string;
 	group?: HomeGroup;
+	/** Start a new group as links, smart or widget. */
+	initialKind?: "links" | "smart" | "widget";
 	onClose: () => void;
 };
 
-export function GroupDialog({ boards, boardId, group, onClose }: Props) {
+export function GroupDialog({
+	boards,
+	boardId,
+	group,
+	initialKind,
+	onClose,
+}: Props) {
 	const board = boards.find((b) => b.id === boardId);
 	const [name, setName] = useState(group?.name ?? "");
 	const [color, setColor] = useState<string | null>(group?.color ?? ACCENTS[0]);
@@ -39,7 +47,7 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 	const [span, setSpan] = useState(group?.options.span ?? 1);
 	const [targetBoard, setTargetBoard] = useState(boardId);
 	const [kind, setKind] = useState<"links" | "smart" | "widget">(
-		group?.kind ?? "links",
+		group?.kind ?? initialKind ?? "links",
 	);
 	const [widget, setWidget] = useState<Widget>(
 		group?.options.widget ?? defaultWidget("notes"),

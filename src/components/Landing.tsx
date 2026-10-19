@@ -2,10 +2,13 @@ import { Link } from "@tanstack/react-router";
 import {
 	ArrowRight,
 	Bot,
-	Eye,
+	CloudSun,
 	LayoutGrid,
+	Lock,
 	Puzzle,
 	Search,
+	Share2,
+	Smartphone,
 	Sparkles,
 } from "lucide-react";
 import { Logo } from "./Logo";
@@ -42,22 +45,37 @@ const features = [
 	{
 		icon: LayoutGrid,
 		title: "Your grid, your way",
-		body: "Boards, groups and folders. Tiles, cards, lists or live previews. Drag anything anywhere, even into folders.",
+		body: "Boards, groups and folders inside folders. Tiles, cards, lists or live previews. Drag anything anywhere.",
 	},
 	{
 		icon: Search,
-		title: "⌘K to anywhere",
-		body: "Jump to any link, folder or board, run actions, or search the web, all from the keyboard.",
+		title: "Find anything",
+		body: "⌘K jumps to any link, folder or board, and even searches the text of the pages you saved.",
 	},
 	{
-		icon: Puzzle,
-		title: "One-click save",
-		body: "The browser extension adds the page you're on in a second.",
+		icon: Lock,
+		title: "A vault no one can see",
+		body: "A hidden, PIN-protected space, encrypted in your browser. Tap the clock 5 times to open it.",
+	},
+	{
+		icon: CloudSun,
+		title: "Widgets",
+		body: "Weather, calendar, notes, to-dos, a focus timer, stocks and news, right next to your links.",
 	},
 	{
 		icon: Sparkles,
-		title: "Make it yours",
-		body: "Eight one-click themes, fonts, corners, glass panels, gradients, patterns and photo wallpapers.",
+		title: "Smart and tidy",
+		body: "Smart groups fill themselves, dead links get flagged, and sites with new posts get a badge.",
+	},
+	{
+		icon: Share2,
+		title: "Share boards",
+		body: "Publish a board with a link, or invite people to edit it with you.",
+	},
+	{
+		icon: Puzzle,
+		title: "Save from anywhere",
+		body: "Browser extension for Chrome and Firefox, the share sheet on your phone, and an API.",
 	},
 	{
 		icon: Bot,
@@ -65,9 +83,9 @@ const features = [
 		body: "Connect Claude, Cursor or any MCP client. Sign in once, no API keys.",
 	},
 	{
-		icon: Eye,
-		title: "See before you click",
-		body: "Hover any link for a preview of the page. Your most-visited sites float to the top.",
+		icon: Smartphone,
+		title: "Made for your phone too",
+		body: "Add it to your Home Screen for an app that opens instantly, with a thumb-friendly dock.",
 	},
 ];
 
@@ -161,7 +179,36 @@ export function Landing() {
 						</div>
 					))}
 				</section>
+
+				<section className="mx-auto mt-24 max-w-xl text-center">
+					<h2 className="text-2xl font-semibold tracking-tight">
+						Make every new tab a little calmer.
+					</h2>
+					<p className="mt-2 text-muted">Free, and set up in under a minute.</p>
+					<Link
+						to="/sign-up"
+						className="btn-primary mt-6 inline-flex px-6 py-3 text-base"
+					>
+						Create your space <ArrowRight className="size-4" />
+					</Link>
+				</section>
 			</main>
+			<footer className="relative mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-6 pt-16 pb-[max(2rem,env(safe-area-inset-bottom))] text-sm text-muted">
+				<Logo className="text-sm" />
+				<nav className="flex gap-4">
+					<Link to="/sign-in" className="hover:text-ink">
+						Sign in
+					</Link>
+					<a
+						href="https://github.com/nearbycoder/tabz.space"
+						className="hover:text-ink"
+						target="_blank"
+						rel="noreferrer"
+					>
+						GitHub
+					</a>
+				</nav>
+			</footer>
 		</div>
 	);
 }

@@ -71,7 +71,7 @@ body {
 }
 
 @utility btn {
-	@apply focus-ring inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+	@apply focus-ring inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 pointer-coarse:min-h-11;
 }
 
 @utility btn-primary {
@@ -87,7 +87,7 @@ body {
 }
 
 @utility icon-btn {
-	@apply focus-ring inline-flex size-9 items-center justify-center rounded-xl text-muted transition hover:bg-[color-mix(in_srgb,var(--ink)_7%,transparent)] hover:text-ink;
+	@apply focus-ring inline-flex size-9 items-center justify-center rounded-xl text-muted transition hover:bg-[color-mix(in_srgb,var(--ink)_7%,transparent)] hover:text-ink active:scale-95 pointer-coarse:size-10;
 }
 
 @keyframes pop-in {

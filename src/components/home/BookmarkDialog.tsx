@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ClipboardPaste, Loader2, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardPaste, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ColorSwatches, Field, Toggle } from "#/components/ui/controls";
@@ -59,6 +59,14 @@ export function BookmarkForm({
 	const [icon, setIcon] = useState(bookmark?.icon ?? "");
 	const [color, setColor] = useState<string | null>(bookmark?.color ?? null);
 	const [incognito, setIncognito] = useState(bookmark?.incognito ?? false);
+	const [moreOpen, setMoreOpen] = useState(
+		Boolean(
+			bookmark?.description ||
+				bookmark?.icon ||
+				bookmark?.color ||
+				bookmark?.incognito,
+		),
+	);
 	const [targetGroup, setTargetGroup] = useState(bookmark?.groupId ?? groupId);
 	const [targetFolder, setTargetFolder] = useState<string | null>(
 		bookmark?.parentId ?? parentId ?? null,
@@ -339,16 +347,7 @@ export function BookmarkForm({
 					maxLength={200}
 				/>
 			</Field>
-			<Field label="Description">
-				<input
-					className="field"
-					value={description}
-					onChange={(event) => setDescription(event.target.value)}
-					placeholder="Optional"
-					maxLength={500}
-				/>
-			</Field>
-			<div className="grid grid-cols-2 gap-3">
+			<div className={folders.length > 0 ? "grid grid-cols-2 gap-3" : ""}>
 				<Field label="Group">
 					<select
 						className="field"
@@ -371,52 +370,81 @@ export function BookmarkForm({
 						))}
 					</select>
 				</Field>
-				<Field label="Icon">
-					<input
-						className="field"
-						value={icon}
-						onChange={(event) => setIcon(event.target.value)}
-						placeholder="Emoji or image URL"
-					/>
-				</Field>
-			</div>
-			{folders.length > 0 && (
-				<Field label="Folder">
-					<select
-						className="field"
-						value={targetFolder ?? ""}
-						onChange={(event) => setTargetFolder(event.target.value || null)}
-					>
-						<option value="">No folder</option>
-						{folders.map((folder) => (
-							<option key={folder.id} value={folder.id}>
-								{`${"\u00a0\u00a0\u00a0".repeat(folder.depth)}${folder.icon ?? "📁"} ${folder.title}`}
-							</option>
-						))}
-					</select>
-				</Field>
-			)}
-			<Toggle
-				label="🕶️ Always open in incognito"
-				checked={incognito}
-				onChange={setIncognito}
-			/>
-			{!incognito &&
-				targetFolder &&
-				folders.find((f) => f.id === targetFolder)?.incognito && (
-					<p className="-mt-2 text-xs text-muted">
-						Opens privately anyway: its folder is set to incognito.
-					</p>
+				{folders.length > 0 && (
+					<Field label="Folder">
+						<select
+							className="field"
+							value={targetFolder ?? ""}
+							onChange={(event) => setTargetFolder(event.target.value || null)}
+						>
+							<option value="">No folder</option>
+							{folders.map((folder) => (
+								<option key={folder.id} value={folder.id}>
+									{`${"\u00a0\u00a0\u00a0".repeat(folder.depth)}${folder.icon ?? "📁"} ${folder.title}`}
+								</option>
+							))}
+						</select>
+					</Field>
 				)}
-			<Field label="Tint">
-				<ColorSwatches
-					value={color}
-					colors={ACCENTS}
-					onChange={setColor}
-					allowNone
-				/>
-			</Field>
-			<div className="flex items-center gap-2 pt-2">
+			</div>
+			{/* Less common settings stay out of the way until needed. */}
+			<details
+				open={moreOpen}
+				onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+				className="group/more"
+			>
+				<summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-muted select-none hover:text-ink [&::-webkit-details-marker]:hidden">
+					<ChevronRight className="size-4 transition group-open/more:rotate-90" />
+					More options
+					{!moreOpen && (description || icon || color || incognito) && (
+						<span
+							className="size-1.5 rounded-full bg-accent"
+							title="Some options are set"
+						/>
+					)}
+				</summary>
+				<div className="mt-4 space-y-4">
+					<Field label="Description">
+						<input
+							className="field"
+							value={description}
+							onChange={(event) => setDescription(event.target.value)}
+							placeholder="Optional"
+							maxLength={500}
+						/>
+					</Field>
+					<Field label="Icon">
+						<input
+							className="field"
+							value={icon}
+							onChange={(event) => setIcon(event.target.value)}
+							placeholder="Emoji or image URL"
+						/>
+					</Field>
+					<Toggle
+						label="🕶️ Always open in incognito"
+						checked={incognito}
+						onChange={setIncognito}
+					/>
+					{!incognito &&
+						targetFolder &&
+						folders.find((f) => f.id === targetFolder)?.incognito && (
+							<p className="-mt-2 text-xs text-muted">
+								Opens privately anyway: its folder is set to incognito.
+							</p>
+						)}
+					<Field label="Tint">
+						<ColorSwatches
+							value={color}
+							colors={ACCENTS}
+							onChange={setColor}
+							allowNone
+						/>
+					</Field>
+				</div>
+			</details>
+			{/* Pinned to the bottom of the sheet so it's always reachable. */}
+			<div className="sticky bottom-0 -mx-6 flex items-center gap-2 border-t border-line bg-surface-2 px-6 pt-3 pb-1 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pt-2">
 				{bookmark && (
 					<button
 						type="button"

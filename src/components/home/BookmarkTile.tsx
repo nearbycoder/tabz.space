@@ -395,7 +395,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			onClick={open}
 			title={item.title}
 			className={cn(
-				"focus-ring block w-full rounded-2xl text-left",
+				"focus-ring block w-full rounded-2xl text-left transition-transform pointer-coarse:active:scale-95",
 				overlay && "pointer-events-none",
 			)}
 		>
@@ -415,7 +415,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 				}
 			}}
 			className={cn(
-				"focus-ring block rounded-2xl",
+				"focus-ring block rounded-2xl transition-transform pointer-coarse:active:scale-95",
 				overlay && "pointer-events-none",
 			)}
 		>

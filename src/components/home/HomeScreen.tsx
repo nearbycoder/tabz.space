@@ -48,6 +48,7 @@ import { MonthlyReportDialog, ReportBanner } from "./MonthlyReport";
 import { Rediscover } from "./Rediscover";
 import { SearchBar } from "./SearchBar";
 import { SettingsPanel } from "./SettingsPanel";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 import { TopSites } from "./TopSites";
 import {
 	type DialogState,
@@ -206,6 +207,66 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		};
 	}, []);
 
+	// Let people know when changes can't be saved.
+	const [online, setOnline] = useState(true);
+	useEffect(() => {
+		const update = () => setOnline(navigator.onLine);
+		update();
+		window.addEventListener("online", update);
+		window.addEventListener("offline", update);
+		return () => {
+			window.removeEventListener("online", update);
+			window.removeEventListener("offline", update);
+		};
+	}, []);
+
+	// Phones: swipe sideways on the page to move between boards.
+	const swipe = useRef<{ x: number; y: number; t: number } | null>(null);
+	const tabOrder = useMemo(
+		() => [...boards.filter((b) => !b.vault), ...boards.filter((b) => b.vault)],
+		[boards],
+	);
+	const onSwipeStart = (event: React.TouchEvent) => {
+		const target = event.target as HTMLElement;
+		swipe.current =
+			editing ||
+			dialog ||
+			event.touches.length > 1 ||
+			target.closest("input, textarea, select, [data-no-swipe]")
+				? null
+				: {
+						x: event.touches[0].clientX,
+						y: event.touches[0].clientY,
+						t: Date.now(),
+					};
+	};
+	const onSwipeEnd = (event: React.TouchEvent) => {
+		const start = swipe.current;
+		swipe.current = null;
+		if (!start || !board) return;
+		const dx = event.changedTouches[0].clientX - start.x;
+		const dy = event.changedTouches[0].clientY - start.y;
+		if (Math.abs(dx) < 80 || Math.abs(dy) > 50 || Date.now() - start.t > 600)
+			return;
+		const index = tabOrder.findIndex((b) => b.id === board.id);
+		const next = tabOrder[index + (dx < 0 ? 1 : -1)];
+		if (next) {
+			navigator.vibrate?.(8);
+			selectBoard(next.id);
+		}
+	};
+
+	// Keep the current board's tab in view and name the browser tab after it.
+	useEffect(() => {
+		if (!board) return;
+		document.querySelector(`[data-board-tab="${board.id}"]`)?.scrollIntoView({
+			inline: "center",
+			block: "nearest",
+			behavior: "smooth",
+		});
+		document.title = `${board.vault ? "tabz" : `${board.icon ? `${board.icon} ` : ""}${board.name} · tabz`}`;
+	}, [board]);
+
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
 
@@ -337,6 +398,17 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			} else if (/^[1-9]$/.test(event.key)) {
 				const next = boards[Number(event.key) - 1];
 				if (next) selectBoard(next.id);
+			} else if (event.key === "[" || event.key === "]") {
+				const order = [
+					...boards.filter((b) => !b.vault),
+					...boards.filter((b) => b.vault),
+				];
+				const index = order.findIndex((b) => b.id === board?.id);
+				const next = order[index + (event.key === "]" ? 1 : -1)];
+				if (next) selectBoard(next.id);
+			} else if (event.key === "?") {
+				event.preventDefault();
+				setDialog({ type: "shortcuts" });
 			}
 		};
 		window.addEventListener("keydown", onKey);
@@ -524,6 +596,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								<button
 									key={b.id}
 									type="button"
+									data-board-tab={b.id}
 									onClick={() => selectBoard(b.id)}
 									onDoubleClick={() => setDialog({ type: "board", board: b })}
 									className={cn(
@@ -649,6 +722,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						"relative mx-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-24",
 						widths[board.layout.width],
 					)}
+					onTouchStart={onSwipeStart}
+					onTouchEnd={onSwipeEnd}
 				>
 					<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
 						{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
@@ -667,6 +742,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								showClock={settings.showClock}
 								showGreeting={settings.showGreeting}
 								format={settings.clockFormat}
+								timeZone={settings.timeZone}
 							/>
 						</div>
 						{settings.showSearch && (
@@ -691,7 +767,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							to read these links in this tab
 						</button>
 					)}
-					<BoardGrid board={board} />
+					{!online && (
+						<p
+							role="status"
+							className="glass mx-auto mb-4 w-fit rounded-full px-4 py-1.5 text-sm text-muted"
+						>
+							📡 You're offline. Links still open; changes will save once you're
+							back.
+						</p>
+					)}
+					<div key={board.id} className="animate-pop">
+						<BoardGrid board={board} />
+					</div>
 					<Rediscover />
 				</main>
 
@@ -742,6 +829,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				)}
 				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
 				{dialog?.type === "link-health" && <LinkHealthDialog onClose={close} />}
+				{dialog?.type === "shortcuts" && <ShortcutsDialog onClose={close} />}
 				{dialog?.type === "report" && (
 					<MonthlyReportDialog month={dialog.month} onClose={close} />
 				)}
@@ -777,6 +865,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						boards={boards}
 						boardId={dialog.boardId}
 						group={dialog.group}
+						initialKind={dialog.kind}
 						onClose={close}
 					/>
 				)}

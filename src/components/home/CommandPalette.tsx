@@ -11,6 +11,7 @@ import {
 	Globe,
 	HeartPulse,
 	History,
+	Keyboard,
 	LayoutGrid,
 	Lock,
 	Monitor,
@@ -514,6 +515,15 @@ export function CommandPalette({
 							className={itemClass}
 						>
 							<Row icon={<Copy className="size-4" />}>Find duplicates</Row>
+						</Command.Item>
+						<Command.Item
+							value="keyboard shortcuts keys help"
+							onSelect={() => run(() => openDialog({ type: "shortcuts" }))}
+							className={itemClass}
+						>
+							<Row icon={<Keyboard className="size-4" />}>
+								Keyboard shortcuts
+							</Row>
 						</Command.Item>
 						<Command.Item
 							value="monthly report stats month in review"
