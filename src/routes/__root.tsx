@@ -7,11 +7,14 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
-import { themeInitScript } from "#/lib/theme";
+import { splashLinks } from "#/lib/splash";
+import { readThemePreference, themeInitScript } from "#/lib/theme";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 	{
+		// Known before rendering, so <html> starts with the right theme.
+		beforeLoad: () => ({ theme: readThemePreference() }),
 		head: () => ({
 			meta: [
 				{ charSet: "utf-8" },
@@ -54,12 +57,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 					href: "https://fonts.gstatic.com",
 					crossOrigin: "anonymous",
 				},
-				{
-					rel: "stylesheet",
-					href: "https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap",
-				},
+				...splashLinks,
 			],
-			scripts: [{ children: themeInitScript }],
 		}),
 		shellComponent: RootDocument,
 		component: () => <Outlet />,
@@ -67,9 +66,28 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 );
 
 function RootDocument({ children }: { children: ReactNode }) {
+	const { theme } = Route.useRouteContext();
 	return (
-		<html lang="en" suppressHydrationWarning>
+		<html
+			lang="en"
+			className={theme === "dark" ? "dark" : undefined}
+			suppressHydrationWarning
+		>
 			<head>
+				{/*
+				 * The theme is applied from the cookie on the server (class + color
+				 * scheme), so the very first paint, even the blank moment before
+				 * CSS loads or a home-screen launch, is already the right color.
+				 * The script covers older visits that only have localStorage.
+				 */}
+				<meta
+					name="color-scheme"
+					content={theme === "system" ? "light dark" : theme}
+				/>
+				<script
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: static, first-party theme bootstrap
+					dangerouslySetInnerHTML={{ __html: themeInitScript }}
+				/>
 				<HeadContent />
 			</head>
 			<body className="min-h-dvh">
