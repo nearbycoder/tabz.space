@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ColorSwatches, Field, Segmented } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { call, run } from "#/lib/api";
+import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
 import {
 	ACCENTS,
@@ -151,7 +152,11 @@ export function GroupDialog({
 			open
 			onClose={onClose}
 			title={group ? "Edit group" : "New group"}
-			wide={kind === "widget"}
+			// Room for the gallery and the code editors; simple settings stay compact.
+			wide={
+				kind === "widget" &&
+				(picking || widget.type === "custom-html" || widget.type === "json-api")
+			}
 		>
 			<form
 				className="space-y-4"
@@ -197,20 +202,50 @@ export function GroupDialog({
 								</span>
 							</button>
 						)}
-						<Field label="Name">
-							<input
-								className="field"
-								value={name}
-								onChange={(event) => setName(event.target.value)}
-								placeholder={
-									kind === "widget"
-										? WIDGET_TYPES[widget.type].label
-										: "Work, News, Tools…"
-								}
-								required={kind !== "widget"}
-								maxLength={60}
-								autoFocus
-							/>
+						<Field label={kind === "widget" ? "Icon & name" : "Name"}>
+							<div className="flex gap-2">
+								{kind === "widget" &&
+									("data" in widget ? (
+										<input
+											className="field w-12 shrink-0 px-0 text-center text-xl"
+											value={
+												typeof widget.data.icon === "string"
+													? widget.data.icon
+													: ""
+											}
+											onChange={(event) => {
+												const icon = [...event.target.value.trim()]
+													.slice(0, 2)
+													.join("");
+												const { icon: _, ...rest } = widget.data;
+												setWidget({
+													...widget,
+													data: icon ? { ...rest, icon } : rest,
+												});
+											}}
+											placeholder={WIDGET_TYPES[widget.type].icon}
+											title="Icon: type or paste an emoji (empty = default)"
+											aria-label="Icon"
+										/>
+									) : (
+										<span className="field grid w-12 shrink-0 place-items-center px-0 text-xl">
+											{widgetIcon}
+										</span>
+									))}
+								<input
+									className="field"
+									value={name}
+									onChange={(event) => setName(event.target.value)}
+									placeholder={
+										kind === "widget"
+											? WIDGET_TYPES[widget.type].label
+											: "Work, News, Tools…"
+									}
+									required={kind !== "widget"}
+									maxLength={60}
+									autoFocus
+								/>
+							</div>
 						</Field>
 						{kind === "smart" && (
 							<div className="space-y-3 rounded-2xl border border-line p-3">
@@ -355,7 +390,24 @@ export function GroupDialog({
 						)}
 					</>
 				)}
-				<div className="flex items-center gap-2 pt-2">
+				{kind === "widget" && !picking && "data" in widget && (
+					<button
+						type="button"
+						className="inline-flex items-center gap-1.5 text-xs font-medium text-muted transition hover:text-ink disabled:opacity-50"
+						title="Keep this widget, with its settings, to add to any board later"
+						disabled={keep.isPending || keep.isSuccess || !widgetReady(widget)}
+						onClick={() => keep.mutate()}
+					>
+						<Star
+							className={cn(
+								"size-3.5",
+								keep.isSuccess && "fill-amber-400 text-amber-400",
+							)}
+						/>
+						{keep.isSuccess ? "Saved to My widgets" : "Save to My widgets"}
+					</button>
+				)}
+				<div className="flex items-center gap-2 border-t border-line pt-4">
 					{group &&
 						(confirming ? (
 							<button
@@ -376,18 +428,6 @@ export function GroupDialog({
 								<Trash2 className="size-4" /> Delete
 							</button>
 						))}
-					{kind === "widget" && !picking && "data" in widget && (
-						<button
-							type="button"
-							className="btn-ghost"
-							title="Keep this widget, with its settings, to add to any board later"
-							disabled={keep.isPending || !widgetReady(widget)}
-							onClick={() => keep.mutate()}
-						>
-							<Star className="size-4" />
-							<span className="max-sm:hidden">Save to My widgets</span>
-						</button>
-					)}
 					<button type="button" className="btn-ghost ml-auto" onClick={onClose}>
 						Cancel
 					</button>

@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Field, Toggle } from "#/components/ui/controls";
 import type { CatalogWidget } from "#/lib/schemas";
-import { WIDGET_TYPES } from "#/lib/widget-catalog";
 import type { JsonValue } from "./kit";
 import { type Field as FieldDef, REGISTRY } from "./registry";
 import { SandboxFrame } from "./SandboxFrame";
@@ -290,22 +289,6 @@ export function CatalogConfig({
 					</Field>
 				),
 			)}
-			<Field
-				label="Icon"
-				hint="Shown next to the widget's name. Leave empty for the default."
-			>
-				<input
-					className="field block w-20 text-center text-lg"
-					value={typeof data.icon === "string" ? data.icon : ""}
-					onChange={(event) => {
-						const icon = [...event.target.value.trim()].slice(0, 2).join("");
-						const { icon: _, ...rest } = data;
-						onChange({ ...widget, data: icon ? { ...rest, icon } : rest });
-					}}
-					placeholder={WIDGET_TYPES[widget.type].icon}
-					aria-label="Icon"
-				/>
-			</Field>
 		</div>
 	);
 }
