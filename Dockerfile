@@ -16,4 +16,5 @@ COPY scripts ./scripts
 # SQLite lives on a mounted volume in production (see railway.json / README).
 ENV DATABASE_PATH=/data/tabz.db
 EXPOSE 3000
-CMD ["npm", "start"]
+# Run node directly so SIGTERM on redeploys reaches the app (npm reports it as a crash).
+CMD ["node", "scripts/start.mjs"]

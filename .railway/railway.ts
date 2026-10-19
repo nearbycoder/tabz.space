@@ -6,13 +6,14 @@ export default defineRailway(() => {
     region: "us-west2",
     sizeMB: 5000,
     allowOnlineResize: true,
-    alerts: { usage: { "80": {}, "95": {} } },
+    alerts: { usage: { "80": {}, "95": {}, "100": {} } },
   });
 
   const tabzSpace = service("tabz.space", {
     source: github("nearbycoder/tabz.space", { branch: "main", checkSuites: false }),
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
-    start: "npm start",
+    // Not "npm start": npm turns the SIGTERM sent on redeploys into a failed exit.
+    start: "node scripts/start.mjs",
     healthcheck: "/sign-in",
     healthcheckTimeout: 120,
     replicas: { "us-west2": 1 },
