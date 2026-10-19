@@ -12,6 +12,8 @@ type HomeContextValue = {
 	isIncognito: (bookmark: LinkItem) => boolean;
 	/** Opens a link the right way: private window, new tab or same tab. */
 	openLink: (bookmark: LinkItem, options?: { newTab?: boolean }) => void;
+	/** Opens many links: private ones in an incognito window, the rest as tabs. */
+	openAll: (bookmarks: LinkItem[]) => void;
 };
 
 export const HomeContext = createContext<HomeContextValue | null>(null);

@@ -16,7 +16,7 @@ import { call } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
 import { useHome, useSaveSettings, useUndo } from "#/lib/home-query";
-import { openIncognito } from "#/lib/incognito";
+import { connectExtension, openIncognito, openTabs } from "#/lib/incognito";
 import { applyTheme } from "#/lib/theme";
 import { extractUrls } from "#/lib/url";
 import { recordVisit } from "#/server/home";
@@ -151,6 +151,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	}, [settings.theme]);
 
 	useEffect(() => applyAppearance(settings), [settings]);
+
+	// Hands the extension an API token so it works without setup.
+	useEffect(() => connectExtension(), []);
 
 	const selectBoard = useCallback(
 		(id: string) => {
@@ -341,6 +344,16 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[isIncognito, onVisit, settings.openInNewTab],
 	);
 
+	const openAll = useCallback(
+		(bookmarks: LinkItem[]) => {
+			const privateUrls = bookmarks.filter(isIncognito).map((b) => b.url);
+			const urls = bookmarks.filter((b) => !isIncognito(b)).map((b) => b.url);
+			if (privateUrls.length) openIncognito(privateUrls);
+			if (urls.length) openTabs(urls);
+		},
+		[isIncognito],
+	);
+
 	const context = useMemo(
 		() => ({
 			settings,
@@ -350,8 +363,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			onVisit,
 			isIncognito,
 			openLink,
+			openAll,
 		}),
-		[settings, boards, editing, onVisit, isIncognito, openLink],
+		[settings, boards, editing, onVisit, isIncognito, openLink, openAll],
 	);
 
 	if (!board) return null;

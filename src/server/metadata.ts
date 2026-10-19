@@ -39,7 +39,7 @@ const isPrivateAddress = (address: string) => {
 };
 
 /** Blocks requests to loopback/private networks so lookups can't probe internal services. */
-const assertPublicHost = (url: URL) =>
+export const assertPublicHost = (url: URL) =>
 	Effect.tryPromise({
 		try: async () => {
 			const host = url.hostname.replace(/^\[|\]$/g, "");

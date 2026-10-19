@@ -4,20 +4,28 @@
 		<meta charset="utf-8" />
 		<title>Tabz options</title>
 		<style>
-			body { font: 14px system-ui, sans-serif; max-width: 420px; margin: 32px auto; padding: 0 16px; color: #0f172a; }
+			:root { color-scheme: light dark; }
+			body { font: 14px system-ui, sans-serif; max-width: 460px; margin: 32px auto; padding: 0 16px; }
 			label { display: block; margin: 16px 0 6px; font-weight: 600; }
-			input[type="url"] { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }
-			button { margin-top: 20px; padding: 8px 14px; border: 0; border-radius: 8px; background: #6366f1; color: white; font-weight: 600; cursor: pointer; }
-			.hint { color: #64748b; font-size: 12px; }
+			label.check { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+			input[type="url"] { width: 100%; padding: 8px 10px; border: 1px solid #8886; border-radius: 8px; box-sizing: border-box; background: transparent; color: inherit; }
+			button { margin-top: 16px; margin-right: 8px; padding: 8px 14px; border: 0; border-radius: 8px; background: #6366f1; color: white; font-weight: 600; cursor: pointer; }
+			button.secondary { background: transparent; color: inherit; border: 1px solid #8886; }
+			.hint { opacity: .65; font-size: 12px; }
 		</style>
 	</head>
 	<body>
 		<h1>Tabz</h1>
+		<p class="hint" id="connection"></p>
+		<label class="check"><input id="newTab" type="checkbox" /> Open tabz on every new tab</label>
+		<label class="check"><input id="syncBookmarks" type="checkbox" /> Mirror my browser bookmarks into tabz</label>
+		<p class="hint">Creates a “Browser bookmarks” board that updates whenever your bookmarks change. One-way: edit bookmarks in the browser. <span id="lastSync"></span></p>
 		<label for="baseUrl">Server</label>
 		<input id="baseUrl" type="url" placeholder="https://tabz.space" />
 		<p class="hint">Only change this if you self-host tabz.</p>
-		<label><input id="newTab" type="checkbox" /> Open tabz on every new tab</label>
 		<button id="save" type="button">Save</button>
+		<button id="syncNow" type="button" class="secondary">Sync bookmarks now</button>
+		<button id="disconnect" type="button" class="secondary">Disconnect</button>
 		<span id="status" class="hint"></span>
 		<script type="module" src="options.js"></script>
 	</body>

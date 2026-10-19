@@ -7,3 +7,4 @@ dist
 .tanstack
 .output
 data
+public/downloads

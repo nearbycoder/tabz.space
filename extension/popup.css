@@ -1,0 +1,100 @@
+:root {
+	color-scheme: light dark;
+	--accent: #6366f1;
+}
+body {
+	width: 300px;
+	margin: 0;
+	padding: 14px;
+	font:
+		13px / 1.4 system-ui,
+		sans-serif;
+}
+header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+header strong {
+	font-size: 15px;
+}
+#state {
+	margin-left: auto;
+	font-size: 11px;
+	opacity: 0.6;
+}
+button {
+	width: 100%;
+	padding: 9px 12px;
+	margin-top: 6px;
+	border-radius: 10px;
+	border: 1px solid #8884;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+button.primary {
+	background: var(--accent);
+	color: white;
+	border-color: transparent;
+}
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.page {
+	display: flex;
+	flex-direction: column;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: #8881;
+}
+.page span {
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.page small {
+	opacity: 0.6;
+}
+.check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	font-size: 12px;
+	opacity: 0.8;
+}
+hr {
+	border: 0;
+	border-top: 1px solid #8883;
+	margin: 12px 0 6px;
+}
+#message {
+	min-height: 1em;
+	margin: 10px 0 0;
+	font-size: 12px;
+}
+footer {
+	margin-top: 8px;
+	text-align: right;
+	font-size: 11px;
+}
+footer a {
+	color: inherit;
+	opacity: 0.6;
+}
+button.link {
+	width: auto;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	font-weight: 400;
+	font-size: 11px;
+	opacity: 0.6;
+	text-decoration: underline;
+}

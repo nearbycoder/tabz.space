@@ -59,6 +59,14 @@ On phones the page switches to a thumb-reach bottom dock (search, edit, add, the
 
 Mark a link, or a whole folder, as always-incognito, or switch on "Open every link in incognito" (Customize → Home). Web pages can't open private windows, so the browser extension does it: its content script (`extension/bridge.js`, injected only on tabz.space) relays requests to the background worker, which calls `chrome.windows.create({ incognito: true })`. This needs "Allow in Incognito" switched on for the extension. Without the extension, tabz never falls back to a normal tab; it offers to copy the link instead. Private links skip visit tracking, hover previews and screenshot thumbnails.
 
+## REST API, tokens and webhooks
+
+Customize → Connect has personal API tokens and outgoing webhooks.
+
+- **REST** (`/api/v1`, `Authorization: Bearer tabz_…`, CORS open): `GET /me`, `GET /library`, `GET /bookmarks?q=`, `POST /bookmarks` (same smart targeting as the MCP `add_bookmark`: group/folder by name, created if missing), `POST /bookmarks/bulk`, `PATCH|DELETE /bookmarks/:id`, `POST /groups`, `POST /tabs` (a window's tabs → new group), `PUT /sync/browser`, `POST /undo`, `GET /activity`. Router in `src/server/rest.ts`.
+- **Tokens** are stored as SHA-256 hashes (`src/server/api-tokens.ts`). The extension gets its own token automatically: the signed-in page mints one and posts it through the bridge.
+- **Webhooks** (`src/server/webhooks.ts`) fire on every change recorded in the activity log (`bookmark.create`, `group.delete`, …). Each POST carries `x-tabz-timestamp` and `x-tabz-signature: sha256=<hex HMAC-SHA256 of "timestamp.body" with the webhook secret>`, and is retried with backoff. URLs must be public https.
+
 ## Data model
 
 `user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links point at them via `parent_id`, one level deep) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
@@ -70,7 +78,7 @@ Mark a link, or a whole folder, as always-incognito, or switch on "Open every li
 - `src/server/metadata.ts`: page title/favicon lookup with timeout, retry and private-network blocking
 - `src/lib/api.ts`: browser → server calls as Effects (retry on network failure, time-boxed)
 - `src/components/home/*`: the start page UI
-- `extension/`: Chrome/Edge/Brave MV3 extension (see its README)
+- `extension/`: Chrome/Edge/Brave/Firefox MV3 extension (see its README); `scripts/build-extension.mjs` packages it into `public/downloads/`
 
 ## Deploy (Railway)
 

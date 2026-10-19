@@ -1,4 +1,6 @@
 import { toast } from "sonner";
+import { call, run } from "#/lib/api";
+import { issueExtensionToken } from "#/server/developer";
 
 /*
  * Web pages can't open private windows; the tabz browser extension can. Its
@@ -8,10 +10,16 @@ import { toast } from "sonner";
 export type ExtensionStatus = {
 	installed: boolean;
 	incognitoAllowed: boolean;
+	/** The extension holds an API token for this site. */
+	connected: boolean;
 	version?: string;
 };
 
-let status: ExtensionStatus = { installed: false, incognitoAllowed: false };
+let status: ExtensionStatus = {
+	installed: false,
+	incognitoAllowed: false,
+	connected: false,
+};
 const listeners = new Set<(status: ExtensionStatus) => void>();
 const pending = new Map<string, (ok: boolean) => void>();
 
@@ -27,6 +35,9 @@ if (typeof window !== "undefined") {
 			status = {
 				installed: true,
 				incognitoAllowed: Boolean(event.data.incognitoAllowed),
+				connected:
+					Boolean(event.data.hasToken) &&
+					event.data.baseUrl === location.origin,
 				version: event.data.version,
 			};
 			for (const listener of listeners) listener(status);
@@ -49,19 +60,62 @@ export function onExtensionStatus(listener: (status: ExtensionStatus) => void) {
 	};
 }
 
-function requestIncognito(urls: string[]) {
-	if (!status.incognitoAllowed) return Promise.resolve(false);
+let connecting = false;
+
+/**
+ * Signs the extension in: the signed-in page mints an API token and hands it
+ * to the extension through the bridge, so there's nothing to paste.
+ */
+export function connectExtension() {
+	return onExtensionStatus(async (next) => {
+		if (!next.installed || next.connected || connecting) return;
+		connecting = true;
+		try {
+			const { token } = await run(call(issueExtensionToken));
+			window.postMessage(
+				{ source: "tabz-page", type: "set-token", token },
+				location.origin,
+			);
+		} finally {
+			// Allow a retry later, e.g. after the token is revoked.
+			setTimeout(() => {
+				connecting = false;
+			}, 10_000);
+		}
+	});
+}
+
+function request(type: "open-incognito" | "open-tabs", urls: string[]) {
 	const id = crypto.randomUUID();
 	return new Promise<boolean>((resolve) => {
 		pending.set(id, resolve);
 		window.postMessage(
-			{ source: "tabz-page", type: "open-incognito", id, urls },
+			{ source: "tabz-page", type, id, urls },
 			location.origin,
 		);
 		setTimeout(() => {
 			if (pending.delete(id)) resolve(false);
 		}, 3000);
 	});
+}
+
+const requestIncognito = (urls: string[]) =>
+	status.incognitoAllowed
+		? request("open-incognito", urls)
+		: Promise.resolve(false);
+
+/**
+ * Opens links as background tabs. Browsers block more than one window.open
+ * per click, so this needs the extension; without it the first link opens.
+ */
+export async function openTabs(urls: string[]) {
+	if (status.installed && (await request("open-tabs", urls))) return true;
+	window.open(urls[0], "_blank", "noopener");
+	if (urls.length > 1)
+		toast("Opened the first link", {
+			description: "Install the tabz extension to open a whole group at once.",
+		});
+	return false;
 }
 
 /** Opens links privately; never falls back to a normal tab, so nothing leaks into history. */

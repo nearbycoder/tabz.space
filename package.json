@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vite dev --port 3000",
-    "build": "vite build",
+    "build": "node scripts/build-extension.mjs && vite build",
     "start": "node scripts/migrate.mjs && node .output/server/index.mjs",
     "typecheck": "tsc --noEmit",
     "check": "biome check",
@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
-    "auth:generate": "npx @better-auth/cli generate --config src/lib/auth.ts --output src/db/auth-schema.ts -y"
+    "auth:generate": "npx @better-auth/cli generate --config src/lib/auth.ts --output src/db/auth-schema.ts -y",
+    "build:extension": "node scripts/build-extension.mjs"
   },
   "dependencies": {
     "@better-auth/cimd": "^1.7.11",
@@ -55,6 +56,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "dotenv": "^18.0.8",
     "drizzle-kit": "^0.31.11",
+    "fflate": "^0.8.3",
     "railway": "^3.16.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"

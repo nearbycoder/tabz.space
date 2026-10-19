@@ -1,16 +1,18 @@
-// Runs on tabz.space only. Relays "open privately" requests from the page to
-// the background worker, which is the only place allowed to open incognito windows.
+// Runs on tabz.space only. Relays requests from the page to the background
+// worker (private windows, opening tabs) and receives the API token the
+// signed-in page mints for the extension.
 const ORIGIN = location.origin;
+const post = (message) =>
+	window.postMessage({ source: "tabz-extension", ...message }, ORIGIN);
 
 async function announce() {
 	try {
-		const status = await chrome.runtime.sendMessage({ type: "status" });
-		window.postMessage(
-			{ source: "tabz-extension", type: "status", ...status },
-			ORIGIN,
-		);
+		post({
+			type: "status",
+			...(await chrome.runtime.sendMessage({ type: "status" })),
+		});
 	} catch {
-		// Extension reloaded or unavailable; the page falls back to copy-link.
+		// Extension reloaded or unavailable; the page falls back gracefully.
 	}
 }
 
@@ -21,24 +23,26 @@ window.addEventListener("message", async (event) => {
 		event.data?.source !== "tabz-page"
 	)
 		return;
-	if (event.data.type === "hello") announce();
-	if (event.data.type === "open-incognito") {
-		let ok = false;
-		try {
-			ok =
-				(
-					await chrome.runtime.sendMessage({
-						type: "open-incognito",
-						urls: event.data.urls,
-					})
-				)?.ok === true;
-		} catch {
-			ok = false;
+	const { type, id } = event.data;
+	if (type === "hello") return announce();
+	try {
+		if (type === "set-token") {
+			await chrome.runtime.sendMessage({
+				type,
+				token: event.data.token,
+				baseUrl: ORIGIN,
+			});
+			return announce();
 		}
-		window.postMessage(
-			{ source: "tabz-extension", type: "opened", id: event.data.id, ok },
-			ORIGIN,
-		);
+		if (type === "open-incognito" || type === "open-tabs") {
+			const result = await chrome.runtime.sendMessage({
+				type,
+				urls: event.data.urls,
+			});
+			post({ type: "opened", id, ok: result?.ok === true });
+		}
+	} catch {
+		post({ type: "opened", id, ok: false });
 	}
 });
 

@@ -30,7 +30,7 @@ const CLIENTS = {
 
 type ClientKey = keyof typeof CLIENTS;
 
-function CopyButton({
+export function CopyButton({
 	value,
 	className,
 }: {

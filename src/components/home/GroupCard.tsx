@@ -8,6 +8,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
 	ChevronDown,
+	ExternalLink,
 	FolderPlus,
 	GripVertical,
 	Plus,
@@ -39,7 +40,7 @@ export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
 };
 
 export function GroupCard({ group, layout, onToggle }: Props) {
-	const { editing, openDialog } = useHomeContext();
+	const { editing, openDialog, openAll } = useHomeContext();
 	const style = group.options.tileStyle ?? layout.tileStyle;
 	const span = Math.min(group.options.span ?? 1, layout.columns);
 	const sortable = useSortable({
@@ -50,10 +51,10 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		id: `drop:${group.id}`,
 		data: { type: "drop", groupId: group.id },
 	});
-	const total = group.bookmarks.reduce(
-		(sum, item) => sum + (item.kind === "folder" ? item.children.length : 1),
-		0,
+	const links = group.bookmarks.flatMap((item) =>
+		item.kind === "folder" ? item.children : [item],
 	);
+	const total = links.length;
 	const square = style === "tile" || style === "icon";
 
 	return (
@@ -98,6 +99,17 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 								"opacity-0 group-hover/card:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
 						)}
 					>
+						{total > 1 && (
+							<button
+								type="button"
+								className="icon-btn size-7 pointer-coarse:size-9"
+								aria-label="Open all as tabs"
+								title={`Open all ${total} as tabs`}
+								onClick={() => openAll(links)}
+							>
+								<ExternalLink className="size-3.5" />
+							</button>
+						)}
 						<button
 							type="button"
 							className="icon-btn size-7 pointer-coarse:size-9"

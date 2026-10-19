@@ -69,6 +69,8 @@ export const boards = sqliteTable(
 		vault: integer("vault", { mode: "boolean" }).default(false).notNull(),
 		/** Soft delete: rows sit in the trash for 30 days before being purged. */
 		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+		/** Set for boards mirrored from elsewhere (e.g. "browser" bookmarks sync). */
+		source: text("source"),
 		...timestamps,
 	},
 	(table) => [index("boards_user_idx").on(table.userId, table.position)],
@@ -204,3 +206,46 @@ export const boardMembers = sqliteTable(
 );
 
 export type Activity = typeof activity.$inferSelect;
+
+/** Personal API tokens (REST API and the browser extension). Only hashes are stored. */
+export const apiTokens = sqliteTable(
+	"api_tokens",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		kind: text("kind", { enum: ["personal", "extension"] })
+			.default("personal")
+			.notNull(),
+		tokenHash: text("token_hash").notNull().unique(),
+		/** First characters of the token, for recognising it in the UI. */
+		prefix: text("prefix").notNull(),
+		lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [index("api_tokens_user_idx").on(table.userId)],
+);
+
+/** Outbound webhooks fired on library changes. */
+export const webhooks = sqliteTable(
+	"webhooks",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		url: text("url").notNull(),
+		secret: text("secret").notNull(),
+		events: json<string[]>("events", ["*"]),
+		active: integer("active", { mode: "boolean" }).default(true).notNull(),
+		lastStatus: integer("last_status"),
+		lastDeliveredAt: integer("last_delivered_at", { mode: "timestamp_ms" }),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [index("webhooks_user_idx").on(table.userId)],
+);
+
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type Webhook = typeof webhooks.$inferSelect;

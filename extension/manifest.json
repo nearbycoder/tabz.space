@@ -2,8 +2,8 @@
 	"manifest_version": 3,
 	"name": "Tabz \u2014 save to your start page",
 	"short_name": "Tabz",
-	"description": "Add the page you're on to tabz.space in one click, open private links in incognito, and make tabz your new tab page.",
-	"version": "0.2.0",
+	"description": "Save pages and whole windows of tabs to tabz.space, mirror your browser bookmarks, open private links in incognito, and use tabz as your new tab.",
+	"version": "0.3.0",
 	"icons": {
 		"16": "icons/icon-16.png",
 		"32": "icons/icon-32.png",
@@ -11,7 +11,8 @@
 		"128": "icons/icon-128.png"
 	},
 	"action": {
-		"default_title": "Add to tabz",
+		"default_title": "tabz",
+		"default_popup": "popup.html",
 		"default_icon": {
 			"16": "icons/icon-16.png",
 			"32": "icons/icon-32.png"
@@ -21,7 +22,7 @@
 		"service_worker": "background.js",
 		"type": "module"
 	},
-	"permissions": ["activeTab", "contextMenus", "storage"],
+	"permissions": ["activeTab", "contextMenus", "storage", "tabs", "bookmarks"],
 	"chrome_url_overrides": {
 		"newtab": "newtab.html"
 	},
@@ -44,5 +45,6 @@
 			"js": ["bridge.js"],
 			"run_at": "document_start"
 		}
-	]
+	],
+	"host_permissions": ["https://tabz.space/*", "http://localhost/*"]
 }

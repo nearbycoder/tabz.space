@@ -10,6 +10,7 @@ import {
 	SEARCH_ENGINES,
 	TILE_STYLES,
 } from "#/lib/preferences";
+import * as capture from "../capture";
 import * as library from "../library";
 import { runServer } from "../runtime";
 
@@ -177,55 +178,12 @@ export function createTabzMcpServer(userId: string) {
 			}),
 			annotations: { openWorldHint: true },
 		},
-		({ groupId, group, board, folderId, folder, ...fields }) =>
-			run(
-				Effect.gen(function* () {
-					let targetGroupId = groupId;
-					if (!targetGroupId) {
-						const home = yield* library.loadHome(userId);
-						const targetBoard = findBoard(home, board);
-						if (!targetBoard) return yield* new NotFound({ entity: "Board" });
-						const named = group
-							? targetBoard.groups.find(
-									(g) => g.name.toLowerCase() === group.toLowerCase(),
-								)
-							: targetBoard.groups[0];
-						targetGroupId =
-							named?.id ??
-							(yield* library.createGroup(userId, {
-								boardId: targetBoard.id,
-								name: group ?? "Bookmarks",
-							})).id;
-					}
-					let parentId = folderId;
-					if (!parentId && folder) {
-						const home = yield* library.loadHome(userId);
-						const existing = home.boards
-							.flatMap((b) => b.groups)
-							.find((g) => g.id === targetGroupId)
-							?.bookmarks.find(
-								(item) =>
-									item.kind === "folder" &&
-									item.title.toLowerCase() === folder.toLowerCase(),
-							);
-						parentId =
-							existing?.id ??
-							(yield* library.createFolder(userId, {
-								groupId: targetGroupId,
-								title: folder,
-							})).id;
-					}
-					return yield* library.createBookmark(userId, {
-						...fields,
-						groupId: targetGroupId,
-						parentId,
-					});
-				}),
-				(bookmark) => ({
-					...compactBookmark(bookmark),
-					groupId: bookmark.groupId,
-				}),
-			),
+		(input) =>
+			run(capture.smartAdd(userId, input), (bookmark) => ({
+				...compactBookmark(bookmark),
+				groupId: bookmark.groupId,
+				folderId: bookmark.parentId,
+			})),
 	);
 
 	server.registerTool(

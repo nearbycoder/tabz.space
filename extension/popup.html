@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="stylesheet" href="popup.css" />
+	</head>
+	<body>
+		<header>
+			<img src="icons/icon-32.png" alt="" width="20" height="20" />
+			<strong>tabz</strong>
+			<span id="state"></span>
+		</header>
+		<section id="connect" hidden>
+			<p>Open tabz.space while signed in and the extension connects automatically.</p>
+			<button type="button" id="open-site" class="primary">Open tabz.space</button>
+		</section>
+		<section id="actions" hidden>
+			<div class="page">
+				<span id="page-title">This page</span>
+				<small id="page-host"></small>
+			</div>
+			<button type="button" id="save-page" class="primary">Save this page</button>
+			<button type="button" id="save-details">Save with details…</button>
+			<hr />
+			<button type="button" id="save-tabs">Save all tabs as a group</button>
+			<label class="check"><input type="checkbox" id="close-tabs" /> Close them after saving</label>
+		</section>
+		<p id="message" role="status"></p>
+		<footer><button type="button" id="options" class="link">Settings</button></footer>
+		<script type="module" src="popup.js"></script>
+	</body>
+</html>

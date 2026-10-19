@@ -56,6 +56,7 @@ import { fetchPageMetadata } from "./metadata";
 import { query } from "./runtime";
 import { STARTER_BOARD, type StarterItem } from "./seed";
 import { VaultAccess } from "./vault-access";
+import { emitEvent } from "./webhooks";
 
 export const idSchema = z.string().min(1).max(64);
 export const colorSchema = z
@@ -224,6 +225,13 @@ const created = (table: Snapshot["table"], id: string): Snapshot => ({
 	values: { deletedAt: Date.now() },
 });
 
+const SINGULAR = {
+	boards: "board",
+	groups: "group",
+	bookmarks: "bookmark",
+} as const;
+
+/** Logs an undoable change and notifies the user's webhooks. */
 const record = (
 	userId: string,
 	action: string,
@@ -232,9 +240,30 @@ const record = (
 ) =>
 	snapshots.length === 0
 		? Effect.void
-		: query((db) =>
-				db.insert(activity).values({ userId, action, label, snapshots }),
-			).pipe(Effect.asVoid);
+		: Effect.gen(function* () {
+				yield* query((db) =>
+					db.insert(activity).values({ userId, action, label, snapshots }),
+				);
+				const byTable = new Map<Snapshot["table"], string[]>();
+				for (const snap of snapshots)
+					byTable.set(snap.table, [
+						...(byTable.get(snap.table) ?? []),
+						snap.id,
+					]);
+				for (const [table, ids] of byTable) {
+					// Boards and groups only "update" when reordered; links "move".
+					const verb =
+						action === "reorder" || action === "move"
+							? table === "bookmarks"
+								? "move"
+								: "update"
+							: action;
+					yield* emitEvent(userId, `${SINGULAR[table]}.${verb}`, {
+						ids,
+						label,
+					});
+				}
+			});
 
 const quote = (text: string) =>
 	`“${text.length > 40 ? `${text.slice(0, 39)}…` : text}”`;

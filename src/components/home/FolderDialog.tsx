@@ -18,7 +18,6 @@ import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
-import { openIncognito } from "#/lib/incognito";
 import type { HomeData } from "#/server/home";
 import {
 	arrangeFolder,
@@ -62,7 +61,7 @@ export function FolderDialog({
 	folderId: string;
 	onClose: () => void;
 }) {
-	const { boards, openDialog, isIncognito } = useHomeContext();
+	const { boards, openDialog, isIncognito, openAll } = useHomeContext();
 	const folder = findFolder({ boards }, folderId);
 	const [title, setTitle] = useState(folder?.title ?? "");
 	const [order, setOrder] = useState(folder?.children ?? []);
@@ -208,14 +207,7 @@ export function FolderDialog({
 									? "Open all in a private window"
 									: "Open all in new tabs"
 							}
-							onClick={() => {
-								const urls = order.map((c) => c.url);
-								if (folder.incognito || order.every(isIncognito))
-									openIncognito(urls);
-								else
-									for (const url of urls)
-										window.open(url, "_blank", "noopener");
-							}}
+							onClick={() => openAll(order)}
 						>
 							{folder.incognito ? (
 								<VenetianMask className="size-4" />

@@ -30,7 +30,7 @@ const sessionUser = (headers: Headers) =>
 		return session.user;
 	});
 
-const publicMessage = (error: AppError): string => {
+export const publicMessage = (error: AppError): string => {
 	switch (error._tag) {
 		case "Unauthorized":
 			return error.message ?? "Please sign in to continue";
@@ -84,3 +84,56 @@ export function runAuthed<A>(
 		}),
 	);
 }
+
+const STATUS: Record<AppError["_tag"], number> = {
+	Unauthorized: 401,
+	NotFound: 404,
+	InvalidInput: 400,
+	DatabaseError: 500,
+};
+
+/** Runs a program for a JSON HTTP endpoint, mapping typed failures to status codes. */
+export async function runJson<A>(
+	program: Effect.Effect<A, AppError>,
+	init: ResponseInit = {},
+) {
+	ensureJobs();
+	const exit = await Effect.runPromiseExit(program);
+	const headers = {
+		"content-type": "application/json",
+		...corsHeaders,
+		...init.headers,
+	};
+	if (Exit.isSuccess(exit))
+		return new Response(JSON.stringify(exit.value ?? null), {
+			...init,
+			headers,
+		});
+	const failure = Cause.squash(exit.cause) as AppError | Error;
+	if (
+		failure &&
+		typeof failure === "object" &&
+		"_tag" in failure &&
+		failure._tag in STATUS
+	) {
+		if (failure._tag === "DatabaseError")
+			console.error("database failure", failure.cause);
+		return new Response(JSON.stringify({ error: publicMessage(failure) }), {
+			status: STATUS[failure._tag],
+			headers,
+		});
+	}
+	console.error(failure);
+	return new Response(JSON.stringify({ error: "Unexpected error" }), {
+		status: 500,
+		headers,
+	});
+}
+
+/** Token-authenticated endpoints don't use cookies, so any origin may call them. */
+export const corsHeaders = {
+	"access-control-allow-origin": "*",
+	"access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+	"access-control-allow-headers": "authorization, content-type",
+	"access-control-max-age": "86400",
+};

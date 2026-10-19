@@ -57,6 +57,7 @@ import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
+import { ApiTokens, Webhooks } from "./Developer";
 import type { HomeBoard } from "./types";
 import { VaultSettings, type VaultState } from "./Vault";
 
@@ -76,7 +77,7 @@ const TABS = [
 	{ id: "home", label: "Home", icon: Home },
 	{ id: "vault", label: "Vault", icon: Lock },
 	{ id: "data", label: "Data", icon: Download },
-	{ id: "connect", label: "AI", icon: Bot },
+	{ id: "connect", label: "Connect", icon: Bot },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -841,16 +842,25 @@ export function SettingsPanel({
 						<div className="flex flex-wrap items-center gap-2">
 							<a
 								className="btn-outline"
-								href="https://github.com/nearbycoder/tabz.space/tree/main/extension"
-								target="_blank"
-								rel="noreferrer"
+								href="/downloads/tabz-chrome.zip"
+								download
 							>
-								Get the extension
+								Chrome / Edge
+							</a>
+							<a
+								className="btn-outline"
+								href="/downloads/tabz-firefox.zip"
+								download
+							>
+								Firefox
 							</a>
 							<Bookmarklet />
 						</div>
 						<p className="text-xs text-muted">
-							No extension? Drag “＋ Add to tabz” to your bookmarks bar.
+							Unzip, then load it from chrome://extensions (Developer mode →
+							Load unpacked) or about:debugging in Firefox. It signs in by
+							itself next time you open tabz. No extension? Drag “＋ Add to
+							tabz” to your bookmarks bar.
 						</p>
 					</Section>
 					<Section title="Account">
@@ -880,9 +890,17 @@ export function SettingsPanel({
 			{tab === "vault" && <VaultSettings vault={vault} settings={settings} />}
 
 			{tab === "connect" && (
-				<Section title="Connect AI (MCP)">
-					<ConnectAI />
-				</Section>
+				<div className="space-y-6">
+					<Section title="AI assistants (MCP)">
+						<ConnectAI />
+					</Section>
+					<Section title="API tokens">
+						<ApiTokens />
+					</Section>
+					<Section title="Webhooks">
+						<Webhooks />
+					</Section>
+				</div>
 			)}
 		</Modal>
 	);
