@@ -138,9 +138,21 @@ export const getPublicBoard = (slug: string) =>
 					.then((result) => result.map((row) => row.bookmark)),
 			]),
 		);
-		const folderIds = new Set(
-			rows.filter((row) => row.kind === "folder").map((row) => row.id),
-		);
+		// Nested folders, any depth (incognito folders and their contents stay out).
+		const byParent = new Map<string, Bookmark[]>();
+		for (const row of rows)
+			if (row.parentId)
+				byParent.set(row.parentId, [
+					...(byParent.get(row.parentId) ?? []),
+					row,
+				]);
+		const build = (row: Bookmark, depth: number): PublicItem =>
+			publicItem(
+				row,
+				row.kind === "folder" && depth < 64
+					? (byParent.get(row.id) ?? []).map((child) => build(child, depth + 1))
+					: [],
+			);
 		const settings = resolveSettings(settingsRow?.settings);
 		return {
 			name: board.name,
@@ -160,16 +172,7 @@ export const getPublicBoard = (slug: string) =>
 				tileStyle: group.options.tileStyle,
 				items: rows
 					.filter((row) => row.groupId === group.id && !row.parentId)
-					.map((row) =>
-						publicItem(
-							row,
-							rows
-								.filter(
-									(child) => child.parentId === row.id && folderIds.has(row.id),
-								)
-								.map((child) => publicItem(child)),
-						),
-					),
+					.map((row) => build(row, 0)),
 			})),
 		};
 	});

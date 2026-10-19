@@ -18,13 +18,15 @@ export const Route = createFileRoute("/b/$slug")({
 	head: ({ loaderData }) => {
 		if (!loaderData) return {};
 		const { board } = loaderData;
+		type Item = (typeof board.groups)[number]["items"][number];
+		const countLinks = (items: Item[]): number =>
+			items.reduce(
+				(n, item) =>
+					n + (item.kind === "folder" ? countLinks(item.children) : 1),
+				0,
+			);
 		const count = board.groups.reduce(
-			(sum, group) =>
-				sum +
-				group.items.reduce(
-					(n, item) => n + (item.kind === "folder" ? item.children.length : 1),
-					0,
-				),
+			(sum, group) => sum + countLinks(group.items),
 			0,
 		);
 		const title =

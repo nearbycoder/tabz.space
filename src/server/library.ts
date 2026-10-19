@@ -224,6 +224,36 @@ const accessFolder = (userId: string, id: string) =>
 		),
 	);
 
+/** Every folder/link nested anywhere inside the given folders (any depth). */
+export const descendantIds = (folderIds: string[]) =>
+	folderIds.length === 0
+		? Effect.succeed([] as string[])
+		: query((db) =>
+				db.all<{ id: string }>(
+					sql`WITH RECURSIVE tree(id) AS (
+						SELECT id FROM bookmarks WHERE parent_id IN (${sql.join(
+							folderIds.map((id) => sql`${id}`),
+							sql`, `,
+						)})
+						UNION SELECT b.id FROM bookmarks b JOIN tree t ON b.parent_id = t.id
+					) SELECT id FROM tree`,
+				),
+			).pipe(Effect.map((rows) => rows.map((row) => row.id)));
+
+/** The folders containing an item, nearest first. */
+const ancestorIds = (id: string) =>
+	query((db) =>
+		db.all<{ id: string }>(
+			sql`WITH RECURSIVE up(id, parent) AS (
+				SELECT id, parent_id FROM bookmarks WHERE id = ${id}
+				UNION SELECT b.id, b.parent_id FROM bookmarks b JOIN up ON b.id = up.parent
+			) SELECT id FROM up WHERE id != ${id}`,
+		),
+	).pipe(Effect.map((rows) => rows.map((row) => row.id)));
+
+const cantNest = () =>
+	new InvalidInput({ message: "A folder can't go inside itself" });
+
 /* --------------------------------- history --------------------------------- */
 
 const tableOf = { boards, groups, bookmarks } as const;
@@ -385,6 +415,23 @@ const seedStarterBoard = (userId: string) =>
 
 export type HomeBoardRow = Board & { role: Role };
 
+/** A link or folder with everything nested inside it. */
+export type TreeItem = Bookmark & { children: TreeItem[] };
+
+/** All links and folders in a tree, depth-first, with the folder names above each. */
+export function walkTree(
+	items: TreeItem[],
+	path: string[] = [],
+): { item: TreeItem; path: string[] }[] {
+	return items.flatMap((item) => [
+		{ item, path },
+		...walkTree(
+			item.children,
+			item.kind === "folder" ? [...path, item.title] : path,
+		),
+	]);
+}
+
 export const loadHome = (userId: string) =>
 	Effect.gen(function* () {
 		const shared = yield* memberships(userId);
@@ -449,16 +496,26 @@ export const loadHome = (userId: string) =>
 				db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
 			]),
 		);
-		// Top-level items per group; folders carry their children.
+		// Top-level items per group; folders carry their contents, any depth deep.
+		// Items whose folder was deleted stay hidden with it.
 		const children = new Map<string, Bookmark[]>();
-		const ids = new Set(bookmarkRows.map((row) => row.id));
-		for (const row of bookmarkRows) {
-			if (!row.parentId || !ids.has(row.parentId)) continue;
-			children.set(row.parentId, [...(children.get(row.parentId) ?? []), row]);
-		}
-		const tree: (Bookmark & { children: Bookmark[] })[] = bookmarkRows
+		for (const row of bookmarkRows)
+			if (row.parentId)
+				children.set(row.parentId, [
+					...(children.get(row.parentId) ?? []),
+					row,
+				]);
+		const grow = (row: Bookmark, seen: Set<string>): TreeItem => ({
+			...row,
+			children: seen.has(row.id)
+				? []
+				: (children.get(row.id) ?? []).map((child) =>
+						grow(child, new Set(seen).add(row.id)),
+					),
+		});
+		const tree = bookmarkRows
 			.filter((row) => !row.parentId)
-			.map((row) => ({ ...row, children: children.get(row.id) ?? [] }));
+			.map((row) => grow(row, new Set()));
 		const roles = new Map(shared.map((m) => [m.boardId, m.role as Role]));
 		// Who shared each board with you.
 		const ownerIds = [
@@ -974,19 +1031,14 @@ const libraryLinks = (userId: string) =>
 				.filter((board) => !board.vault)
 				.flatMap((board) =>
 					board.groups.flatMap((group) =>
-						group.bookmarks.flatMap((item) =>
-							(item.kind === "folder"
-								? item.children.map((child) => ({ child, folder: item.title }))
-								: [{ child: item as Bookmark, folder: null }]
-							).map(({ child, folder }) => ({
+						walkTree(group.bookmarks)
+							.filter(({ item }) => item.kind === "link")
+							.map(({ item: child, path }) => ({
 								id: child.id,
 								title: child.title,
 								url: child.url,
-								path: [board.name, group.name, folder]
-									.filter(Boolean)
-									.join(" / "),
+								path: [board.name, group.name, ...path].join(" / "),
 							})),
-						),
 					),
 				),
 		),
@@ -1257,6 +1309,8 @@ export const createFolderInput = z.object({
 	icon: z.string().max(16).nullish(),
 	color: colorSchema,
 	incognito: z.boolean().optional(),
+	/** Create it inside this folder (any depth); defaults to the group's top level. */
+	parentId: idSchema.nullish(),
 	/** Existing bookmarks to move into the new folder. */
 	bookmarkIds: z.array(idSchema).max(200).optional(),
 	/** Encrypted title/icon for vault folders (see createBookmarkInput). */
@@ -1268,22 +1322,25 @@ export const createFolder = (
 	data: z.infer<typeof createFolderInput>,
 ) =>
 	Effect.gen(function* () {
-		const { group, board } = yield* accessGroup(userId, data.groupId, {
-			write: true,
-			links: true,
-		});
+		const { group, board } = data.parentId
+			? yield* accessFolder(userId, data.parentId)
+			: yield* accessGroup(userId, data.groupId, {
+					write: true,
+					links: true,
+				});
 		const sealed = board.vault && (yield* vaultSealed(board.userId));
 		if (sealed !== Boolean(data.sealed))
 			return yield* sealed
 				? mustSeal()
 				: new InvalidInput({ message: "Only vault folders are encrypted" });
-		const position = yield* nextSlot(group.id, null);
+		const position = yield* nextSlot(group.id, data.parentId ?? null);
 		const [folder] = yield* query((db) =>
 			db
 				.insert(bookmarks)
 				.values({
 					userId: board.userId,
 					groupId: group.id,
+					parentId: data.parentId ?? null,
 					kind: "folder",
 					title: data.title,
 					url: "",
@@ -1331,13 +1388,15 @@ export const updateBookmark = (
 		let groupId = bookmark.groupId;
 		let parentId = bookmark.parentId;
 		let destination = board;
-		if (
-			data.parentId !== undefined &&
-			data.parentId !== bookmark.parentId &&
-			!isFolder
-		) {
+		if (data.parentId !== undefined && data.parentId !== bookmark.parentId) {
 			parentId = data.parentId;
 			if (parentId) {
+				if (
+					isFolder &&
+					(parentId === bookmark.id ||
+						(yield* descendantIds([bookmark.id])).includes(parentId))
+				)
+					return yield* cantNest();
 				const folder = yield* accessFolder(userId, parentId);
 				groupId = folder.bookmark.groupId;
 				destination = folder.board;
@@ -1378,24 +1437,19 @@ export const updateBookmark = (
 		const position = moved
 			? yield* nextSlot(groupId, parentId)
 			: bookmark.position;
+		// Everything inside a folder, at any depth, travels with it.
 		const childIds =
 			isFolder && groupId !== bookmark.groupId
-				? (yield* query((db) =>
-						db
-							.select({ id: bookmarks.id })
-							.from(bookmarks)
-							.where(eq(bookmarks.parentId, bookmark.id)),
-					)).map((row) => row.id)
+				? yield* descendantIds([bookmark.id])
 				: [];
 		const before = yield* snapshot("bookmarks", [bookmark.id, ...childIds]);
 		const [updated] = yield* query((db) =>
 			db.transaction(async (tx) => {
-				// A folder's contents travel with it.
 				if (childIds.length)
 					await tx
 						.update(bookmarks)
 						.set({ groupId })
-						.where(eq(bookmarks.parentId, bookmark.id));
+						.where(inArray(bookmarks.id, childIds));
 				if (sealHere)
 					return tx
 						.update(bookmarks)
@@ -1480,14 +1534,16 @@ export const deleteBookmark = (
 			bookmark.id,
 			...inside.map((row) => row.id),
 		]);
-		const start = inside.length ? yield* nextSlot(bookmark.groupId, null) : 0;
+		const start = inside.length
+			? yield* nextSlot(bookmark.groupId, bookmark.parentId)
+			: 0;
 		yield* query((db) =>
 			db.transaction(async (tx) => {
-				// Release the folder's links back into its group before removing it.
+				// Release the folder's contents to wherever the folder itself was.
 				for (const [offset, child] of inside.entries())
 					await tx
 						.update(bookmarks)
-						.set({ parentId: null, position: start + offset })
+						.set({ parentId: bookmark.parentId, position: start + offset })
 						.where(eq(bookmarks.id, child.id));
 				await tx
 					.update(bookmarks)
@@ -1529,14 +1585,9 @@ export const arrangeBookmarks = (
 			});
 		const [owner] = owners;
 		const ids = data.groups.flatMap((group) => group.ids);
-		const childIds = ids.length
-			? (yield* query((db) =>
-					db
-						.select({ id: bookmarks.id })
-						.from(bookmarks)
-						.where(inArray(bookmarks.parentId, ids)),
-				)).map((row) => row.id)
-			: [];
+		const childIds = yield* descendantIds(ids);
+		const insideOf = new Map<string, string[]>();
+		for (const id of ids) insideOf.set(id, yield* descendantIds([id]));
 		const before = yield* snapshot("bookmarks", [...ids, ...childIds]);
 		yield* query((db) =>
 			db.transaction(async (tx) => {
@@ -1546,13 +1597,18 @@ export const arrangeBookmarks = (
 							.update(bookmarks)
 							.set({ groupId: group.groupId, parentId: null, position })
 							.where(and(eq(bookmarks.id, id), eq(bookmarks.userId, owner)));
-						// Keep folder contents in the same group as the folder.
-						await tx
-							.update(bookmarks)
-							.set({ groupId: group.groupId })
-							.where(
-								and(eq(bookmarks.parentId, id), eq(bookmarks.userId, owner)),
-							);
+						// Keep folder contents (any depth) in the same group as the folder.
+						const inside = insideOf.get(id) ?? [];
+						if (inside.length)
+							await tx
+								.update(bookmarks)
+								.set({ groupId: group.groupId })
+								.where(
+									and(
+										inArray(bookmarks.id, inside),
+										eq(bookmarks.userId, owner),
+									),
+								);
 					}
 				}
 			}),
@@ -1561,7 +1617,7 @@ export const arrangeBookmarks = (
 		return { ok: true };
 	});
 
-/** Sets a folder's exact contents order; ids from elsewhere are moved in. Folders can't nest. */
+/** Sets a folder's exact contents order; ids from elsewhere (links or folders) are moved in. */
 export const arrangeFolderInput = z.object({
 	folderId: idSchema,
 	ids: z.array(idSchema).max(500),
@@ -1576,7 +1632,11 @@ export const arrangeFolder = (
 			userId,
 			data.folderId,
 		);
-		const before = yield* snapshot("bookmarks", data.ids);
+		// A folder can't end up inside itself or one of its own subfolders.
+		const above = new Set([folder.id, ...(yield* ancestorIds(folder.id))]);
+		if (data.ids.some((id) => above.has(id))) return yield* cantNest();
+		const inside = yield* descendantIds(data.ids);
+		const before = yield* snapshot("bookmarks", [...data.ids, ...inside]);
 		yield* query((db) =>
 			db.transaction(async (tx) => {
 				for (const [position, id] of data.ids.entries()) {
@@ -1584,13 +1644,19 @@ export const arrangeFolder = (
 						.update(bookmarks)
 						.set({ groupId: folder.groupId, parentId: folder.id, position })
 						.where(
-							and(
-								eq(bookmarks.id, id),
-								eq(bookmarks.userId, board.userId),
-								eq(bookmarks.kind, "link"),
-							),
+							and(eq(bookmarks.id, id), eq(bookmarks.userId, board.userId)),
 						);
 				}
+				if (inside.length)
+					await tx
+						.update(bookmarks)
+						.set({ groupId: folder.groupId })
+						.where(
+							and(
+								inArray(bookmarks.id, inside),
+								eq(bookmarks.userId, board.userId),
+							),
+						);
 			}),
 		);
 		yield* record(
@@ -1656,24 +1722,31 @@ export const recordVisit = (userId: string, data: z.infer<typeof idInput>) =>
 		Effect.as({ ok: true }),
 	);
 
-/** Imports a parsed browser bookmark export as a new board. */
+type ImportItem = { title: string; url?: string; items?: ImportItem[] };
+
+// Links and folders, nested to any depth.
+const importItem: z.ZodType<ImportItem> = z.lazy(() =>
+	z.object({
+		title: z.string().max(200),
+		url: z.string().max(2048).optional(),
+		items: z.array(importItem).max(5000).optional(),
+	}),
+);
+
 export const importBookmarksInput = z.object({
 	boardName: z.string().trim().min(1).max(60),
 	groups: z
 		.array(
 			z.object({
 				name: z.string().trim().min(1).max(60),
-				bookmarks: z
-					.array(
-						z.object({ title: z.string().max(200), url: z.string().max(2048) }),
-					)
-					.max(2000),
+				bookmarks: z.array(importItem).max(5000),
 			}),
 		)
 		.min(1)
 		.max(200),
 });
 
+/** Imports a parsed browser bookmark export as a new board, keeping folders. */
 export const importBookmarks = (
 	userId: string,
 	data: z.infer<typeof importBookmarksInput>,
@@ -1693,23 +1766,48 @@ export const importBookmarks = (
 						layout: { ...DEFAULT_BOARD_LAYOUT, tileStyle: "list", columns: 4 },
 					})
 					.returning();
+				const insert = async (
+					items: ImportItem[],
+					groupId: string,
+					parentId: string | null,
+					depth: number,
+				) => {
+					const links = [];
+					for (const [index, item] of items.entries()) {
+						if (item.items) {
+							if (depth > 32 || imported >= 10_000) continue;
+							const [folder] = await tx
+								.insert(bookmarks)
+								.values({
+									userId,
+									groupId,
+									parentId,
+									kind: "folder",
+									title: item.title.trim().slice(0, 60) || "Folder",
+									url: "",
+									position: index,
+								})
+								.returning({ id: bookmarks.id });
+							await insert(item.items, groupId, folder.id, depth + 1);
+							continue;
+						}
+						const url = normalizeUrl(item.url ?? "");
+						if (!url || imported >= 10_000) continue;
+						imported++;
+						links.push({
+							userId,
+							groupId,
+							parentId,
+							url,
+							title: item.title.trim() || titleFromUrl(url),
+							position: index,
+							meta: { favicon: faviconFor(url) },
+						});
+					}
+					for (let i = 0; i < links.length; i += 200)
+						await tx.insert(bookmarks).values(links.slice(i, i + 200));
+				};
 				for (const [groupIndex, group] of data.groups.entries()) {
-					const rows = group.bookmarks.flatMap((bookmark, index) => {
-						const url = normalizeUrl(bookmark.url);
-						return url
-							? [
-									{
-										userId,
-										groupId: "",
-										url,
-										title: bookmark.title.trim() || titleFromUrl(url),
-										position: index,
-										meta: { favicon: faviconFor(url) },
-									},
-								]
-							: [];
-					});
-					if (rows.length === 0) continue;
 					const [createdGroup] = await tx
 						.insert(groups)
 						.values({
@@ -1719,16 +1817,7 @@ export const importBookmarks = (
 							position: groupIndex,
 						})
 						.returning();
-					for (let i = 0; i < rows.length; i += 200) {
-						await tx
-							.insert(bookmarks)
-							.values(
-								rows
-									.slice(i, i + 200)
-									.map((row) => ({ ...row, groupId: createdGroup.id })),
-							);
-					}
-					imported += rows.length;
+					await insert(group.bookmarks, createdGroup.id, null, 0);
 				}
 				return board.id;
 			}),
@@ -1759,23 +1848,16 @@ type Home = Effect.Success<ReturnType<typeof loadHome>>;
 const visibleLinks = (home: Home, boardList: Home["boards"] = home.boards) =>
 	boardList.flatMap((board) =>
 		board.groups.flatMap((group) =>
-			group.bookmarks.flatMap((item): LinkEntry[] =>
-				item.kind === "folder"
-					? item.children.map((bookmark) => ({
-							bookmark,
-							board: board.name,
-							group: group.name,
-							folder: item.title,
-						}))
-					: [
-							{
-								bookmark: item as Bookmark,
-								board: board.name,
-								group: group.name,
-								folder: null,
-							},
-						],
-			),
+			walkTree(group.bookmarks)
+				.filter(({ item }) => item.kind === "link")
+				.map(
+					({ item, path }): LinkEntry => ({
+						bookmark: item,
+						board: board.name,
+						group: group.name,
+						folder: path.length ? path.join(" / ") : null,
+					}),
+				),
 		),
 	);
 
@@ -2172,7 +2254,9 @@ export const restoreFromTrash = (
 				yield* restore(boards, group.boardId);
 				yield* restore(groups, group.id);
 			}
-			if (bookmark.parentId) yield* restore(bookmarks, bookmark.parentId);
+			// Bring back every folder it sits in, so it's visible again.
+			for (const id of yield* ancestorIds(bookmark.id))
+				yield* restore(bookmarks, id);
 			yield* restore(bookmarks, bookmark.id);
 		}
 		return { ok: true };

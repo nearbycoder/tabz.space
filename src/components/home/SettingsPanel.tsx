@@ -256,7 +256,9 @@ export function SettingsPanel({
 	};
 
 	const onExport = () => {
-		const blob = new Blob([toBookmarkHtml(boards)], { type: "text/html" });
+		const blob = new Blob([toBookmarkHtml(boards.filter((b) => !b.vault))], {
+			type: "text/html",
+		});
 		const link = document.createElement("a");
 		link.href = URL.createObjectURL(blob);
 		link.download = "tabz-bookmarks.html";

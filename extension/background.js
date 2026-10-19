@@ -84,7 +84,11 @@ function flatten(nodes, path = [], out = []) {
 				.filter((child) => child.url && isWebUrl(child.url))
 				.map((child) => ({ title: child.title || child.url, url: child.url }));
 			if (links.length)
-				out.push({ path: here.join(" / ") || "Bookmarks", links });
+				out.push({
+					path: here.join(" / ") || "Bookmarks",
+					segments: here.length ? here : ["Bookmarks"],
+					links,
+				});
 			flatten(
 				node.children.filter((child) => child.children),
 				here,

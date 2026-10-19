@@ -137,7 +137,7 @@ export const bookmarks = sqliteTable(
 			.notNull()
 			.references(() => groups.id, { onDelete: "cascade" }),
 		// Folders are bookmark rows of kind "folder" (url is empty); their
-		// children point at them via parentId. One level deep.
+		// children (links or more folders, any depth) point at them via parentId.
 		kind: text("kind", { enum: ["link", "folder"] })
 			.default("link")
 			.notNull(),

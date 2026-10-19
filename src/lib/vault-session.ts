@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { flattenTree, mapTree } from "#/components/home/types";
 import type { HomeData } from "#/server/home";
 import {
 	importVaultKey,
@@ -116,9 +117,7 @@ export function useDecryptedHome(data: HomeData): HomeData {
 		const pending = data.boards
 			.filter((board) => board.vault)
 			.flatMap((board) =>
-				board.groups.flatMap((group) =>
-					group.bookmarks.flatMap((item) => [item, ...item.children]),
-				),
+				board.groups.flatMap((group) => flattenTree(group.bookmarks)),
 			)
 			.map((row) => row.meta.sealed)
 			.filter(
@@ -147,10 +146,7 @@ export function useDecryptedHome(data: HomeData): HomeData {
 							...board,
 							groups: board.groups.map((group) => ({
 								...group,
-								bookmarks: group.bookmarks.map((item) => ({
-									...reveal(item),
-									children: item.children.map(reveal),
-								})),
+								bookmarks: mapTree(group.bookmarks, reveal),
 							})),
 						}
 					: board,

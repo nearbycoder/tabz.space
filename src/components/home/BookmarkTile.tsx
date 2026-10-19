@@ -14,9 +14,9 @@ import {
 import { hostnameOf } from "#/lib/url";
 import { useHomeContext } from "./context";
 import { LinkPreview } from "./LinkPreview";
-import type { LinkItem } from "./types";
+import { flattenTree, type LinkItem, linksIn, type TreeItem } from "./types";
 
-export type TileItem = LinkItem & { children?: LinkItem[] };
+export type TileItem = LinkItem & { children?: TreeItem[] };
 
 type Props = {
 	item: TileItem;
@@ -82,6 +82,19 @@ export function BookmarkTile({ item, style, size }: Props) {
 	);
 }
 
+/** "12 links · 2 folders", counting everything nested inside. */
+export function folderSummary(children: TreeItem[]) {
+	const all = flattenTree(children);
+	const links = all.filter((item) => item.kind === "link").length;
+	const folders = all.length - links;
+	return [
+		`${links} ${links === 1 ? "link" : "links"}`,
+		folders ? `${folders} ${folders === 1 ? "folder" : "folders"}` : "",
+	]
+		.filter(Boolean)
+		.join(" · ");
+}
+
 /** Tracks the cursor to tilt a tile in 3D. */
 function useTilt(enabled: boolean) {
 	const ref = useRef<HTMLSpanElement>(null);
@@ -128,13 +141,21 @@ function FolderMosaic({
 					key={child.id}
 					className="grid place-items-center overflow-hidden rounded-[22%] bg-surface-2 shadow-sm"
 				>
-					<Favicon
-						url={child.url}
-						icon={child.icon}
-						favicon={child.meta.favicon}
-						title={child.title}
-						className="size-[70%] text-[0.7em]"
-					/>
+					{child.kind === "folder" ? (
+						child.icon ? (
+							<span className="text-[0.7em]">{child.icon}</span>
+						) : (
+							<Folder className="size-[60%] text-accent" />
+						)
+					) : (
+						<Favicon
+							url={child.url}
+							icon={child.icon}
+							favicon={child.meta.favicon}
+							title={child.title}
+							className="size-[70%] text-[0.7em]"
+						/>
+					)}
 				</span>
 			))}
 		</span>
@@ -158,7 +179,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		!settings.feedBadges || incognito
 			? 0
 			: isFolder
-				? (item.children ?? []).reduce(
+				? linksIn(item.children ?? []).reduce(
 						(sum, child) => sum + (isIncognito(child) ? 0 : unreadCount(child)),
 						0,
 					)
@@ -231,7 +252,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		drop.isOver &&
 		"ring-2 ring-accent ring-offset-2 ring-offset-transparent scale-105";
 	const subtitle = isFolder
-		? `${item.children?.length ?? 0} ${item.children?.length === 1 ? "link" : "links"}`
+		? folderSummary(item.children ?? [])
 		: item.description || hostnameOf(item.url);
 
 	let body: ReactNode;

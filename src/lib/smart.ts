@@ -1,4 +1,8 @@
-import type { HomeBoard, LinkItem } from "#/components/home/types";
+import {
+	type HomeBoard,
+	type LinkItem,
+	linksIn,
+} from "#/components/home/types";
 import { type SmartRules, type SmartSort, unreadCount } from "./preferences";
 
 /*
@@ -50,11 +54,7 @@ export const allLinks = (boards: HomeBoard[]) =>
 	boards
 		.filter((board) => !board.vault)
 		.flatMap((board) =>
-			board.groups.flatMap((group) =>
-				group.bookmarks.flatMap((item) =>
-					item.kind === "folder" ? item.children : [item as LinkItem],
-				),
-			),
+			board.groups.flatMap((group) => linksIn(group.bookmarks)),
 		);
 
 export function smartItems(boards: HomeBoard[], rules: SmartRules) {

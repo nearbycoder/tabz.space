@@ -99,7 +99,7 @@ Customize → Connect has personal API tokens and outgoing webhooks.
 
 ## Data model
 
-`user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links point at them via `parent_id`, one level deep) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
+`user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links and other folders point at them via `parent_id`, so folders nest to any depth; moves are cycle-checked and a folder's whole subtree travels with it) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.
 
 ## Where things live
 

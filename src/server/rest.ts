@@ -91,10 +91,11 @@ route("GET", "/library", ({ userId }) =>
 					id: group.id,
 					name: group.name,
 					kind: group.kind,
-					items: group.bookmarks.map((item) => ({
-						...compact(item),
-						children: item.children.map(compact),
-					})),
+					items: group.bookmarks.map(function tree(
+						item: library.TreeItem,
+					): Record<string, unknown> {
+						return { ...compact(item), children: item.children.map(tree) };
+					}),
 				})),
 			})),
 		})),

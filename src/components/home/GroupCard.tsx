@@ -25,7 +25,7 @@ import {
 import { SMART_EMPTY, smartItems } from "#/lib/smart";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
-import type { HomeGroup } from "./types";
+import { type HomeGroup, linksIn } from "./types";
 import { WidgetBody } from "./widgets/WidgetBody";
 
 type Props = {
@@ -65,11 +65,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		id: `drop:${group.id}`,
 		data: { type: "drop", groupId: group.id },
 	});
-	const links = smart
-		? smartLinks
-		: group.bookmarks.flatMap((item) =>
-				item.kind === "folder" ? item.children : [item],
-			);
+	const links = smart ? smartLinks : linksIn(group.bookmarks);
 	const total = links.length;
 	const square = style === "tile" || style === "icon";
 

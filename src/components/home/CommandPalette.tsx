@@ -37,7 +37,12 @@ import {
 import { hostnameOf, normalizeUrl } from "#/lib/url";
 import { searchContent } from "#/server/home";
 import { useHomeContext } from "./context";
-import { type HomeBoard, isLinksGroup, type LinkItem } from "./types";
+import {
+	type HomeBoard,
+	isLinksGroup,
+	type LinkItem,
+	type TreeItem,
+} from "./types";
 
 type Props = {
 	open: boolean;
@@ -146,21 +151,18 @@ export function CommandPalette({
 	const { links, folders } = useMemo(() => {
 		const links: Entry[] = [];
 		const folders: { folder: LinkItem; path: string }[] = [];
-		for (const b of boards) {
-			for (const group of b.groups) {
-				for (const item of group.bookmarks) {
-					if (item.kind === "folder") {
-						folders.push({ folder: item, path: `${b.name} / ${group.name}` });
-						for (const child of item.children)
-							links.push({
-								bookmark: child,
-								path: `${b.name} / ${group.name} / ${item.title}`,
-							});
-					} else
-						links.push({ bookmark: item, path: `${b.name} / ${group.name}` });
-				}
+		// Folders nest to any depth; the path shows where each item lives.
+		const walk = (items: TreeItem[], path: string) => {
+			for (const item of items) {
+				if (item.kind === "folder") {
+					folders.push({ folder: item, path });
+					walk(item.children, `${path} / ${item.title}`);
+				} else links.push({ bookmark: item, path });
 			}
-		}
+		};
+		for (const b of boards)
+			for (const group of b.groups)
+				walk(group.bookmarks, `${b.name} / ${group.name}`);
 		links.sort((a, b) => b.bookmark.visitCount - a.bookmark.visitCount);
 		return { links, folders };
 	}, [boards]);

@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { flattenTree } from "#/components/home/types";
 import type { HomeData } from "#/server/home";
 import {
 	getVaultInfo,
@@ -28,11 +29,8 @@ const vaultRows = (data: HomeData, decoy = false) =>
 	data.boards
 		.filter((board) => board.vault && board.decoy === decoy)
 		.flatMap((board) =>
-			board.groups.flatMap((group) =>
-				group.bookmarks.flatMap((item) => [
-					item as Omit<Row, "children">,
-					...item.children,
-				]),
+			board.groups.flatMap(
+				(group) => flattenTree(group.bookmarks) as Omit<Row, "children">[],
 			),
 		);
 

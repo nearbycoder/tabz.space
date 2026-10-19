@@ -62,21 +62,32 @@ export const smartAdd = (userId: string, data: z.infer<typeof smartAddInput>) =>
 		}
 		let parentId = folderId;
 		if (!parentId && folder) {
+			// "Recipes / Desserts" walks (and creates) nested folders.
 			home ??= yield* library.loadHome(userId);
-			const existing = home.boards
-				.flatMap((b) => b.groups)
-				.find((g) => g.id === targetGroupId)
-				?.bookmarks.find(
+			let level: library.TreeItem[] =
+				home.boards.flatMap((b) => b.groups).find((g) => g.id === targetGroupId)
+					?.bookmarks ?? [];
+			for (const name of folder
+				.split("/")
+				.map((part) => part.trim())
+				.filter(Boolean)) {
+				const existing = level.find(
 					(item) =>
 						item.kind === "folder" &&
-						item.title.toLowerCase() === folder.toLowerCase(),
+						item.title.toLowerCase() === name.toLowerCase(),
 				);
-			parentId =
-				existing?.id ??
-				(yield* library.createFolder(userId, {
-					groupId: targetGroupId,
-					title: folder,
-				})).id;
+				if (existing) {
+					parentId = existing.id;
+					level = existing.children;
+				} else {
+					parentId = (yield* library.createFolder(userId, {
+						groupId: targetGroupId,
+						parentId,
+						title: name.slice(0, 60),
+					})).id;
+					level = [];
+				}
+			}
 		}
 		return yield* library.createBookmark(userId, {
 			...fields,
@@ -137,6 +148,8 @@ export const browserSyncInput = z.object({
 		.array(
 			z.object({
 				path: z.string().max(300),
+				/** Folder names from the root (newer extensions); safer than splitting `path`. */
+				segments: z.array(z.string().max(200)).max(40).optional(),
 				links: z
 					.array(
 						z.object({ title: z.string().max(200), url: z.string().max(2048) }),
@@ -182,41 +195,78 @@ export const syncBrowserBookmarks = (
 		yield* query((db) =>
 			db.transaction(async (tx) => {
 				await tx.delete(groups).where(eq(groups.boardId, boardId));
-				for (const [index, folder] of data.folders.entries()) {
-					const rows = folder.links.flatMap((link, position) => {
-						const url = normalizeUrl(link.url);
-						return url
-							? [
-									{
-										url,
-										title: link.title.trim() || titleFromUrl(url),
-										position,
-									},
-								]
-							: [];
-					});
-					if (rows.length === 0) continue;
+				// The browser's top-level folders (e.g. "Bookmarks bar") become
+				// groups; everything deeper stays as nested folders.
+				const groupIds = new Map<string, string>();
+				const folderIds = new Map<string, string>();
+				const childCount = new Map<string, number>();
+				const nextIndex = (key: string) => {
+					const index = childCount.get(key) ?? 0;
+					childCount.set(key, index + 1);
+					return index;
+				};
+				const groupFor = async (name: string) => {
+					const existing = groupIds.get(name);
+					if (existing) return existing;
 					const [group] = await tx
 						.insert(groups)
 						.values({
 							userId,
 							boardId,
-							name:
-								folder.path.split(" / ").slice(-2).join(" / ").slice(0, 60) ||
-								"Bookmarks",
-							position: index,
+							name: name.slice(0, 60) || "Bookmarks",
+							position: groupIds.size,
 						})
-						.returning();
-					for (let i = 0; i < rows.length; i += 200) {
-						await tx.insert(bookmarks).values(
-							rows.slice(i, i + 200).map((row) => ({
-								...row,
-								userId,
-								groupId: group.id,
-								meta: { favicon: faviconFor(row.url) },
-							})),
-						);
-					}
+						.returning({ id: groups.id });
+					groupIds.set(name, group.id);
+					return group.id;
+				};
+				const folderFor = async (
+					groupId: string,
+					trail: string[],
+				): Promise<string | null> => {
+					if (trail.length === 0) return null;
+					const key = `${groupId}\u0000${trail.join("\u0000")}`;
+					const existing = folderIds.get(key);
+					if (existing) return existing;
+					const parentId = await folderFor(groupId, trail.slice(0, -1));
+					const [folder] = await tx
+						.insert(bookmarks)
+						.values({
+							userId,
+							groupId,
+							parentId,
+							kind: "folder",
+							title: (trail.at(-1) ?? "Folder").slice(0, 60),
+							url: "",
+							position: nextIndex(parentId ?? groupId),
+						})
+						.returning({ id: bookmarks.id });
+					folderIds.set(key, folder.id);
+					return folder.id;
+				};
+				for (const folder of data.folders) {
+					const segments = (folder.segments ?? folder.path.split(" / ")).filter(
+						Boolean,
+					);
+					const rows = folder.links.flatMap((link) => {
+						const url = normalizeUrl(link.url);
+						return url
+							? [{ url, title: link.title.trim() || titleFromUrl(url) }]
+							: [];
+					});
+					if (rows.length === 0) continue;
+					const groupId = await groupFor(segments[0] ?? "Bookmarks");
+					const parentId = await folderFor(groupId, segments.slice(1, 33));
+					const values = rows.map((row) => ({
+						...row,
+						userId,
+						groupId,
+						parentId,
+						position: nextIndex(parentId ?? groupId),
+						meta: { favicon: faviconFor(row.url) },
+					}));
+					for (let i = 0; i < values.length; i += 200)
+						await tx.insert(bookmarks).values(values.slice(i, i + 200));
 					total += rows.length;
 				}
 				await tx

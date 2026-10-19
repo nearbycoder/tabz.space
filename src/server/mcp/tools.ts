@@ -23,7 +23,7 @@ import * as sharing from "../sharing";
  * ever touch that user's data.
  */
 
-const INSTRUCTIONS = `tabz.space is the user's browser start page: boards (pages) contain groups (sections) that contain bookmarks and folders (one level deep).
+const INSTRUCTIONS = `tabz.space is the user's browser start page: boards (pages) contain groups (sections) that contain bookmarks and folders, which can be nested inside each other to any depth.
 Call get_library first to learn board/group/folder ids. add_bookmark can target a group or folder by name and creates it if missing.
 Changes show up on the user's start page immediately.`;
 
@@ -62,6 +62,17 @@ const compactBookmark = (bookmark: Bookmark) => ({
 	...(bookmark.visitCount ? { visits: bookmark.visitCount } : {}),
 });
 
+/** Links as-is; folders with their contents, nested to any depth. */
+const compactItem = (item: library.TreeItem): Record<string, unknown> =>
+	item.kind === "folder"
+		? {
+				folderId: item.id,
+				folder: item.title,
+				icon: item.icon,
+				items: item.children.map(compactItem),
+			}
+		: compactBookmark(item);
+
 const compactLibrary = (home: Home, boardId?: string) => ({
 	activeBoardId: home.settings.activeBoardId ?? home.boards[0]?.id ?? null,
 	boards: home.boards
@@ -91,16 +102,7 @@ const compactLibrary = (home: Home, boardId?: string) => ({
 							note: "fills itself; can't add links",
 						}
 					: {}),
-				items: group.bookmarks.map((item) =>
-					item.kind === "folder"
-						? {
-								folderId: item.id,
-								folder: item.title,
-								icon: item.icon,
-								bookmarks: item.children.map(compactBookmark),
-							}
-						: compactBookmark(item),
-				),
+				items: group.bookmarks.map(compactItem),
 			})),
 		})),
 });
@@ -176,7 +178,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Add bookmark",
 			description:
-				"Save a URL. Target a group by groupId or by group name (created if missing) on a board (id or name; defaults to the active board). Optionally put it in a folder by folderId or folder name (created in that group if missing). Title, description and preview image are fetched from the page when omitted.",
+				"Save a URL. Target a group by groupId or by group name (created if missing) on a board (id or name; defaults to the active board). Optionally put it in a folder by folderId or by folder name; use 'Parent / Child' for nested folders (missing ones are created). Title, description and preview image are fetched from the page when omitted.",
 			inputSchema: z.object({
 				url: z.string().max(2048),
 				title: z.string().max(200).optional(),
@@ -223,7 +225,9 @@ export function createTabzMcpServer(userId: string) {
 					.string()
 					.nullable()
 					.optional()
-					.describe("Move into this folder; null moves it out of its folder"),
+					.describe(
+						"Move into this folder (folders can be nested too); null moves it to the group's top level",
+					),
 				color: colorInput.nullable(),
 				icon: z
 					.string()
@@ -252,7 +256,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Delete bookmark or folder",
 			description:
-				"Move a bookmark or folder to the trash (restorable for 30 days). Deleting a folder keeps its links (moved back into the group) unless withContents is true.",
+				"Move a bookmark or folder to the trash (restorable for 30 days). Deleting a folder keeps its contents (moved up to where the folder was) unless withContents is true.",
 			inputSchema: library.deleteBookmarkInput,
 			annotations: { destructiveHint: true },
 		},
@@ -280,7 +284,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Create folder",
 			description:
-				"Create a folder inside a group, optionally moving existing bookmarks into it.",
+				"Create a folder in a group, or inside another folder (parentId) to nest it, optionally moving existing bookmarks or folders into it.",
 			inputSchema: library.createFolderInput,
 		},
 		(input) =>

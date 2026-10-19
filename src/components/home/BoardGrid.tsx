@@ -203,7 +203,7 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 			const folderId = overKey.slice(5);
 			const moving = findItem(activeKey);
 			const folder = findItem(folderId);
-			if (!moving || !folder || moving.kind === "folder") return;
+			if (!moving || !folder || moving.id === folder.id) return;
 			const next = items.map((g) => ({
 				...g,
 				bookmarks: g.bookmarks

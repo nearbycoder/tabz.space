@@ -18,7 +18,14 @@ import {
 	lookupUrl,
 	updateBookmark,
 } from "#/server/home";
-import type { HomeBoard, LinkItem } from "./types";
+import {
+	findInTree,
+	flattenTree,
+	type HomeBoard,
+	type LinkItem,
+	removeFromTree,
+	type TreeItem,
+} from "./types";
 
 type Props = {
 	boards: HomeBoard[];
@@ -77,11 +84,34 @@ export function BookmarkForm({
 		Boolean(
 			boards.find((b) => b.groups.some((g) => g.id === targetGroup))?.vault,
 		) && Boolean(queryClient.getQueryData<HomeData>(homeKey)?.vault.encrypted);
-	const folders =
-		boards
-			.flatMap((b) => b.groups)
-			.find((g) => g.id === targetGroup)
-			?.bookmarks.filter((item) => item.kind === "folder") ?? [];
+	// Every folder in the group, nested ones indented. A folder can't be
+	// moved into itself or anything inside it.
+	const excluded = new Set(
+		bookmark?.kind === "folder"
+			? [
+					bookmark.id,
+					...flattenTree(
+						findInTree(
+							boards.flatMap((b) => b.groups).flatMap((g) => g.bookmarks),
+							bookmark.id,
+						)?.item.children ?? [],
+					).map((i) => i.id),
+				]
+			: [],
+	);
+	const folders: (TreeItem & { depth: number })[] = [];
+	const collect = (items: TreeItem[], depth: number) => {
+		for (const item of items)
+			if (item.kind === "folder" && !excluded.has(item.id)) {
+				folders.push({ ...item, depth });
+				collect(item.children, depth + 1);
+			}
+	};
+	collect(
+		boards.flatMap((b) => b.groups).find((g) => g.id === targetGroup)
+			?.bookmarks ?? [],
+		0,
+	);
 
 	const done = () => (onSaved ? onSaved() : onClose());
 	const create = useHomeAction(createBookmark, {
@@ -100,12 +130,7 @@ export function BookmarkForm({
 				...b,
 				groups: b.groups.map((g) => ({
 					...g,
-					bookmarks: g.bookmarks
-						.filter((x) => x.id !== input.id)
-						.map((x) => ({
-							...x,
-							children: x.children.filter((c) => c.id !== input.id),
-						})),
+					bookmarks: removeFromTree(g.bookmarks, input.id),
 				})),
 			})),
 		}),
@@ -355,7 +380,7 @@ export function BookmarkForm({
 					/>
 				</Field>
 			</div>
-			{folders.length > 0 && bookmark?.kind !== "folder" && (
+			{folders.length > 0 && (
 				<Field label="Folder">
 					<select
 						className="field"
@@ -365,7 +390,7 @@ export function BookmarkForm({
 						<option value="">No folder</option>
 						{folders.map((folder) => (
 							<option key={folder.id} value={folder.id}>
-								{`${folder.icon ?? "📁"} ${folder.title}`}
+								{`${"\u00a0\u00a0\u00a0".repeat(folder.depth)}${folder.icon ?? "📁"} ${folder.title}`}
 							</option>
 						))}
 					</select>

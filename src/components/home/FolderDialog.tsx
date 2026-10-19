@@ -6,7 +6,9 @@ import {
 } from "@dnd-kit/sortable";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+	ChevronRight,
 	ExternalLink,
+	FolderPlus,
 	Loader2,
 	Plus,
 	Trash2,
@@ -28,9 +30,10 @@ import {
 	deleteBookmark,
 	updateBookmark,
 } from "#/server/home";
-import { BookmarkTile } from "./BookmarkTile";
+import { BookmarkTile, folderSummary } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import { gridFor } from "./GroupCard";
+import { findInTree, flattenTree, linksIn, type TreeItem } from "./types";
 
 const FOLDER_ICONS = [
 	"📁",
@@ -47,14 +50,14 @@ const FOLDER_ICONS = [
 	"⭐",
 ];
 
-const findFolder = (
-	data: HomeData | { boards: HomeData["boards"] },
-	folderId: string,
-) =>
-	data.boards
-		.flatMap((b) => b.groups)
-		.flatMap((g) => g.bookmarks)
-		.find((item) => item.id === folderId);
+/** A folder anywhere in the library, with its group and the folders above it. */
+const findFolder = (boards: HomeData["boards"], folderId: string) => {
+	for (const group of boards.flatMap((b) => b.groups)) {
+		const found = findInTree(group.bookmarks, folderId);
+		if (found) return { ...found, group };
+	}
+	return null;
+};
 
 /** An opened folder: its links in a grid you can reorder, plus rename/icon/delete. */
 export function FolderDialog({
@@ -65,7 +68,8 @@ export function FolderDialog({
 	onClose: () => void;
 }) {
 	const { boards, openDialog, isIncognito, openAll } = useHomeContext();
-	const folder = findFolder({ boards }, folderId);
+	const found = findFolder(boards, folderId);
+	const folder = found?.item;
 	const [title, setTitle] = useState(folder?.title ?? "");
 	const [order, setOrder] = useState(folder?.children ?? []);
 	const [confirming, setConfirming] = useState(false);
@@ -108,8 +112,33 @@ export function FolderDialog({
 			void saveFolder({ title: title.trim() });
 	};
 
+	const links = linksIn(order);
+	// Where this folder can live: the group's top level, or any folder that
+	// isn't this one or inside it.
+	const inside = new Set([
+		folder.id,
+		...flattenTree(folder.children).map((i) => i.id),
+	]);
+	const destinations = found
+		? walkFolders(found.group.bookmarks).filter(
+				({ item }) => !inside.has(item.id),
+			)
+		: [];
+
 	const onDragEnd = ({ active, over }: DragEndEvent) => {
 		if (!over || active.id === over.id) return;
+		// Dropped onto a subfolder: move it in there.
+		const overKey = String(over.id);
+		if (overKey.startsWith("into:")) {
+			const target = order.find((c) => c.id === overKey.slice(5));
+			if (!target || target.id === active.id) return;
+			setOrder(order.filter((c) => c.id !== active.id));
+			arrange.mutate({
+				folderId: target.id,
+				ids: [...target.children.map((c) => c.id), String(active.id)],
+			});
+			return;
+		}
 		const next = arrayMove(
 			order,
 			order.findIndex((c) => c.id === active.id),
@@ -132,6 +161,32 @@ export function FolderDialog({
 				aria-label={folder.title}
 				className="glass animate-folder relative max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-t-[2rem] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[2rem] sm:pb-6"
 			>
+				{found && (
+					<nav
+						aria-label="Folder path"
+						className="mb-3 flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted"
+					>
+						<button type="button" className="hover:text-ink" onClick={onClose}>
+							{found.group.name}
+						</button>
+						{found.path.map((parent) => (
+							<span key={parent.id} className="flex items-center gap-1">
+								<ChevronRight className="size-3" />
+								<button
+									type="button"
+									className="max-w-[10rem] truncate hover:text-ink"
+									onClick={() =>
+										openDialog({ type: "folder", folderId: parent.id })
+									}
+								>
+									{parent.icon ?? "📁"} {parent.title}
+								</button>
+							</span>
+						))}
+						<ChevronRight className="size-3" />
+						<span className="truncate text-ink">{folder.title}</span>
+					</nav>
+				)}
 				<div className="mb-5 flex items-center gap-3">
 					<div className="relative">
 						<select
@@ -160,7 +215,9 @@ export function FolderDialog({
 						maxLength={60}
 						className="focus-ring min-w-0 flex-1 rounded-xl bg-transparent px-2 py-1 text-xl font-semibold"
 					/>
-					<span className="text-sm text-muted">{order.length}</span>
+					<span className="shrink-0 text-xs text-muted">
+						{folderSummary(order)}
+					</span>
 				</div>
 
 				<DndContext
@@ -196,15 +253,31 @@ export function FolderDialog({
 								}
 								className="focus-ring grid aspect-square place-items-center rounded-2xl border-2 border-dashed border-line text-muted transition hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:text-ink"
 								aria-label="Add link to folder"
+								title="Add a link"
 							>
 								<Plus className="size-5" />
+							</button>
+							<button
+								type="button"
+								onClick={() =>
+									openDialog({
+										type: "new-folder",
+										groupId: folder.groupId,
+										parentId: folder.id,
+									})
+								}
+								className="focus-ring grid aspect-square place-items-center rounded-2xl border-2 border-dashed border-line text-muted transition hover:border-[color-mix(in_srgb,var(--accent)_50%,transparent)] hover:text-ink"
+								aria-label="New folder inside"
+								title="New folder inside"
+							>
+								<FolderPlus className="size-5" />
 							</button>
 						</div>
 					</SortableContext>
 				</DndContext>
 				{order.length === 0 && (
 					<p className="mt-2 text-center text-sm text-muted">
-						Empty folder. Drag links onto it or add one here.
+						Empty folder. Drag links onto it, or add a link or folder here.
 					</p>
 				)}
 
@@ -218,16 +291,16 @@ export function FolderDialog({
 							}
 						/>
 					</div>
-					{order.length > 0 && (
+					{links.length > 0 && (
 						<button
 							type="button"
 							className="btn-outline"
 							title={
-								folder.incognito || order.some(isIncognito)
-									? "Open all in a private window"
-									: "Open all in new tabs"
+								folder.incognito || links.some(isIncognito)
+									? `Open all ${links.length} in a private window`
+									: `Open all ${links.length} in new tabs`
 							}
-							onClick={() => openAll(order)}
+							onClick={() => openAll(links)}
 						>
 							{folder.incognito ? (
 								<VenetianMask className="size-4" />
@@ -239,6 +312,29 @@ export function FolderDialog({
 					)}
 				</div>
 
+				{found && (
+					<label className="mt-4 flex items-center gap-2 text-sm">
+						<span className="shrink-0 text-muted">Inside</span>
+						<select
+							className="field"
+							value={folder.parentId ?? ""}
+							onChange={(event) =>
+								rename.mutate({
+									id: folder.id,
+									parentId: event.target.value || null,
+								})
+							}
+						>
+							<option value="">{found.group.name} (top level)</option>
+							{destinations.map(({ item, depth }) => (
+								<option key={item.id} value={item.id}>
+									{`${"\u00a0\u00a0\u00a0".repeat(depth + 1)}${item.icon ?? "📁"} ${item.title}`}
+								</option>
+							))}
+						</select>
+					</label>
+				)}
+
 				<div className="mt-4 flex flex-wrap items-center gap-2">
 					{confirming ? (
 						<>
@@ -247,7 +343,7 @@ export function FolderDialog({
 								className="btn-outline"
 								onClick={() => remove.mutate({ id: folder.id })}
 							>
-								Keep links, remove folder
+								Keep what's inside, remove folder
 							</button>
 							<button
 								type="button"
@@ -285,11 +381,27 @@ export function FolderDialog({
 	);
 }
 
+/** Every folder in a tree with its depth (for "move to" pickers). */
+function walkFolders(
+	items: TreeItem[],
+	depth = 0,
+): { item: TreeItem; depth: number }[] {
+	return items
+		.filter((item) => item.kind === "folder")
+		.flatMap((item) => [
+			{ item, depth },
+			...walkFolders(item.children, depth + 1),
+		]);
+}
+
 export function NewFolderDialog({
 	groupId,
+	parentId,
 	onClose,
 }: {
 	groupId: string;
+	/** Create it inside this folder. */
+	parentId?: string;
 	onClose: () => void;
 }) {
 	const [title, setTitle] = useState("");
@@ -305,19 +417,24 @@ export function NewFolderDialog({
 		onSuccess: (folder) => openDialog({ type: "folder", folderId: folder.id }),
 	});
 	return (
-		<Modal open onClose={onClose} title="New folder">
+		<Modal
+			open
+			onClose={onClose}
+			title={parentId ? "New folder inside" : "New folder"}
+		>
 			<form
 				className="space-y-4"
 				onSubmit={(event) => {
 					event.preventDefault();
 					if (!sealHere) {
-						create.mutate({ groupId, title, icon, incognito });
+						create.mutate({ groupId, parentId, title, icon, incognito });
 						return;
 					}
 					sealContents({ title, icon })
 						.then((sealed) =>
 							create.mutate({
 								groupId,
+								parentId,
 								title: "Locked folder",
 								incognito,
 								sealed,

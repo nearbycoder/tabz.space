@@ -17,7 +17,7 @@ import {
 	updateBoard,
 } from "#/server/home";
 import { ShareBoard } from "./ShareBoard";
-import type { HomeBoard } from "./types";
+import { flattenTree, type HomeBoard } from "./types";
 
 const ICONS = [
 	"🏠",
@@ -86,7 +86,7 @@ export function BoardDialog({
 							let items: Parameters<typeof updateBoard>[0]["data"]["items"];
 							if (crossing) {
 								const rows = board.groups.flatMap((group) =>
-									group.bookmarks.flatMap((item) => [item, ...item.children]),
+									flattenTree(group.bookmarks),
 								);
 								try {
 									items = await Promise.all(

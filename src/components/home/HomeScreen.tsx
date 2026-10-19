@@ -46,10 +46,14 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
 import {
 	type DialogState,
+	findInTree,
 	type HomeBoard,
 	type HomeGroup,
 	isLinksGroup,
 	type LinkItem,
+	linksIn,
+	mapTree,
+	type TreeItem,
 } from "./types";
 import { useLockVault, VaultUnlockDialog } from "./Vault";
 
@@ -335,14 +339,15 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		() =>
 			boards.flatMap((b) =>
 				b.groups.flatMap((group) =>
-					group.bookmarks.flatMap((item) =>
-						item.kind === "folder"
-							? item.children.map((bookmark) => ({
-									bookmark,
-									group: `${group.name} / ${item.title}`,
-								}))
-							: [{ bookmark: item as LinkItem, group: group.name }],
-					),
+					linksIn(group.bookmarks).map((bookmark) => ({
+						bookmark: bookmark as LinkItem,
+						group: [
+							group.name,
+							...(findInTree(group.bookmarks, bookmark.id)?.path.map(
+								(folder) => folder.title,
+							) ?? []),
+						].join(" / "),
+					})),
 				),
 			),
 		[boards],
@@ -372,10 +377,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								...b,
 								groups: b.groups.map((g) => ({
 									...g,
-									bookmarks: g.bookmarks.map((item) => ({
-										...visited(item),
-										children: item.children.map(visited),
-									})),
+									bookmarks: mapTree(g.bookmarks, visited),
 								})),
 							})),
 						}
@@ -385,17 +387,21 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[queryClient],
 	);
 
-	const incognitoFolders = useMemo(
-		() =>
-			new Set(
-				boards
-					.flatMap((b) => b.groups)
-					.flatMap((g) => g.bookmarks)
-					.filter((item) => item.kind === "folder" && item.incognito)
-					.map((item) => item.id),
-			),
-		[boards],
-	);
+	// Folders that are private themselves or sit inside a private folder.
+	const incognitoFolders = useMemo(() => {
+		const ids = new Set<string>();
+		const walk = (items: TreeItem[], inherited: boolean) => {
+			for (const item of items) {
+				if (item.kind !== "folder") continue;
+				const privateHere = inherited || item.incognito;
+				if (privateHere) ids.add(item.id);
+				walk(item.children, privateHere);
+			}
+		};
+		for (const group of boards.flatMap((b) => b.groups))
+			walk(group.bookmarks, false);
+		return ids;
+	}, [boards]);
 
 	const isIncognito = useCallback(
 		(bookmark: LinkItem) =>
@@ -714,10 +720,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						/>
 					)}
 				{dialog?.type === "folder" && (
-					<FolderDialog folderId={dialog.folderId} onClose={close} />
+					<FolderDialog
+						key={dialog.folderId}
+						folderId={dialog.folderId}
+						onClose={close}
+					/>
 				)}
 				{dialog?.type === "new-folder" && (
-					<NewFolderDialog groupId={dialog.groupId} onClose={close} />
+					<NewFolderDialog
+						groupId={dialog.groupId}
+						parentId={dialog.parentId}
+						onClose={close}
+					/>
 				)}
 				{dialog?.type === "group" && (
 					<GroupDialog

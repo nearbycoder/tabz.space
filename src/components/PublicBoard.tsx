@@ -60,9 +60,13 @@ function FolderRow({ item }: { item: Item }) {
 			</button>
 			{open && (
 				<div className="ml-4 border-l border-line pl-2">
-					{item.children.map((child) => (
-						<LinkRow key={child.url + child.title} item={child} />
-					))}
+					{item.children.map((child) =>
+						child.kind === "folder" ? (
+							<FolderRow key={child.title + child.url} item={child} />
+						) : (
+							<LinkRow key={child.url + child.title} item={child} />
+						),
+					)}
 				</div>
 			)}
 		</div>
