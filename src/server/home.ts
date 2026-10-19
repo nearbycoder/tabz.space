@@ -431,7 +431,10 @@ export const createBookmark = createServerFn({ method: "POST" })
 			groupId: idSchema,
 			url: z.string().max(2048),
 			// Favicon already discovered by a prior `lookupUrl` call.
-			favicon: z.url({ protocol: /^https?$/ }).max(2048).optional(),
+			favicon: z
+				.url({ protocol: /^https?$/ })
+				.max(2048)
+				.optional(),
 			...bookmarkFields,
 		}),
 	)

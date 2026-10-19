@@ -11,9 +11,14 @@ export default defineConfig({
 	server: {
 		port: 3000,
 	},
-	plugins: [nitro({
+	plugins: [
+		nitro({
 			// One server bundle: Rolldown's lib-chunk splitting produced a circular
 			// import ("__commonJSMin is not a function") at boot.
 			inlineDynamicImports: true,
-		}), tailwindcss(), tanstackStart(), viteReact()],
+		}),
+		tailwindcss(),
+		tanstackStart(),
+		viteReact(),
+	],
 });
