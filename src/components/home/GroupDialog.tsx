@@ -147,7 +147,12 @@ export function GroupDialog({
 	};
 
 	return (
-		<Modal open onClose={onClose} title={group ? "Edit group" : "New group"}>
+		<Modal
+			open
+			onClose={onClose}
+			title={group ? "Edit group" : "New group"}
+			wide={kind === "widget"}
+		>
 			<form
 				className="space-y-4"
 				onSubmit={(event) => {

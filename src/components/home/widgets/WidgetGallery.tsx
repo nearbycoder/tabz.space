@@ -146,7 +146,7 @@ export function WidgetGallery({
 			{(category === "all" || category === "mine") && mine.length > 0 && (
 				<section className="space-y-1.5">
 					<h3 className="text-xs font-medium text-muted">⭐ My widgets</h3>
-					<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+					<div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
 						{mine.map((item) => (
 							<Card
 								key={item.id}
@@ -168,7 +168,7 @@ export function WidgetGallery({
 					<h3 className="text-xs font-medium text-muted">
 						{WIDGET_CATEGORIES[section.key]}
 					</h3>
-					<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+					<div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
 						{section.items.map(([type, meta]) => (
 							<Card
 								key={type}

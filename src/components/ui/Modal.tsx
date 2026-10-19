@@ -16,6 +16,8 @@ type Props = {
 	title: string;
 	children: ReactNode;
 	side?: boolean;
+	/** A roomier centered card, e.g. for galleries and editors. */
+	wide?: boolean;
 	className?: string;
 };
 
@@ -29,6 +31,7 @@ export function Modal({
 	title,
 	children,
 	side,
+	wide,
 	className,
 }: Props) {
 	// With the keyboard up, the sheet sits exactly in the visible area above it.
@@ -110,7 +113,9 @@ export function Modal({
 					"animate-sheet relative flex w-full flex-col overflow-hidden rounded-t-[1.75rem] border border-line bg-surface-2 shadow-2xl backdrop-blur-xl sm:animate-pop",
 					side
 						? "max-h-[92dvh] sm:h-full sm:max-h-none sm:max-w-md sm:rounded-none"
-						: "max-h-[88dvh] sm:max-h-[80vh] sm:max-w-md sm:rounded-3xl",
+						: wide
+							? "max-h-[88dvh] sm:max-h-[86vh] sm:max-w-3xl sm:rounded-3xl"
+							: "max-h-[88dvh] sm:max-h-[80vh] sm:max-w-md sm:rounded-3xl",
 					className,
 				)}
 				ref={sheet}
