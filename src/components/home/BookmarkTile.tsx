@@ -1,7 +1,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Folder, Pencil } from "lucide-react";
+import { Folder, Pencil, VenetianMask } from "lucide-react";
 import { type MouseEvent, type ReactNode, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { screenshotFor } from "#/lib/appearance";
@@ -137,7 +137,9 @@ function FolderMosaic({
 }
 
 export function TileBody({ item, style, size, overlay }: Props) {
-	const { editing, settings, openDialog, onVisit } = useHomeContext();
+	const { editing, settings, openDialog, onVisit, isIncognito, openLink } =
+		useHomeContext();
+	const incognito = isIncognito(item);
 	const isFolder = item.kind === "folder";
 	const tilt = useTilt(
 		settings.tilt &&
@@ -161,6 +163,12 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		if (editing) {
 			event.preventDefault();
 			openDialog({ type: "bookmark", groupId: item.groupId, bookmark: item });
+			return;
+		}
+		if (incognito) {
+			// Never let the browser open a private link in a normal tab.
+			event.preventDefault();
+			openLink(item);
 			return;
 		}
 		onVisit(item);
@@ -230,11 +238,13 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			</>
 		);
 	} else if (style === "gallery") {
-		const image = isFolder
-			? null
-			: !imageFailed && item.meta.image
-				? item.meta.image
-				: screenshotFor(item.url);
+		// Private links don't send their URL to the screenshot service.
+		const image =
+			isFolder || incognito
+				? null
+				: !imageFailed && item.meta.image
+					? item.meta.image
+					: screenshotFor(item.url);
 		body = (
 			// biome-ignore lint/a11y/noStaticElementInteractions: mouse tracking only drives the visual tilt
 			<span
@@ -266,7 +276,18 @@ export function TileBody({ item, style, size, overlay }: Props) {
 						/>
 					) : (
 						<span className="grid size-2/3 place-items-center">
-							<FolderMosaic folder={item} />
+							{isFolder ? (
+								<FolderMosaic folder={item} />
+							) : (
+								<Favicon
+									url={item.url}
+									icon={item.icon}
+									favicon={item.meta.favicon}
+									title={item.title}
+									color={item.color}
+									className="size-12 rounded-xl text-4xl"
+								/>
+							)}
 						</span>
 					)}
 				</span>
@@ -340,6 +361,12 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			rel="noopener noreferrer"
 			draggable={false}
 			onClick={open}
+			onAuxClick={(event) => {
+				if (incognito && event.button === 1) {
+					event.preventDefault();
+					openLink(item);
+				}
+			}}
 			className={cn(
 				"focus-ring block rounded-2xl",
 				overlay && "pointer-events-none",
@@ -356,10 +383,18 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			) : (
 				<LinkPreview
 					bookmark={item}
-					enabled={settings.linkPreviews && !editing}
+					enabled={settings.linkPreviews && !editing && !incognito}
 				>
 					{link}
 				</LinkPreview>
+			)}
+			{incognito && (
+				<span
+					title="Opens in a private window"
+					className="pointer-events-none absolute -top-1.5 -left-1.5 z-10 grid size-6 place-items-center rounded-full border border-line bg-surface-2 text-ink shadow-sm"
+				>
+					<VenetianMask className="size-3.5" />
+				</span>
 			)}
 			{!overlay && (
 				<button

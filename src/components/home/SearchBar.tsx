@@ -4,6 +4,7 @@ import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
+import { useHomeContext } from "./context";
 import type { LinkItem } from "./types";
 
 type Result =
@@ -15,7 +16,6 @@ type Props = {
 	bookmarks: { bookmark: LinkItem; group: string }[];
 	engine: SearchEngine;
 	openInNewTab: boolean;
-	onVisit: (bookmark: LinkItem) => void;
 };
 
 const score = (bookmark: LinkItem, terms: string[]) => {
@@ -28,7 +28,8 @@ const score = (bookmark: LinkItem, terms: string[]) => {
 	);
 };
 
-export function SearchBar({ bookmarks, engine, openInNewTab, onVisit }: Props) {
+export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
+	const { openLink } = useHomeContext();
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
 	const [focused, setFocused] = useState(false);
@@ -83,8 +84,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab, onVisit }: Props) {
 	const choose = (result: Result | undefined) => {
 		if (!result) return;
 		if (result.kind === "bookmark") {
-			onVisit(result.bookmark);
-			open(result.bookmark.url, openInNewTab);
+			openLink(result.bookmark);
 		} else if (result.kind === "url") {
 			open(result.url, openInNewTab);
 		} else {

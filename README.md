@@ -51,6 +51,10 @@ A per-user hidden space for links you don't want anyone snooping on.
 - Unlocking issues a short-lived `tabz_vault` cookie (httpOnly, SameSite=Strict, HMAC-signed with `BETTER_AUTH_SECRET`). Auto-lock happens after 5 min to 4 h, or immediately with the lock button.
 - Code: `src/server/vault.ts`, `src/server/vault-token.ts`, and the `VaultAccess` Effect reference in `src/server/vault-access.ts` (consumed by `library.ts`).
 
+## Incognito links
+
+Mark a link, or a whole folder, as always-incognito, or switch on "Open every link in incognito" (Customize → Home). Web pages can't open private windows, so the browser extension does it: its content script (`extension/bridge.js`, injected only on tabz.space) relays requests to the background worker, which calls `chrome.windows.create({ incognito: true })`. This needs "Allow in Incognito" switched on for the extension. Without the extension, tabz never falls back to a normal tab; it offers to copy the link instead. Private links skip visit tracking, hover previews and screenshot thumbnails.
+
 ## Data model
 
 `user → boards → groups → bookmarks` are relational tables (folders are bookmark rows with `kind = "folder"`; links point at them via `parent_id`, one level deep) (ownership checks, ordering, cascades). Everything a user customizes is stored as JSON documents (`user_settings.settings`, `boards.layout`, `groups.options`, `bookmarks.meta/tags`) and validated with Zod in `src/lib/preferences.ts`, so new options don't need migrations.

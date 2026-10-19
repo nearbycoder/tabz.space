@@ -130,6 +130,8 @@ export const userSettingsSchema = z.object({
 	greetingName: z.string().max(40).default(""),
 	showTopSites: z.boolean().default(true),
 	openInNewTab: z.boolean(),
+	/** Open every link in a private window (needs the browser extension). */
+	incognitoAll: z.boolean().default(false),
 	linkPreviews: z.boolean().default(true),
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
@@ -164,6 +166,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	greetingName: "",
 	showTopSites: true,
 	openInNewTab: false,
+	incognitoAll: false,
 	linkPreviews: true,
 	celebrate: true,
 	tilt: true,

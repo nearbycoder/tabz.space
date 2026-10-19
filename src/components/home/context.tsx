@@ -8,6 +8,10 @@ type HomeContextValue = {
 	editing: boolean;
 	openDialog: (dialog: DialogState) => void;
 	onVisit: (bookmark: LinkItem) => void;
+	/** Whether a link opens privately (its own flag, its folder's, or the global setting). */
+	isIncognito: (bookmark: LinkItem) => boolean;
+	/** Opens a link the right way: private window, new tab or same tab. */
+	openLink: (bookmark: LinkItem, options?: { newTab?: boolean }) => void;
 };
 
 export const HomeContext = createContext<HomeContextValue | null>(null);

@@ -30,6 +30,11 @@ import { parseBookmarkHtml, toBookmarkHtml } from "#/lib/bookmark-file";
 import { cn } from "#/lib/cn";
 import { homeKey, useHomeAction, useSaveSettings } from "#/lib/home-query";
 import {
+	type ExtensionStatus,
+	getExtensionStatus,
+	onExtensionStatus,
+} from "#/lib/incognito";
+import {
 	ACCENTS,
 	BACKGROUNDS,
 	type BoardLayout,
@@ -101,6 +106,32 @@ function Bookmarklet() {
 		>
 			＋ Add to tabz
 		</a>
+	);
+}
+
+/** Shows whether the tabz extension can open private windows. */
+function ExtensionStatusRow() {
+	const [status, setStatus] = useState<ExtensionStatus>(getExtensionStatus);
+	useEffect(() => onExtensionStatus(setStatus), []);
+	const [tone, text] = !status.installed
+		? [
+				"bg-amber-500",
+				"Extension not detected. Install it to open private links in one click.",
+			]
+		: !status.incognitoAllowed
+			? [
+					"bg-amber-500",
+					'Extension found. Turn on "Allow in Incognito" in chrome://extensions → Tabz → Details.',
+				]
+			: [
+					"bg-emerald-500",
+					"Extension ready: private links open in an incognito window.",
+				];
+	return (
+		<div className="flex items-start gap-2 rounded-xl border border-line p-3 text-xs">
+			<span className={cn("mt-1 size-2 shrink-0 rounded-full", tone)} />
+			<span className="text-muted">{text}</span>
+		</div>
 	);
 }
 
@@ -703,6 +734,19 @@ export function SettingsPanel({
 							checked={settings.openInNewTab}
 							onChange={(openInNewTab) => set({ openInNewTab })}
 						/>
+					</Section>
+					<Section title="Private browsing">
+						<Toggle
+							label="🕶️ Open every link in incognito"
+							checked={settings.incognitoAll}
+							onChange={(incognitoAll) => set({ incognitoAll })}
+						/>
+						<p className="text-xs text-muted">
+							You can also mark single links (in their edit dialog) or whole
+							folders as always-incognito. Private links skip visit tracking and
+							previews.
+						</p>
+						<ExtensionStatusRow />
 					</Section>
 				</div>
 			)}

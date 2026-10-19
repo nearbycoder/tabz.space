@@ -13,6 +13,7 @@ import { call } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
 import { useHome, useSaveSettings } from "#/lib/home-query";
+import { openIncognito } from "#/lib/incognito";
 import { applyTheme } from "#/lib/theme";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
@@ -163,9 +164,52 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		Effect.runFork(call(recordVisit, { id: bookmark.id }).pipe(Effect.ignore));
 	}, []);
 
+	const incognitoFolders = useMemo(
+		() =>
+			new Set(
+				boards
+					.flatMap((b) => b.groups)
+					.flatMap((g) => g.bookmarks)
+					.filter((item) => item.kind === "folder" && item.incognito)
+					.map((item) => item.id),
+			),
+		[boards],
+	);
+
+	const isIncognito = useCallback(
+		(bookmark: LinkItem) =>
+			settings.incognitoAll ||
+			bookmark.incognito ||
+			(bookmark.parentId !== null && incognitoFolders.has(bookmark.parentId)),
+		[settings.incognitoAll, incognitoFolders],
+	);
+
+	const openLink = useCallback(
+		(bookmark: LinkItem, options?: { newTab?: boolean }) => {
+			// Private links skip visit tracking so they never surface in "most visited".
+			if (isIncognito(bookmark)) {
+				openIncognito([bookmark.url]);
+				return;
+			}
+			onVisit(bookmark);
+			if (options?.newTab || settings.openInNewTab)
+				window.open(bookmark.url, "_blank", "noopener");
+			else window.location.assign(bookmark.url);
+		},
+		[isIncognito, onVisit, settings.openInNewTab],
+	);
+
 	const context = useMemo(
-		() => ({ settings, boards, editing, openDialog: setDialog, onVisit }),
-		[settings, boards, editing, onVisit],
+		() => ({
+			settings,
+			boards,
+			editing,
+			openDialog: setDialog,
+			onVisit,
+			isIncognito,
+			openLink,
+		}),
+		[settings, boards, editing, onVisit, isIncognito, openLink],
 	);
 
 	if (!board) return null;
@@ -316,7 +360,6 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								bookmarks={links}
 								engine={settings.searchEngine}
 								openInNewTab={settings.openInNewTab}
-								onVisit={onVisit}
 							/>
 						)}
 						<TopSites links={links.map((entry) => entry.bookmark)} />

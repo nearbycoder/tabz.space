@@ -85,7 +85,8 @@ export function CommandPalette({
 	onSaveSettings,
 	onLockVault,
 }: Props) {
-	const { boards, settings, openDialog, onVisit } = useHomeContext();
+	const { boards, settings, openDialog, openLink, isIncognito } =
+		useHomeContext();
 	const [query, setQuery] = useState("");
 	const newTab = useRef(false);
 
@@ -139,10 +140,7 @@ export function CommandPalette({
 		else window.location.assign(url);
 	};
 	const visit = (bookmark: LinkItem) =>
-		run(() => {
-			onVisit(bookmark);
-			openUrl(bookmark.url);
-		});
+		run(() => openLink(bookmark, { newTab: newTab.current }));
 	const firstGroup = board.groups[0]?.id;
 	const trimmed = query.trim();
 	const typedUrl =
@@ -259,7 +257,11 @@ export function CommandPalette({
 												className="size-4 rounded text-sm"
 											/>
 										}
-										hint={hostnameOf(bookmark.url)}
+										hint={
+											isIncognito(bookmark)
+												? "🕶️ private"
+												: hostnameOf(bookmark.url)
+										}
 									>
 										<span className="font-medium">{bookmark.title}</span>
 										<span className="ml-2 text-xs text-muted">{path}</span>

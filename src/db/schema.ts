@@ -124,6 +124,10 @@ export const bookmarks = sqliteTable(
 		),
 		title: text("title").notNull(),
 		url: text("url").notNull(),
+		/** Always open in a private window (on folders: applies to everything inside). */
+		incognito: integer("incognito", { mode: "boolean" })
+			.default(false)
+			.notNull(),
 		description: text("description"),
 		icon: text("icon"),
 		color: text("color"),

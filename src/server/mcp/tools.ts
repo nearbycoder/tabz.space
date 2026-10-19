@@ -233,7 +233,7 @@ export function createTabzMcpServer(userId: string) {
 		{
 			title: "Update bookmark",
 			description:
-				"Edit a bookmark's URL, title, description, tags, color or icon, or move it to another group or into/out of a folder.",
+				"Edit a bookmark or folder: URL, title, description, tags, color, icon, always-incognito, or move it to another group or into/out of a folder.",
 			inputSchema: z.object({
 				id: z.string(),
 				url: z.string().max(2048).optional(),
@@ -253,6 +253,12 @@ export function createTabzMcpServer(userId: string) {
 					.nullable()
 					.optional()
 					.describe("Emoji or image URL"),
+				incognito: z
+					.boolean()
+					.optional()
+					.describe(
+						"Always open in a private window. On a folder, applies to everything inside it.",
+					),
 			}),
 			annotations: { idempotentHint: true },
 		},

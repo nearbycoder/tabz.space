@@ -1,6 +1,6 @@
 import { Loader2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ColorSwatches, Field } from "#/components/ui/controls";
+import { ColorSwatches, Field, Toggle } from "#/components/ui/controls";
 import { Favicon } from "#/components/ui/Favicon";
 import { Modal } from "#/components/ui/Modal";
 import { call, run } from "#/lib/api";
@@ -47,6 +47,7 @@ export function BookmarkForm({
 	const [description, setDescription] = useState(bookmark?.description ?? "");
 	const [icon, setIcon] = useState(bookmark?.icon ?? "");
 	const [color, setColor] = useState<string | null>(bookmark?.color ?? null);
+	const [incognito, setIncognito] = useState(bookmark?.incognito ?? false);
 	const [targetGroup, setTargetGroup] = useState(bookmark?.groupId ?? groupId);
 	const [targetFolder, setTargetFolder] = useState<string | null>(
 		bookmark?.parentId ?? parentId ?? null,
@@ -132,6 +133,7 @@ export function BookmarkForm({
 			description: description.trim() || null,
 			icon: icon.trim() || null,
 			color,
+			incognito,
 		};
 		if (bookmark)
 			update.mutate({
@@ -272,6 +274,18 @@ export function BookmarkForm({
 					</select>
 				</Field>
 			)}
+			<Toggle
+				label="🕶️ Always open in incognito"
+				checked={incognito}
+				onChange={setIncognito}
+			/>
+			{!incognito &&
+				targetFolder &&
+				folders.find((f) => f.id === targetFolder)?.incognito && (
+					<p className="-mt-2 text-xs text-muted">
+						Opens privately anyway: its folder is set to incognito.
+					</p>
+				)}
 			<Field label="Tint">
 				<ColorSwatches
 					value={color}

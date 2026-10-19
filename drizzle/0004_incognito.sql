@@ -1,0 +1,1 @@
+ALTER TABLE `bookmarks` ADD `incognito` integer DEFAULT false NOT NULL;

@@ -473,6 +473,7 @@ const bookmarkFields = {
 	icon: z.string().trim().max(2048).nullish(),
 	color: colorSchema,
 	tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+	incognito: z.boolean().optional(),
 };
 
 export const lookupUrlInput = z.object({ url: z.string().max(2048) });
@@ -563,6 +564,7 @@ export const createBookmark = (
 					icon: data.icon ?? null,
 					color: data.color ?? null,
 					tags: data.tags ?? [],
+					incognito: data.incognito ?? false,
 					position,
 					meta: {
 						favicon: data.favicon ?? fetched?.favicon ?? faviconFor(url),
@@ -581,6 +583,7 @@ export const createFolderInput = z.object({
 	title: z.string().trim().min(1).max(60),
 	icon: z.string().max(16).nullish(),
 	color: colorSchema,
+	incognito: z.boolean().optional(),
 	/** Existing bookmarks to move into the new folder. */
 	bookmarkIds: z.array(idSchema).max(200).optional(),
 });
@@ -603,6 +606,7 @@ export const createFolder = (
 					url: "",
 					icon: data.icon ?? null,
 					color: data.color ?? null,
+					incognito: data.incognito ?? false,
 					position,
 				})
 				.returning(),
@@ -677,6 +681,7 @@ export const updateBookmark = (
 						icon: data.icon === undefined ? bookmark.icon : data.icon,
 						color: data.color === undefined ? bookmark.color : data.color,
 						tags: data.tags ?? bookmark.tags,
+						incognito: data.incognito ?? bookmark.incognito,
 						meta:
 							url === bookmark.url
 								? bookmark.meta

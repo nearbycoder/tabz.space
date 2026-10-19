@@ -5,6 +5,7 @@ Adds the current page to your tabz.space in one click and (optionally) makes tab
 - **Toolbar button** or **Alt+Shift+T**: opens a small "Add to tabz" window prefilled with the page.
 - **Right-click** a page or link: "Add page to tabz" / "Add link to tabz".
 - **New tab**: opens tabz.space. Turn it off on the options page.
+- **Incognito links**: links or folders marked "always incognito" in tabz open in a private window. To enable this, go to `chrome://extensions` → Tabz → Details and switch on **Allow in Incognito**.
 
 It reuses your normal tabz.space login, so there are no API tokens to set up.
 

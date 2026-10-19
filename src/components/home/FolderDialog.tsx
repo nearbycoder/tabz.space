@@ -13,13 +13,20 @@ import {
 	SortableContext,
 	sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import {
+	ExternalLink,
+	Loader2,
+	Plus,
+	Trash2,
+	VenetianMask,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Field } from "#/components/ui/controls";
+import { Field, Toggle } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
+import { openIncognito } from "#/lib/incognito";
 import type { HomeData } from "#/server/home";
 import {
 	arrangeFolder,
@@ -63,7 +70,7 @@ export function FolderDialog({
 	folderId: string;
 	onClose: () => void;
 }) {
-	const { boards, openDialog } = useHomeContext();
+	const { boards, openDialog, isIncognito } = useHomeContext();
 	const folder = findFolder({ boards }, folderId);
 	const [title, setTitle] = useState(folder?.title ?? "");
 	const [order, setOrder] = useState(folder?.children ?? []);
@@ -192,7 +199,45 @@ export function FolderDialog({
 					</p>
 				)}
 
-				<div className="mt-6 flex flex-wrap items-center gap-2">
+				<div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+					<div className="min-w-0 flex-1">
+						<Toggle
+							label="🕶️ Open everything here in incognito"
+							checked={folder.incognito}
+							onChange={(incognito) =>
+								rename.mutate({ id: folder.id, incognito })
+							}
+						/>
+					</div>
+					{order.length > 0 && (
+						<button
+							type="button"
+							className="btn-outline"
+							title={
+								folder.incognito || order.some(isIncognito)
+									? "Open all in a private window"
+									: "Open all in new tabs"
+							}
+							onClick={() => {
+								const urls = order.map((c) => c.url);
+								if (folder.incognito || order.every(isIncognito))
+									openIncognito(urls);
+								else
+									for (const url of urls)
+										window.open(url, "_blank", "noopener");
+							}}
+						>
+							{folder.incognito ? (
+								<VenetianMask className="size-4" />
+							) : (
+								<ExternalLink className="size-4" />
+							)}{" "}
+							Open all
+						</button>
+					)}
+				</div>
+
+				<div className="mt-4 flex flex-wrap items-center gap-2">
 					{confirming ? (
 						<>
 							<button
@@ -247,6 +292,7 @@ export function NewFolderDialog({
 }) {
 	const [title, setTitle] = useState("");
 	const [icon, setIcon] = useState(FOLDER_ICONS[0]);
+	const [incognito, setIncognito] = useState(false);
 	const { openDialog } = useHomeContext();
 	const create = useHomeAction(createFolder, {
 		onSuccess: (folder) => openDialog({ type: "folder", folderId: folder.id }),
@@ -257,7 +303,7 @@ export function NewFolderDialog({
 				className="space-y-4"
 				onSubmit={(event) => {
 					event.preventDefault();
-					create.mutate({ groupId, title, icon });
+					create.mutate({ groupId, title, icon, incognito });
 				}}
 			>
 				<Field label="Name">
@@ -289,6 +335,11 @@ export function NewFolderDialog({
 						))}
 					</div>
 				</Field>
+				<Toggle
+					label="🕶️ Open everything here in incognito"
+					checked={incognito}
+					onChange={setIncognito}
+				/>
 				<div className="flex justify-end gap-2 pt-2">
 					<button type="button" className="btn-ghost" onClick={onClose}>
 						Cancel

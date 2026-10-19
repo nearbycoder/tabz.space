@@ -4,9 +4,9 @@ import type { LinkItem } from "./types";
 
 /** Your most-visited links, learned automatically from clicks. */
 export function TopSites({ links }: { links: LinkItem[] }) {
-	const { settings, onVisit } = useHomeContext();
+	const { settings, onVisit, isIncognito } = useHomeContext();
 	const top = links
-		.filter((link) => link.visitCount > 0)
+		.filter((link) => link.visitCount > 0 && !isIncognito(link))
 		.sort((a, b) => b.visitCount - a.visitCount)
 		.slice(0, 8);
 	if (!settings.showTopSites || top.length < 3) return null;
