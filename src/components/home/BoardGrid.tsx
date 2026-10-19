@@ -45,10 +45,15 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 	const itemsRef = useRef(items);
 	itemsRef.current = items;
 
-	// Follow server data whenever we're not mid-drag.
+	// A drop is shown right away; until its save settles, keep that order
+	// rather than snapping back to the not-yet-updated server data.
+	const [settling, setSettling] = useState(false);
+	const settle = { onSettled: () => setSettling(false) };
+
+	// Follow server data whenever we're not mid-drag or mid-save.
 	useEffect(() => {
-		if (!activeId) setItems(board.groups);
-	}, [board.groups, activeId]);
+		if (!activeId && !settling) setItems(board.groups);
+	}, [board.groups, activeId, settling]);
 
 	const withBoardGroups = <T extends { boards: HomeBoard[] }>(
 		data: T,
@@ -194,7 +199,8 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 			if (from < 0 || to < 0 || from === to) return;
 			const next = arrayMove(items, from, to);
 			setItems(next);
-			persistGroups.mutate({ ids: next.map((g) => g.id) });
+			setSettling(true);
+			persistGroups.mutate({ ids: next.map((g) => g.id) }, settle);
 			return;
 		}
 
@@ -222,10 +228,14 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 			}));
 			setItems(next);
 			itemsRef.current = next;
-			moveIntoFolder.mutate({
-				folderId,
-				ids: [...folder.children.map((c) => c.id), activeKey],
-			});
+			setSettling(true);
+			moveIntoFolder.mutate(
+				{
+					folderId,
+					ids: [...folder.children.map((c) => c.id), activeKey],
+				},
+				settle,
+			);
 			return;
 		}
 
@@ -258,12 +268,16 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 			?.bookmarks.map((b) => b.id)
 			.join();
 		if (touched.size === 1 && original === current) return;
-		persistBookmarks.mutate({
-			groups: [...touched].map((id) => ({
-				groupId: id,
-				ids: next.find((g) => g.id === id)?.bookmarks.map((b) => b.id) ?? [],
-			})),
-		});
+		setSettling(true);
+		persistBookmarks.mutate(
+			{
+				groups: [...touched].map((id) => ({
+					groupId: id,
+					ids: next.find((g) => g.id === id)?.bookmarks.map((b) => b.id) ?? [],
+				})),
+			},
+			settle,
+		);
 	};
 
 	const activeItem =
