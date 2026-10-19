@@ -103,7 +103,8 @@ function DemoVideo() {
 	return (
 		<video
 			ref={ref}
-			src={load ? `${MEDIA}/demo.mp4` : undefined}
+			// Served with byte ranges (src/routes/media/demo.ts) so Safari plays it.
+			src={load ? "/media/demo" : undefined}
 			poster={`${MEDIA}/hero.webp`}
 			width={1280}
 			height={800}

@@ -19,6 +19,7 @@ import { Route as ApiIconRouteImport } from './routes/api/icon'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as ApiVisitRouteImport } from './routes/api/visit'
 import { Route as BSlugRouteImport } from './routes/b.$slug'
+import { Route as MediaDemoRouteImport } from './routes/media/demo'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiChannelsEmailRouteImport } from './routes/api/channels/email'
 import { Route as ApiChannelsTelegramRouteImport } from './routes/api/channels/telegram'
@@ -75,6 +76,11 @@ const BSlugRoute = BSlugRouteImport.update({
   path: '/b/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MediaDemoRoute = MediaDemoRouteImport.update({
+  id: '/media/demo',
+  path: '/media/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/api/mcp': typeof ApiMcpRoute
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
+  '/media/demo': typeof MediaDemoRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -129,6 +136,7 @@ export interface FileRoutesByTo {
   '/api/mcp': typeof ApiMcpRoute
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
+  '/media/demo': typeof MediaDemoRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/api/mcp': typeof ApiMcpRoute
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
+  '/media/demo': typeof MediaDemoRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/visit'
     | '/b/$slug'
+    | '/media/demo'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/visit'
     | '/b/$slug'
+    | '/media/demo'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/api/mcp'
     | '/api/visit'
     | '/b/$slug'
+    | '/media/demo'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -218,6 +230,7 @@ export interface RootRouteChildren {
   ApiMcpRoute: typeof ApiMcpRoute
   ApiVisitRoute: typeof ApiVisitRoute
   BSlugRoute: typeof BSlugRoute
+  MediaDemoRoute: typeof MediaDemoRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiChannelsEmailRoute: typeof ApiChannelsEmailRoute
   ApiChannelsTelegramRoute: typeof ApiChannelsTelegramRoute
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/media/demo': {
+      id: '/media/demo'
+      path: '/media/demo'
+      fullPath: '/media/demo'
+      preLoaderRoute: typeof MediaDemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -346,6 +366,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMcpRoute: ApiMcpRoute,
   ApiVisitRoute: ApiVisitRoute,
   BSlugRoute: BSlugRoute,
+  MediaDemoRoute: MediaDemoRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiChannelsEmailRoute: ApiChannelsEmailRoute,
   ApiChannelsTelegramRoute: ApiChannelsTelegramRoute,
