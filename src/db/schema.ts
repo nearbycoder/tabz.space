@@ -3,6 +3,7 @@ import {
 	type AnySQLiteColumn,
 	index,
 	integer,
+	primaryKey,
 	sqliteTable,
 	text,
 } from "drizzle-orm/sqlite-core";
@@ -66,6 +67,8 @@ export const boards = sqliteTable(
 		layout: json<BoardLayout>("layout", DEFAULT_BOARD_LAYOUT),
 		/** Vault boards are only ever returned while the vault is unlocked. */
 		vault: integer("vault", { mode: "boolean" }).default(false).notNull(),
+		/** Soft delete: rows sit in the trash for 30 days before being purged. */
+		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 		...timestamps,
 	},
 	(table) => [index("boards_user_idx").on(table.userId, table.position)],
@@ -92,12 +95,17 @@ export const groups = sqliteTable(
 			.notNull()
 			.references(() => boards.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
+		/** links: bookmarks · smart: saved filter · widget: weather/notes/etc. */
+		kind: text("kind", { enum: ["links", "smart", "widget"] })
+			.default("links")
+			.notNull(),
 		color: text("color"),
 		position: integer("position").default(0).notNull(),
 		collapsed: integer("collapsed", { mode: "boolean" })
 			.default(false)
 			.notNull(),
 		options: json<GroupOptions>("options", {}),
+		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 		...timestamps,
 	},
 	(table) => [index("groups_board_idx").on(table.boardId, table.position)],
@@ -136,6 +144,7 @@ export const bookmarks = sqliteTable(
 		meta: json<BookmarkMeta>("meta", {}),
 		visitCount: integer("visit_count").default(0).notNull(),
 		lastVisitedAt: integer("last_visited_at", { mode: "timestamp_ms" }),
+		deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 		...timestamps,
 	},
 	(table) => [
@@ -148,3 +157,50 @@ export const bookmarks = sqliteTable(
 export type Board = typeof boards.$inferSelect;
 export type Group = typeof groups.$inferSelect;
 export type Bookmark = typeof bookmarks.$inferSelect;
+
+/** A row's values before a change, so the change can be undone. */
+export type Snapshot = {
+	table: "boards" | "groups" | "bookmarks";
+	id: string;
+	values: Record<string, unknown>;
+};
+
+/** Undoable history of changes, newest first. */
+export const activity = sqliteTable(
+	"activity",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		action: text("action").notNull(),
+		label: text("label").notNull(),
+		snapshots: json<Snapshot[]>("snapshots", []),
+		undoneAt: integer("undone_at", { mode: "timestamp_ms" }),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [index("activity_user_idx").on(table.userId, table.createdAt)],
+);
+
+/** People a board is shared with (the owner is boards.userId). */
+export const boardMembers = sqliteTable(
+	"board_members",
+	{
+		boardId: text("board_id")
+			.notNull()
+			.references(() => boards.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		role: text("role", { enum: ["editor", "viewer"] })
+			.default("editor")
+			.notNull(),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [
+		primaryKey({ columns: [table.boardId, table.userId] }),
+		index("board_members_user_idx").on(table.userId),
+	],
+);
+
+export type Activity = typeof activity.$inferSelect;

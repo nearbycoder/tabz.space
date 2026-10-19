@@ -4,6 +4,7 @@ import { Effect, Schedule } from "effect";
 import { FetchError } from "#/lib/effect/errors";
 
 export type PageMetadata = {
+	feedUrl?: string;
 	title?: string;
 	description?: string;
 	favicon?: string;
@@ -156,6 +157,22 @@ const iconHref = (html: string) => {
 	)?.href;
 };
 
+const feedHref = (html: string) => {
+	const links = html.match(/<link\b[^>]*>/gi) ?? [];
+	for (const tag of links) {
+		const type =
+			tag.match(/\btype\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
+		const rel =
+			tag.match(/\brel\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase() ?? "";
+		if (
+			rel.includes("alternate") &&
+			(type.includes("rss") || type.includes("atom"))
+		)
+			return tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+	}
+	return undefined;
+};
+
 export const parseMetadata = (html: string, base: URL): PageMetadata => {
 	const absolute = (href?: string) => {
 		if (!href) return undefined;
@@ -176,6 +193,7 @@ export const parseMetadata = (html: string, base: URL): PageMetadata => {
 		siteName: metaContent(html, "og:site_name"),
 		image: absolute(metaContent(html, "og:image")),
 		favicon: absolute(iconHref(html)),
+		feedUrl: absolute(feedHref(html)),
 	};
 };
 

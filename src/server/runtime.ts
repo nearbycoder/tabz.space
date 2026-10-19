@@ -7,6 +7,7 @@ import {
 	DatabaseError,
 	Unauthorized,
 } from "#/lib/effect/errors";
+import { ensureJobs } from "./jobs";
 import { VaultAccess } from "./vault-access";
 import { cookieValue, readVaultToken, VAULT_COOKIE } from "./vault-token";
 
@@ -44,6 +45,7 @@ const publicMessage = (error: AppError): string => {
 
 /** Runs a server program at the RPC boundary, turning typed failures into plain errors. */
 export async function runServer<A>(program: Effect.Effect<A, AppError>) {
+	ensureJobs();
 	const exit = await Effect.runPromiseExit(
 		program.pipe(
 			Effect.tapError((error) =>

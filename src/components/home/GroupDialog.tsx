@@ -28,6 +28,7 @@ export function GroupDialog({ boards, boardId, group, onClose }: Props) {
 	const create = useHomeAction(createGroup, { onSuccess: onClose });
 	const update = useHomeAction(updateGroup, { onSuccess: onClose });
 	const remove = useHomeAction(deleteGroup, {
+		undoable: () => `Deleted group “${group?.name}”`,
 		optimistic: (data, input) => ({
 			...data,
 			boards: data.boards.map((b) => ({

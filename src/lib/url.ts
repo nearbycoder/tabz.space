@@ -33,3 +33,39 @@ export function titleFromUrl(url: string): string {
 	const name = host.length > 1 ? host[host.length - 2] : host[0];
 	return name.charAt(0).toUpperCase() + name.slice(1);
 }
+
+const TRACKING =
+	/^(utm_\w+|fbclid|gclid|mc_cid|mc_eid|ref|ref_src|igshid|si)$/i;
+
+/**
+ * A comparison key for "is this the same page?": ignores scheme, www, trailing
+ * slashes, fragments and tracking parameters.
+ */
+export function canonicalUrl(input: string): string {
+	try {
+		const url = new URL(input);
+		const params = [...url.searchParams.entries()]
+			.filter(([key]) => !TRACKING.test(key))
+			.sort(([a], [b]) => a.localeCompare(b));
+		const search = params.length
+			? `?${new URLSearchParams(params).toString()}`
+			: "";
+		const path = url.pathname.replace(/\/+$/, "") || "";
+		return `${url.hostname.replace(/^www\./, "").toLowerCase()}${path}${search}`;
+	} catch {
+		return input.trim().toLowerCase();
+	}
+}
+
+/** Pulls every http(s) URL out of free text (one per line, Markdown, HTML…). */
+export function extractUrls(text: string): string[] {
+	const found = text.match(/https?:\/\/[^\s<>"'`)\]]+/gi) ?? [];
+	const bare = text
+		.split(/\s+/)
+		.filter(
+			(token) =>
+				/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(token) && !token.includes("@"),
+		);
+	const all = [...found, ...bare].map((url) => url.replace(/[.,;:!?]+$/, ""));
+	return [...new Set(all)];
+}

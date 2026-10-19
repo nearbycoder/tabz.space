@@ -372,6 +372,15 @@ export type BookmarkMeta = {
 	image?: string;
 	/** When page metadata was last fetched (ms); unset = never looked up. */
 	fetchedAt?: number;
+	/** RSS/Atom feed advertised by the page (powers unread badges). */
+	feedUrl?: string;
+	/** Last link-health check. */
+	health?: {
+		status: "ok" | "broken" | "redirected";
+		code?: number;
+		location?: string;
+		checkedAt: number;
+	};
 };
 
 /** Merges stored (possibly older-shaped) JSON with current defaults. */

@@ -76,7 +76,10 @@ export function FolderDialog({
 
 	const rename = useHomeAction(updateBookmark);
 	const arrange = useHomeAction(arrangeFolder);
-	const remove = useHomeAction(deleteBookmark, { onSuccess: onClose });
+	const remove = useHomeAction(deleteBookmark, {
+		onSuccess: onClose,
+		undoable: () => `Deleted folder “${folder?.title}”`,
+	});
 	const sensors = useDragSensors();
 
 	if (!folder) return null;

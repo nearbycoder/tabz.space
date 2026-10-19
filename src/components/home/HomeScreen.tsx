@@ -15,20 +15,24 @@ import { Logo } from "#/components/Logo";
 import { call } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
-import { useHome, useSaveSettings } from "#/lib/home-query";
+import { useHome, useSaveSettings, useUndo } from "#/lib/home-query";
 import { openIncognito } from "#/lib/incognito";
 import { applyTheme } from "#/lib/theme";
+import { extractUrls } from "#/lib/url";
 import { recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { BoardDialog } from "./BoardDialog";
 import { BoardGrid } from "./BoardGrid";
 import { BookmarkDialog } from "./BookmarkDialog";
+import { BulkAddDialog } from "./BulkAddDialog";
 import { Clock } from "./Clock";
 import { CommandPalette } from "./CommandPalette";
 import { HomeContext } from "./context";
+import { DuplicatesDialog } from "./DuplicatesDialog";
 import { FolderDialog, NewFolderDialog } from "./FolderDialog";
 import { GroupDialog } from "./GroupDialog";
+import { HistoryDialog } from "./HistoryDialog";
 import { SearchBar } from "./SearchBar";
 import { SettingsPanel } from "./SettingsPanel";
 import { TopSites } from "./TopSites";
@@ -133,6 +137,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const saveSettings = useSaveSettings();
 	const lockVault = useLockVault();
+	const undoLast = useUndo();
 	const typed = useRef("");
 	const [now, setNow] = useState(() => Date.now());
 
@@ -171,6 +176,43 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			openVault();
 		}
 	};
+
+	// ⌘Z undoes the last change; pasting links anywhere opens "Paste links".
+	useEffect(() => {
+		const isTyping = (target: EventTarget | null) => {
+			const el = target as HTMLElement | null;
+			return (
+				!!el &&
+				(el.isContentEditable ||
+					["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))
+			);
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (
+				(event.metaKey || event.ctrlKey) &&
+				!event.shiftKey &&
+				event.key.toLowerCase() === "z" &&
+				!isTyping(event.target) &&
+				!dialog
+			) {
+				event.preventDefault();
+				undoLast();
+			}
+		};
+		const onPaste = (event: ClipboardEvent) => {
+			if (isTyping(event.target) || dialog || paletteOpen) return;
+			const text = event.clipboardData?.getData("text") ?? "";
+			if (extractUrls(text).length === 0) return;
+			event.preventDefault();
+			setDialog({ type: "bulk-add", text });
+		};
+		window.addEventListener("keydown", onKey);
+		window.addEventListener("paste", onPaste);
+		return () => {
+			window.removeEventListener("keydown", onKey);
+			window.removeEventListener("paste", onPaste);
+		};
+	}, [dialog, paletteOpen, undoLast]);
 
 	// Keyboard: e = edit mode, n = new bookmark, 1–9 = switch board (⌘K lives in the palette).
 	// Typing the secret vault code anywhere opens the vault prompt.
@@ -501,6 +543,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					onToggleEdit={() => setEditing((value) => !value)}
 					onSaveSettings={(patch) => saveSettings.mutate(patch)}
 					onLockVault={vault.unlocked ? () => lockVault() : undefined}
+					onUndo={() => undoLast()}
 				/>
 
 				{dialog?.type === "bookmark" && (
@@ -514,6 +557,24 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						onClose={close}
 					/>
 				)}
+				{dialog?.type === "history" && (
+					<HistoryDialog initialTab={dialog.tab} onClose={close} />
+				)}
+				{dialog?.type === "duplicates" && <DuplicatesDialog onClose={close} />}
+				{dialog?.type === "bulk-add" &&
+					(dialog.groupId ??
+						board.groups.find((g) => g.kind === "links")?.id) && (
+						<BulkAddDialog
+							boards={boards}
+							groupId={
+								(dialog.groupId ??
+									board.groups.find((g) => g.kind === "links")?.id) as string
+							}
+							initialText={dialog.text}
+							festive={settings.celebrate}
+							onClose={close}
+						/>
+					)}
 				{dialog?.type === "folder" && (
 					<FolderDialog folderId={dialog.folderId} onClose={close} />
 				)}

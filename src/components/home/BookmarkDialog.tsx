@@ -58,6 +58,9 @@ export function BookmarkForm({
 	const [image, setImage] = useState<string | null>(
 		bookmark?.meta.image ?? null,
 	);
+	const [duplicates, setDuplicates] = useState<
+		{ id: string; title: string; path: string }[]
+	>([]);
 	const [siteName, setSiteName] = useState<string | null>(
 		bookmark?.meta.siteName ?? null,
 	);
@@ -80,6 +83,7 @@ export function BookmarkForm({
 	});
 	const update = useHomeAction(updateBookmark, { onSuccess: done });
 	const remove = useHomeAction(deleteBookmark, {
+		undoable: () => `Deleted “${bookmark?.title}”`,
 		optimistic: (data, input) => ({
 			...data,
 			boards: data.boards.map((b) => ({
@@ -113,6 +117,11 @@ export function BookmarkForm({
 			setFavicon(meta.favicon);
 			setImage(meta.image);
 			setSiteName(meta.siteName);
+			setDuplicates(
+				bookmark
+					? meta.duplicates.filter((d) => d.id !== bookmark.id)
+					: meta.duplicates,
+			);
 		} catch {
 			// Metadata is a nice-to-have; saving still works without it.
 		} finally {
@@ -235,6 +244,16 @@ export function BookmarkForm({
 						)}
 				</div>
 			</Field>
+			{duplicates.length > 0 && (
+				<p className="-mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+					Already saved in{" "}
+					<span className="font-medium">{duplicates[0].path}</span>
+					{duplicates.length > 1
+						? ` and ${duplicates.length - 1} more place${duplicates.length > 2 ? "s" : ""}`
+						: ""}
+					. You can still save it again.
+				</p>
+			)}
 			<Field label="Title">
 				<input
 					className="field"

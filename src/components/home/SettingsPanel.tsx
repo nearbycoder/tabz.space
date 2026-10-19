@@ -1,9 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
 	Bot,
+	ClipboardList,
+	Copy,
 	Download,
 	GalleryHorizontalEnd,
 	Grid2x2,
+	History,
 	Home,
 	LayoutList,
 	Loader2,
@@ -12,6 +15,7 @@ import {
 	Palette,
 	Rows3,
 	Shapes,
+	Trash2,
 	Upload,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -52,6 +56,7 @@ import { type HomeData, importBookmarks, updateBoard } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { ConnectAI } from "./ConnectAI";
+import { useHomeContext } from "./context";
 import type { HomeBoard } from "./types";
 import { VaultSettings, type VaultState } from "./Vault";
 
@@ -174,6 +179,7 @@ export function SettingsPanel({
 	initialTab,
 	onClose,
 }: Props) {
+	const { openDialog } = useHomeContext();
 	const [tab, setTab] = useState<TabId>(
 		(TABS.find((t) => t.id === initialTab)?.id ?? "look") as TabId,
 	);
@@ -785,6 +791,42 @@ export function SettingsPanel({
 						</div>
 						<p className="text-xs text-muted">
 							Chrome: Bookmarks → Bookmark manager → ⋮ → Export bookmarks.
+						</p>
+					</Section>
+					<Section title="Safety net">
+						<div className="flex flex-wrap gap-2">
+							<button
+								type="button"
+								className="btn-outline"
+								onClick={() => openDialog({ type: "history" })}
+							>
+								<History className="size-4" /> History
+							</button>
+							<button
+								type="button"
+								className="btn-outline"
+								onClick={() => openDialog({ type: "history", tab: "trash" })}
+							>
+								<Trash2 className="size-4" /> Trash
+							</button>
+							<button
+								type="button"
+								className="btn-outline"
+								onClick={() => openDialog({ type: "duplicates" })}
+							>
+								<Copy className="size-4" /> Duplicates
+							</button>
+							<button
+								type="button"
+								className="btn-outline"
+								onClick={() => openDialog({ type: "bulk-add" })}
+							>
+								<ClipboardList className="size-4" /> Paste links
+							</button>
+						</div>
+						<p className="text-xs text-muted">
+							Deleted items stay in the trash for 30 days. ⌘Z undoes your last
+							change.
 						</p>
 					</Section>
 					<Section title="Browser">

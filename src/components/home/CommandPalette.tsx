@@ -1,10 +1,13 @@
 import { Command } from "cmdk";
 import {
 	Bot,
+	ClipboardList,
+	Copy,
 	Dices,
 	FolderOpen,
 	FolderPlus,
 	Globe,
+	History,
 	LayoutGrid,
 	Lock,
 	Monitor,
@@ -15,6 +18,8 @@ import {
 	Search,
 	SlidersHorizontal,
 	Sun,
+	Trash2,
+	Undo2,
 	Upload,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +43,7 @@ type Props = {
 	onSaveSettings: (patch: Partial<UserSettings>) => void;
 	/** Only passed while the vault is unlocked; the palette never mentions a locked vault. */
 	onLockVault?: () => void;
+	onUndo: () => void;
 };
 
 type Entry = { bookmark: LinkItem; path: string };
@@ -84,6 +90,7 @@ export function CommandPalette({
 	onToggleEdit,
 	onSaveSettings,
 	onLockVault,
+	onUndo,
 }: Props) {
 	const { boards, settings, openDialog, openLink, isIncognito } =
 		useHomeContext();
@@ -369,6 +376,47 @@ export function CommandPalette({
 								<Row icon={<FolderPlus className="size-4" />}>New folder</Row>
 							</Command.Item>
 						)}
+						<Command.Item
+							value="paste many links bulk add"
+							onSelect={() => run(() => openDialog({ type: "bulk-add" }))}
+							className={itemClass}
+						>
+							<Row icon={<ClipboardList className="size-4" />}>
+								Paste many links
+							</Row>
+						</Command.Item>
+						<Command.Item
+							value="undo last change"
+							onSelect={() => run(() => onUndo())}
+							className={itemClass}
+						>
+							<Row icon={<Undo2 className="size-4" />} hint="⌘Z">
+								Undo
+							</Row>
+						</Command.Item>
+						<Command.Item
+							value="history activity changes"
+							onSelect={() => run(() => openDialog({ type: "history" }))}
+							className={itemClass}
+						>
+							<Row icon={<History className="size-4" />}>History</Row>
+						</Command.Item>
+						<Command.Item
+							value="trash deleted restore"
+							onSelect={() =>
+								run(() => openDialog({ type: "history", tab: "trash" }))
+							}
+							className={itemClass}
+						>
+							<Row icon={<Trash2 className="size-4" />}>Trash</Row>
+						</Command.Item>
+						<Command.Item
+							value="find duplicates cleanup"
+							onSelect={() => run(() => openDialog({ type: "duplicates" }))}
+							className={itemClass}
+						>
+							<Row icon={<Copy className="size-4" />}>Find duplicates</Row>
+						</Command.Item>
 						<Command.Item
 							value="new group section"
 							onSelect={() =>

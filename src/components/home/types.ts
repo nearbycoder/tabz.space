@@ -20,4 +20,7 @@ export type DialogState =
 	| { type: "board"; board?: HomeBoard }
 	| { type: "settings"; tab?: string }
 	| { type: "vault-unlock" }
+	| { type: "history"; tab?: "history" | "trash" }
+	| { type: "duplicates" }
+	| { type: "bulk-add"; text?: string; groupId?: string }
 	| null;

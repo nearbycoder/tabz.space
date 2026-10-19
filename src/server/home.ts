@@ -69,7 +69,7 @@ export const reorderGroups = createServerFn({ method: "POST" })
 
 export const lookupUrl = createServerFn({ method: "POST" })
 	.validator(library.lookupUrlInput)
-	.handler(({ data }) => runAuthed(() => library.lookupUrl(data)));
+	.handler(({ data }) => runAuthed((user) => library.lookupUrl(data, user.id)));
 
 export const createBookmark = createServerFn({ method: "POST" })
 	.validator(library.createBookmarkInput)
@@ -124,3 +124,43 @@ export const refreshPreview = createServerFn({ method: "POST" })
 	.handler(({ data }) =>
 		runAuthed((user) => library.refreshPreview(user.id, data)),
 	);
+
+export const bulkCreateBookmarks = createServerFn({ method: "POST" })
+	.validator(library.bulkCreateInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.bulkCreateBookmarks(user.id, data)),
+	);
+
+export const listActivity = createServerFn()
+	.validator(library.activityInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.listActivity(user.id, data)),
+	);
+
+export const undo = createServerFn({ method: "POST" })
+	.validator(library.undoInput)
+	.handler(({ data }) => runAuthed((user) => library.undo(user.id, data)));
+
+export const listTrash = createServerFn().handler(() =>
+	runAuthed((user) => library.listTrash(user.id)),
+);
+
+export const restoreFromTrash = createServerFn({ method: "POST" })
+	.validator(library.trashItemInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.restoreFromTrash(user.id, data)),
+	);
+
+export const deleteForever = createServerFn({ method: "POST" })
+	.validator(library.trashItemInput)
+	.handler(({ data }) =>
+		runAuthed((user) => library.deleteForever(user.id, data)),
+	);
+
+export const emptyTrash = createServerFn({ method: "POST" }).handler(() =>
+	runAuthed((user) => library.emptyTrash(user.id)),
+);
+
+export const listDuplicates = createServerFn().handler(() =>
+	runAuthed((user) => library.listDuplicates(user.id)),
+);

@@ -7,7 +7,7 @@ import {
 import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import type { UserSettings } from "#/lib/preferences";
-import { getHome, type HomeData, saveSettings } from "#/server/home";
+import { getHome, type HomeData, saveSettings, undo } from "#/server/home";
 
 export const homeKey = ["home"] as const;
 
@@ -23,7 +23,24 @@ type Options<I, O> = {
 	optimistic?: (data: HomeData, input: I) => HomeData;
 	onSuccess?: (output: O, input: I) => void;
 	success?: string;
+	/** Show the success toast with an Undo button (reverts via the activity log). */
+	undoable?: string | ((input: I) => string);
 };
+
+/** Reverts the latest change and refreshes. */
+export function useUndo() {
+	const queryClient = useQueryClient();
+	return async (id?: string) => {
+		try {
+			const result = await run(call(undo, { id }));
+			toast(`Undid: ${result.label}`, { icon: "↩️" });
+		} catch (error) {
+			toast(error instanceof Error ? error.message : "Nothing to undo");
+		} finally {
+			await queryClient.invalidateQueries({ queryKey: homeKey });
+		}
+	};
+}
 
 /** A home mutation: Effect-powered request + optimistic cache update + refetch. */
 export function useHomeAction<I, O>(
@@ -31,6 +48,7 @@ export function useHomeAction<I, O>(
 	options: Options<I, O> = {},
 ) {
 	const queryClient = useQueryClient();
+	const undoLast = useUndo();
 	return useMutation({
 		mutationFn: (input: I) => run(call(fn, input)),
 		onMutate: async (input) => {
@@ -47,7 +65,16 @@ export function useHomeAction<I, O>(
 			toast.error(error.message);
 		},
 		onSuccess: (output, input) => {
-			if (options.success) toast.success(options.success);
+			if (options.undoable) {
+				const label =
+					typeof options.undoable === "function"
+						? options.undoable(input)
+						: options.undoable;
+				toast(label, {
+					action: { label: "Undo", onClick: () => undoLast() },
+					duration: 6000,
+				});
+			} else if (options.success) toast.success(options.success);
 			options.onSuccess?.(output, input);
 		},
 		onSettled: () => queryClient.invalidateQueries({ queryKey: homeKey }),

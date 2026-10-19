@@ -45,7 +45,10 @@ export function BoardDialog({
 		},
 	});
 	const update = useHomeAction(updateBoard, { onSuccess: onClose });
-	const remove = useHomeAction(deleteBoard, { onSuccess: onClose });
+	const remove = useHomeAction(deleteBoard, {
+		onSuccess: onClose,
+		undoable: () => `Deleted board “${board?.name}”`,
+	});
 	const pending = create.isPending || update.isPending;
 
 	return (
