@@ -9,9 +9,14 @@ import {
 import { type ReactNode, useEffect } from "react";
 import { Toaster } from "sonner";
 import { startOffline } from "#/lib/offline";
+import { socialMeta } from "#/lib/site";
 import { splashLinks } from "#/lib/splash";
 import { readThemePreference, themeInitScript } from "#/lib/theme";
 import appCss from "../styles.css?url";
+
+const SITE_TITLE = "Tabz — your home on the web";
+const SITE_DESCRIPTION =
+	"A beautiful, instant start page for your browser: bookmarks, boards and 70+ widgets, ⌘K search, a private vault, and new tabs that open even offline.";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 	{
@@ -31,12 +36,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 					content: "black-translucent",
 				},
 				{ name: "apple-mobile-web-app-title", content: "Tabz" },
-				{ title: "Tabz — your home on the web" },
-				{
-					name: "description",
-					content:
-						"A fast, customizable start page for your browser. Organize bookmarks into boards and grids, search anywhere, and add pages with one click.",
-				},
+				{ title: SITE_TITLE },
+				{ name: "description", content: SITE_DESCRIPTION },
+				...socialMeta({ title: SITE_TITLE, description: SITE_DESCRIPTION }),
 				{
 					name: "theme-color",
 					content: "#f6f6f4",

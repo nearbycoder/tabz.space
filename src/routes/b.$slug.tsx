@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { PublicBoardView } from "#/components/PublicBoard";
 import { optionalFlag } from "#/lib/search-params";
+import { socialMeta } from "#/lib/site";
 import { getPublicBoard } from "#/server/home";
 import { getSession } from "#/server/session";
 
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/b/$slug")({
 		if (!board) throw notFound();
 		return { board, signedIn: Boolean(session) };
 	},
-	head: ({ loaderData }) => {
+	head: ({ loaderData, params }) => {
 		if (!loaderData) return {};
 		const { board } = loaderData;
 		type Item = (typeof board.groups)[number]["items"][number];
@@ -38,10 +39,7 @@ export const Route = createFileRoute("/b/$slug")({
 			meta: [
 				{ title },
 				{ name: "description", content: description },
-				{ property: "og:title", content: title },
-				{ property: "og:description", content: description },
-				{ property: "og:type", content: "website" },
-				{ name: "twitter:card", content: "summary" },
+				...socialMeta({ title, description, path: `/b/${params.slug}` }),
 			],
 		};
 	},
