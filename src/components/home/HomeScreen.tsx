@@ -221,7 +221,13 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		taps.current = [...taps.current.filter((t) => now - t < 2000), now];
 		if (taps.current.length >= 5) {
 			taps.current = [];
-			openVault();
+			navigator.vibrate?.(30);
+			// The same gesture locks it again while it's open.
+			if (vault.unlocked) {
+				const firstBoard = boards.find((b) => !b.vault);
+				if (board?.vault && firstBoard) selectBoard(firstBoard.id);
+				void lockVault();
+			} else openVault();
 		}
 	};
 

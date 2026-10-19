@@ -470,8 +470,8 @@ export function VaultSettings({
 					encrypted in your browser with a key made from your vault password:
 					not even tabz can read them. They stay out of search, ⌘K, the
 					most-visited strip, exports and AI assistants. Tap the clock 5 times
-					quickly to open it (on any device), or type your secret code anywhere
-					on your home page.
+					quickly to open it (on any device) and 5 times again to lock it, or
+					type your secret code anywhere on your home page.
 				</p>
 			</div>
 
