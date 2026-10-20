@@ -125,6 +125,9 @@ const filter = (value: string, search: string, keywords?: string[]) => {
 	return (wordStart ? 0.6 : 0.3) + 0.4 / (1 + first / 20);
 };
 
+const MAX_LINKS = 50;
+const MAX_FOLDERS = 15;
+
 const itemClass =
 	"flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm outline-none";
 
@@ -203,6 +206,38 @@ export function CommandPalette({
 			return [{ ...entry, snippet: hit.snippet }];
 		});
 	}, [pageHits.data, links, textQuery]);
+
+	// Only the best matches are rendered: drawing every link (thousands, each
+	// with an icon) on the first keystroke made typing lag on big libraries.
+	// cmdk still ranks what's rendered with the same scoring.
+	const typed = query.trim();
+	const linkMatches = useMemo(() => {
+		if (!typed) return links.slice(0, 8);
+		const scored: { entry: Entry; score: number }[] = [];
+		for (const entry of links) {
+			const score = filter(
+				`${entry.bookmark.title} ${entry.bookmark.url} ${entry.path}`,
+				typed,
+				entry.bookmark.tags,
+			);
+			if (score > 0) scored.push({ entry, score });
+		}
+		// Stable sort: equal scores keep most-visited first.
+		scored.sort((a, b) => b.score - a.score);
+		return scored.slice(0, MAX_LINKS).map(({ entry }) => entry);
+	}, [links, typed]);
+	const folderMatches = useMemo(
+		() =>
+			typed
+				? folders
+						.filter(
+							({ folder, path }) =>
+								filter(`folder ${folder.title} ${path}`, typed) > 0,
+						)
+						.slice(0, MAX_FOLDERS)
+				: folders.slice(0, 5),
+		[folders, typed],
+	);
 
 	// Escape closes it even when focus has wandered off the input.
 	useEffect(() => {
@@ -369,38 +404,36 @@ export function CommandPalette({
 					)}
 
 					<Command.Group heading="Links">
-						{links
-							.slice(0, trimmed ? links.length : 8)
-							.map(({ bookmark, path }) => (
-								<Command.Item
-									key={bookmark.id}
-									value={`${bookmark.title} ${bookmark.url} ${path} ${bookmark.id}`}
-									keywords={bookmark.tags}
-									onSelect={() => visit(bookmark)}
-									className={itemClass}
+						{linkMatches.map(({ bookmark, path }) => (
+							<Command.Item
+								key={bookmark.id}
+								value={`${bookmark.title} ${bookmark.url} ${path} ${bookmark.id}`}
+								keywords={bookmark.tags}
+								onSelect={() => visit(bookmark)}
+								className={itemClass}
+							>
+								<Row
+									icon={
+										<Favicon
+											url={bookmark.url}
+											icon={bookmark.icon}
+											favicon={bookmark.meta.favicon}
+											sealed={Boolean(bookmark.meta.sealed)}
+											title={bookmark.title}
+											className="size-4 rounded text-sm"
+										/>
+									}
+									hint={
+										isIncognito(bookmark)
+											? "🕶️ private"
+											: hostnameOf(bookmark.url)
+									}
 								>
-									<Row
-										icon={
-											<Favicon
-												url={bookmark.url}
-												icon={bookmark.icon}
-												favicon={bookmark.meta.favicon}
-												sealed={Boolean(bookmark.meta.sealed)}
-												title={bookmark.title}
-												className="size-4 rounded text-sm"
-											/>
-										}
-										hint={
-											isIncognito(bookmark)
-												? "🕶️ private"
-												: hostnameOf(bookmark.url)
-										}
-									>
-										<span className="font-medium">{bookmark.title}</span>
-										<span className="ml-2 text-xs text-muted">{path}</span>
-									</Row>
-								</Command.Item>
-							))}
+									<span className="font-medium">{bookmark.title}</span>
+									<span className="ml-2 text-xs text-muted">{path}</span>
+								</Row>
+							</Command.Item>
+						))}
 					</Command.Group>
 
 					{trimmed.length >= 3 && textMatches.length > 0 && (
@@ -434,9 +467,9 @@ export function CommandPalette({
 						</Command.Group>
 					)}
 
-					{folders.length > 0 && (
+					{folderMatches.length > 0 && (
 						<Command.Group heading="Folders">
-							{folders.map(({ folder, path }) => (
+							{folderMatches.map(({ folder, path }) => (
 								<Command.Item
 									key={folder.id}
 									value={`folder ${folder.title} ${path}`}

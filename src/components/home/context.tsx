@@ -26,3 +26,28 @@ export function useHomeContext() {
 	if (!value) throw new Error("useHomeContext must be used inside HomeScreen");
 	return value;
 }
+
+/**
+ * What a tile needs, without the library itself. Its identity survives
+ * refetches (unlike `boards`), so after an edit only the tiles that changed
+ * re-render instead of every tile on the board.
+ */
+export type TileContextValue = Pick<
+	HomeContextValue,
+	| "settings"
+	| "editing"
+	| "openDialog"
+	| "onVisit"
+	| "isIncognito"
+	| "openLink"
+	| "readOnly"
+>;
+
+export const TileContext = createContext<TileContextValue | null>(null);
+
+/** Only reads TileContext: subscribing to HomeContext too would re-render every tile on each library change. */
+export function useTileContext(): TileContextValue {
+	const value = useContext(TileContext);
+	if (!value) throw new Error("useTileContext must be used inside HomeScreen");
+	return value;
+}

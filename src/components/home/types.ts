@@ -4,7 +4,8 @@ import type { HomeBoard, HomeBookmark, HomeGroup } from "#/server/home";
 export type { HomeBoard, HomeBookmark, HomeGroup };
 
 /** Any single link or folder row (top-level items additionally carry `children`). */
-export type LinkItem = Bookmark;
+/** A link or folder as the browser has it (server bookkeeping fields stripped). */
+export type LinkItem = Omit<Bookmark, "userId" | "updatedAt" | "deletedAt">;
 
 export type DialogState =
 	| {
@@ -52,11 +53,39 @@ export const linksIn = (items: TreeItem[]) =>
 export const mapTree = (
 	items: TreeItem[],
 	fn: (item: TreeItem) => TreeItem,
-): TreeItem[] =>
-	items.map((item) => {
+): TreeItem[] => {
+	// Untouched items (and arrays) keep their identity, so memoized tiles
+	// for everything that didn't change skip re-rendering.
+	let changed = false;
+	const out = items.map((item) => {
 		const next = fn(item);
-		return { ...next, children: mapTree(next.children, fn) };
+		const children = next.children.length
+			? mapTree(next.children, fn)
+			: next.children;
+		if (next === item && children === item.children) return item;
+		changed = true;
+		return children === next.children ? next : { ...next, children };
 	});
+	return changed ? out : items;
+};
+
+/** The home data with one link's fields changed (everything else untouched). */
+export const patchBookmark = <D extends { boards: HomeBoard[] }>(
+	data: D,
+	id: string,
+	patch: Partial<LinkItem>,
+): D => ({
+	...data,
+	boards: data.boards.map((board) => ({
+		...board,
+		groups: board.groups.map((group) => {
+			const bookmarks = mapTree(group.bookmarks, (item) =>
+				item.id === id ? { ...item, ...patch } : item,
+			);
+			return bookmarks === group.bookmarks ? group : { ...group, bookmarks };
+		}),
+	})),
+});
 
 /** Drops an item (and what's inside it) from a tree, at any depth. */
 export const removeFromTree = (items: TreeItem[], id: string): TreeItem[] =>

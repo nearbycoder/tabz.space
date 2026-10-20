@@ -15,10 +15,11 @@ import {
 	SortableContext,
 } from "@dnd-kit/sortable";
 import { FolderPlus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { cn } from "#/lib/cn";
 import { buzz, useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
+import { useStableIds } from "#/lib/stable";
 import {
 	arrangeBookmarks,
 	arrangeFolder,
@@ -35,12 +36,48 @@ import { GROUP_WIDTH_CLASS, GroupCard, groupWidthStyle } from "./GroupCard";
 import type { HomeBoard, HomeGroup } from "./types";
 
 const groupKey = (id: string) => `group:${id}`;
+
+/** Tiles to draw before the first paint; more than any screen shows at once. */
+const FIRST_PAINT_TILES = 150;
+
+/** How many groups fit the first-paint budget (always at least two). */
+function initialGroups(groups: HomeGroup[]) {
+	let tiles = 0;
+	for (let index = 0; index < groups.length; index++) {
+		tiles +=
+			groups[index].kind === "links" ? groups[index].bookmarks.length : 6;
+		if (tiles > FIRST_PAINT_TILES && index >= 1) return index + 1;
+	}
+	return groups.length;
+}
 const isGroupKey = (id: string) => id.startsWith("group:");
 const isIntoKey = (id: string) => id.startsWith("into:");
 
-export function BoardGrid({ board }: { board: HomeBoard }) {
+/*
+ * Memoized: the home screen re-renders for dialogs, the palette and clock
+ * ticks, and redrawing hundreds of tiles each time made those feel slow.
+ * It only needs to update when the board (or the shared context) changes.
+ */
+export const BoardGrid = memo(function BoardGrid({
+	board,
+}: {
+	board: HomeBoard;
+}) {
 	const { editing, openDialog, readOnly } = useHomeContext();
 	const [items, setItems] = useState<HomeGroup[]>(board.groups);
+	const groupIds = useStableIds(items.map((g) => groupKey(g.id)));
+	// Big boards render in two steps: enough groups to fill the screen first,
+	// the rest right after that first paint. The board is keyed by id upstream,
+	// so each board starts over.
+	const [shownAll, setShownAll] = useState(false);
+	const firstPaint = shownAll ? items.length : initialGroups(items);
+	useEffect(() => {
+		if (shownAll || firstPaint >= items.length) return;
+		const frame = requestAnimationFrame(() =>
+			setTimeout(() => setShownAll(true), 0),
+		);
+		return () => cancelAnimationFrame(frame);
+	}, [shownAll, firstPaint, items.length]);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const dragOrigin = useRef<string | null>(null);
 	const itemsRef = useRef(items);
@@ -51,10 +88,14 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 	const [settling, setSettling] = useState(false);
 	const settle = { onSettled: () => setSettling(false) };
 
-	// Follow server data whenever we're not mid-drag or mid-save.
-	useEffect(() => {
-		if (!activeId && !settling) setItems(board.groups);
-	}, [board.groups, activeId, settling]);
+	// Follow server data whenever we're not mid-drag or mid-save. Adjusted
+	// during render (not in an effect) so an update costs one pass, not two.
+	const idle = !activeId && !settling;
+	const [synced, setSynced] = useState({ groups: board.groups, idle });
+	if (synced.groups !== board.groups || synced.idle !== idle) {
+		setSynced({ groups: board.groups, idle });
+		if (idle) setItems(board.groups);
+	}
 
 	const withBoardGroups = <T extends { boards: HomeBoard[] }>(
 		data: T,
@@ -303,13 +344,10 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 				setItems(board.groups);
 			}}
 		>
-			<SortableContext
-				items={items.map((g) => groupKey(g.id))}
-				strategy={rectSortingStrategy}
-			>
+			<SortableContext items={groupIds} strategy={rectSortingStrategy}>
 				{/* A wrapping row: each group sizes itself (see groupWidthStyle). */}
 				<div className="flex flex-wrap items-start gap-4">
-					{items.map((group) => (
+					{items.slice(0, firstPaint).map((group) => (
 						<GroupCard
 							key={group.id}
 							group={group}
@@ -401,4 +439,4 @@ export function BoardGrid({ board }: { board: HomeBoard }) {
 			</DragOverlay>
 		</DndContext>
 	);
-}
+});

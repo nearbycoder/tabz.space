@@ -24,6 +24,7 @@ import {
 } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
+import { dataVersion } from "#/db";
 import { user } from "#/db/auth-schema";
 import {
 	activity,
@@ -41,7 +42,7 @@ import {
 	visits,
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
-import { DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
+import { type BookmarkMeta, DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
 import {
 	boardLayoutSchema,
 	groupOptionsSchema,
@@ -537,7 +538,82 @@ export function walkTree(
 	]);
 }
 
-export const loadHome = (userId: string) =>
+/** Meta the browser actually uses (drops bookkeeping like index and sync state). */
+const clientMeta = (meta: BookmarkMeta): BookmarkMeta => {
+	const {
+		indexedAt: _indexed,
+		browserId: _browser,
+		feedUrl: _feedUrl,
+		health,
+		archive,
+		feed,
+		...rest
+	} = meta;
+	return {
+		...rest,
+		// Healthy links show nothing, so only problems travel.
+		...(health && health.status !== "ok"
+			? {
+					health: {
+						status: health.status,
+						code: health.code,
+						location: health.location,
+						checkedAt: health.checkedAt,
+					},
+				}
+			: {}),
+		...(archive?.url ? { archive } : {}),
+		...(feed ? { feed: { ...feed, items: feed.items.slice(0, 10) } } : {}),
+	};
+};
+
+type ClientItem = Omit<
+	TreeItem,
+	"userId" | "updatedAt" | "deletedAt" | "children"
+> & {
+	children: ClientItem[];
+};
+
+const clientItem = ({
+	userId: _user,
+	updatedAt: _updated,
+	deletedAt: _deleted,
+	children,
+	meta,
+	...item
+}: TreeItem): ClientItem => ({
+	...item,
+	meta: clientMeta(meta),
+	children: children.map(clientItem),
+});
+
+/**
+ * The home data as sent to the browser: the same shape as loadHome, minus
+ * fields only the server uses. With thousands of links this roughly halves
+ * the page (the whole library is embedded in it for instant rendering).
+ */
+const toClientHome = (home: Effect.Success<ReturnType<typeof loadHome>>) => ({
+	...home,
+	boards: home.boards.map((board) => ({
+		...board,
+		groups: board.groups.map((group) => ({
+			...group,
+			bookmarks: group.bookmarks.map(clientItem),
+		})),
+	})),
+});
+/** Cached alongside loadHome's own cache (same object until the next write). */
+const clientHomes = new WeakMap<object, ReturnType<typeof toClientHome>>();
+export const clientHome = (home: Parameters<typeof toClientHome>[0]) => {
+	let view = clientHomes.get(home);
+	if (!view) {
+		view = toClientHome(home);
+		clientHomes.set(home, view);
+	}
+	return view;
+};
+
+const loadHomeFresh = (userId: string) =>
 	Effect.gen(function* () {
 		const shared = yield* memberships(userId);
 		const sharedIds = shared.map((m) => m.boardId);
@@ -605,22 +681,32 @@ export const loadHome = (userId: string) =>
 		// Items whose folder was deleted stay hidden with it.
 		const children = new Map<string, Bookmark[]>();
 		for (const row of bookmarkRows)
-			if (row.parentId)
-				children.set(row.parentId, [
-					...(children.get(row.parentId) ?? []),
-					row,
-				]);
-		const grow = (row: Bookmark, seen: Set<string>): TreeItem => ({
-			...row,
-			children: seen.has(row.id)
-				? []
-				: (children.get(row.id) ?? []).map((child) =>
-						grow(child, new Set(seen).add(row.id)),
-					),
-		});
-		const tree = bookmarkRows
-			.filter((row) => !row.parentId)
-			.map((row) => grow(row, new Set()));
+			if (row.parentId) {
+				const list = children.get(row.parentId);
+				if (list) list.push(row);
+				else children.set(row.parentId, [row]);
+			}
+		// `path` holds the folders above this one, so a cycle can't recurse forever.
+		const path = new Set<string>();
+		const grow = (row: Bookmark): TreeItem => {
+			if (path.has(row.id)) return { ...row, children: [] };
+			path.add(row.id);
+			const item = {
+				...row,
+				children: (children.get(row.id) ?? []).map(grow),
+			};
+			path.delete(row.id);
+			return item;
+		};
+		// Top-level items, bucketed by group (rows arrive in position order).
+		const byGroup = new Map<string, TreeItem[]>();
+		for (const row of bookmarkRows) {
+			if (row.parentId) continue;
+			const item = grow(row);
+			const list = byGroup.get(row.groupId);
+			if (list) list.push(item);
+			else byGroup.set(row.groupId, [item]);
+		}
 		const roles = new Map(shared.map((m) => [m.boardId, m.role as Role]));
 		// Who shared each board with you.
 		const ownerIds = [
@@ -671,10 +757,42 @@ export const loadHome = (userId: string) =>
 					.filter((group) => group.boardId === board.id)
 					.map((group) => ({
 						...group,
-						bookmarks: tree.filter((item) => item.groupId === group.id),
+						bookmarks: byGroup.get(group.id) ?? [],
 					})),
 			})),
 		};
+	});
+
+type HomeSnapshot = Effect.Success<ReturnType<typeof loadHomeFresh>>;
+
+/*
+ * loadHome runs on most requests (page loads, search, adds, the AI agent),
+ * and for big libraries the query and row decoding dominate. Results are
+ * kept per user and vault state until anything at all is written to the
+ * database (dataVersion), so they can never be stale. Callers treat the
+ * result as read-only.
+ */
+const homeCache = new Map<string, { version: number; home: HomeSnapshot }>();
+const HOME_CACHE_SIZE = 50;
+
+export const loadHome = (userId: string) =>
+	Effect.gen(function* () {
+		const access = yield* VaultAccess;
+		const key = `${userId}\u0000${access ? `${access.slot}:${access.expiresAt}` : ""}`;
+		const hit = homeCache.get(key);
+		if (hit && hit.version === dataVersion()) {
+			// Most recently used last, so the oldest entry is evicted first.
+			homeCache.delete(key);
+			homeCache.set(key, hit);
+			return hit.home;
+		}
+		const version = dataVersion();
+		const home = yield* loadHomeFresh(userId);
+		homeCache.delete(key);
+		if (homeCache.size >= HOME_CACHE_SIZE)
+			homeCache.delete(homeCache.keys().next().value as string);
+		homeCache.set(key, { version, home });
+		return home;
 	});
 
 export const settingsInput = userSettingsSchema.partial();

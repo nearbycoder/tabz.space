@@ -12,9 +12,25 @@ export function loadFont(key: FontKey) {
 	document.head.appendChild(link);
 }
 
-/** Applies font, corners, surface and accent to <html> (so portals match too). */
+let applied = "";
+
+/**
+ * Applies font, corners, surface and accent to <html> (so portals match too).
+ * Skipped when nothing visual changed: touching <html> styles and reading
+ * them back forces a full style pass, which settings saves (like switching
+ * boards) don't need.
+ */
 export function applyAppearance(settings: UserSettings) {
 	const root = document.documentElement;
+	const key = [
+		settings.accent,
+		settings.radius,
+		settings.surface,
+		settings.font,
+		root.className,
+	].join("|");
+	if (key === applied) return;
+	applied = key;
 	root.style.setProperty("--accent", settings.accent);
 	root.dataset.radius = settings.radius;
 	root.dataset.surface = settings.surface;

@@ -1,14 +1,27 @@
+import { memo, useMemo } from "react";
 import { Favicon } from "#/components/ui/Favicon";
-import { useHomeContext } from "./context";
+import { useTileContext } from "./context";
 import { type LinkItem, leavesPage, targetUrl } from "./types";
 
 /** Your most-visited links, learned automatically from clicks. */
-export function TopSites({ links }: { links: LinkItem[] }) {
-	const { settings, onVisit, isIncognito } = useHomeContext();
-	const top = links
-		.filter((link) => link.visitCount > 0 && !isIncognito(link))
-		.sort((a, b) => b.visitCount - a.visitCount)
-		.slice(0, 8);
+export const TopSites = memo(function TopSites({
+	links,
+}: {
+	links: LinkItem[];
+}) {
+	const { settings, onVisit, isIncognito } = useTileContext();
+	// One pass for the top eight (no sorting the whole library on each render).
+	const top = useMemo(() => {
+		const best: LinkItem[] = [];
+		for (const link of links) {
+			if (link.visitCount <= 0 || isIncognito(link)) continue;
+			if (best.length === 8 && link.visitCount <= best[7].visitCount) continue;
+			best.push(link);
+			best.sort((a, b) => b.visitCount - a.visitCount);
+			if (best.length > 8) best.pop();
+		}
+		return best;
+	}, [links, isIncognito]);
 	if (!settings.showTopSites || top.length < 3) return null;
 
 	return (
@@ -47,4 +60,4 @@ export function TopSites({ links }: { links: LinkItem[] }) {
 			))}
 		</nav>
 	);
-}
+});

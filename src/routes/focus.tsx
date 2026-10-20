@@ -5,9 +5,16 @@ import { snoozeFocus } from "#/lib/incognito";
 
 /** Where the extension sends blocked sites during focus mode. */
 export const Route = createFileRoute("/focus")({
-	validateSearch: (search: Record<string, unknown>) => ({
-		site: typeof search.site === "string" ? search.site.slice(0, 120) : "",
-		from: typeof search.from === "string" ? search.from.slice(0, 2048) : "",
+	// Optional, so a bare /focus doesn't redirect to fill them in.
+	validateSearch: (
+		search: Record<string, unknown>,
+	): { site?: string; from?: string } => ({
+		...(typeof search.site === "string"
+			? { site: search.site.slice(0, 120) }
+			: {}),
+		...(typeof search.from === "string"
+			? { from: search.from.slice(0, 2048) }
+			: {}),
 	}),
 	head: () => ({
 		meta: [
@@ -19,7 +26,7 @@ export const Route = createFileRoute("/focus")({
 });
 
 function FocusPage() {
-	const { site, from } = Route.useSearch();
+	const { site = "", from = "" } = Route.useSearch();
 	const [failed, setFailed] = useState(false);
 	const canReturn = /^https?:\/\//i.test(from);
 	return (

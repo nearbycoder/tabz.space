@@ -16,8 +16,22 @@ type Props = {
 	sealed?: boolean;
 };
 
-/** tabz's own icon lookup (src/routes/api/icon.ts), by site (see iconScope). */
+const iconUrls = new Map<string, string | null>();
+
+/** iconUrl, remembered: a board of hundreds of tiles asks for the same few. */
 function iconUrl(url: string, hint?: string) {
+	const key = `${url}\u0000${hint ?? ""}`;
+	let found = iconUrls.get(key);
+	if (found === undefined) {
+		if (iconUrls.size > 5000) iconUrls.clear();
+		found = buildIconUrl(url, hint);
+		iconUrls.set(key, found);
+	}
+	return found;
+}
+
+/** tabz's own icon lookup (src/routes/api/icon.ts), by site (see iconScope). */
+function buildIconUrl(url: string, hint?: string) {
 	try {
 		const scope = iconScope(url);
 		if (!scope) return null;

@@ -28,6 +28,7 @@ import {
 	WIDGET_TYPES,
 } from "#/lib/preferences";
 import { SMART_EMPTY, smartItems } from "#/lib/smart";
+import { useStableIds } from "#/lib/stable";
 import { updateGroup } from "#/server/home";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
@@ -90,6 +91,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		[boards, smart],
 	);
 	const style = group.options.tileStyle ?? layout.tileStyle;
+	const tileIds = useStableIds(group.bookmarks.map((item) => item.id));
 	// While resizing, the card follows the pointer before the width is saved.
 	const [resizing, setResizing] = useState<GroupWidth | null>(null);
 	const fraction = resizing
@@ -326,7 +328,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 					)}
 				>
 					<SortableContext
-						items={group.bookmarks.map((item) => item.id)}
+						items={tileIds}
 						strategy={
 							style === "list"
 								? verticalListSortingStrategy

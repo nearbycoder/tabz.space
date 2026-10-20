@@ -2,7 +2,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Folder, Pencil, TriangleAlert, VenetianMask } from "lucide-react";
-import { type MouseEvent, type ReactNode, useRef, useState } from "react";
+import { type MouseEvent, memo, type ReactNode, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { screenshotFor } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
@@ -12,7 +12,7 @@ import {
 	unreadCount,
 } from "#/lib/preferences";
 import { hostnameOf } from "#/lib/url";
-import { useHomeContext } from "./context";
+import { useTileContext } from "./context";
 import { LinkPreview } from "./LinkPreview";
 import {
 	flattenTree,
@@ -52,8 +52,13 @@ const iconSize = {
 const boxBase =
 	"relative grid aspect-square w-full place-items-center bg-[color-mix(in_srgb,var(--ink)_5%,transparent)] transition group-hover/tile:bg-[color-mix(in_srgb,var(--ink)_9%,transparent)] group-hover/tile:shadow-lg";
 
-export function BookmarkTile({ item, style, size }: Props) {
-	const { editing } = useHomeContext();
+/** Memoized: unchanged tiles skip re-rendering when the library refetches. */
+export const BookmarkTile = memo(function BookmarkTile({
+	item,
+	style,
+	size,
+}: Props) {
+	const { editing } = useTileContext();
 	const sortable = useSortable({
 		id: item.id,
 		data: { type: "bookmark", kind: item.kind, groupId: item.groupId },
@@ -87,7 +92,7 @@ export function BookmarkTile({ item, style, size }: Props) {
 			</div>
 		</div>
 	);
-}
+});
 
 /** "12 links · 2 folders", counting everything nested inside. */
 export function folderSummary(children: TreeItem[]) {
@@ -170,7 +175,40 @@ function FolderMosaic({
 	);
 }
 
-export function TileBody({ item, style, size, overlay }: Props) {
+type Drop = {
+	isOver: boolean;
+	setNodeRef: (node: HTMLElement | null) => void;
+};
+const NO_DROP: Drop = { isOver: false, setNodeRef: () => {} };
+
+/**
+ * Only folders are drop targets ("drop a link into this folder"). Plain links
+ * skip registering one: dnd-kit copies its whole droppable list on every
+ * registration, so hundreds of unused ones made big boards slow to open.
+ */
+export function TileBody(props: Props) {
+	return props.item.kind === "folder" && !props.overlay ? (
+		<FolderTileBody {...props} />
+	) : (
+		<TileBodyView {...props} drop={NO_DROP} />
+	);
+}
+
+function FolderTileBody(props: Props) {
+	const drop = useDroppable({
+		id: `into:${props.item.id}`,
+		data: { type: "into", folderId: props.item.id },
+	});
+	return <TileBodyView {...props} drop={drop} />;
+}
+
+function TileBodyView({
+	item,
+	style,
+	size,
+	overlay,
+	drop,
+}: Props & { drop: Drop }) {
 	const {
 		editing,
 		settings,
@@ -179,7 +217,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 		isIncognito,
 		openLink,
 		readOnly,
-	} = useHomeContext();
+	} = useTileContext();
 	const incognito = isIncognito(item);
 	const isFolder = item.kind === "folder";
 	// Folders add up the new posts of everything inside.
@@ -202,11 +240,6 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			!editing &&
 			(style === "tile" || style === "icon" || style === "gallery"),
 	);
-	const drop = useDroppable({
-		id: `into:${item.id}`,
-		data: { type: "into", folderId: item.id },
-		disabled: !isFolder || overlay,
-	});
 	const [imageFailed, setImageFailed] = useState(false);
 
 	const open = (event: MouseEvent) => {

@@ -16,7 +16,9 @@ import * as widgets from "./widgets";
 /* RPC surface for the web app. All logic lives in ./library (shared with MCP). */
 
 export const getHome = createServerFn().handler(() =>
-	runAuthed((user) => library.loadHome(user.id)),
+	runAuthed((user) =>
+		library.loadHome(user.id).pipe(Effect.map(library.clientHome)),
+	),
 );
 
 export type HomeData = Awaited<ReturnType<typeof getHome>>;

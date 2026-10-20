@@ -58,19 +58,17 @@ import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { BoardGrid } from "./BoardGrid";
 import { Clock } from "./Clock";
-import { HomeContext } from "./context";
+import { HomeContext, TileContext } from "./context";
 import { ReportBanner } from "./MonthlyReport";
 import { Rediscover } from "./Rediscover";
 import { SearchBar } from "./SearchBar";
 import { TopSites } from "./TopSites";
 import {
 	type DialogState,
-	findInTree,
 	type HomeBoard,
 	type HomeGroup,
 	isLinksGroup,
 	type LinkItem,
-	linksIn,
 	mapTree,
 	type TreeItem,
 	targetUrl,
@@ -339,15 +337,26 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	};
 
 	// Keep the current board's tab in view and name the browser tab after it.
+	// Only when the board itself changes (not on every data update), and
+	// after the new board has painted, since scrolling forces a layout.
+	const boardId = board?.id;
+	const boardTitle = board
+		? board.vault
+			? "tabz"
+			: `${board.icon ? `${board.icon} ` : ""}${board.name} · tabz`
+		: null;
 	useEffect(() => {
-		if (!board) return;
-		document.querySelector(`[data-board-tab="${board.id}"]`)?.scrollIntoView({
-			inline: "center",
-			block: "nearest",
-			behavior: "smooth",
-		});
-		document.title = `${board.vault ? "tabz" : `${board.icon ? `${board.icon} ` : ""}${board.name} · tabz`}`;
-	}, [board]);
+		if (!boardId || !boardTitle) return;
+		document.title = boardTitle;
+		const frame = requestAnimationFrame(() =>
+			document.querySelector(`[data-board-tab="${boardId}"]`)?.scrollIntoView({
+				inline: "center",
+				block: "nearest",
+				behavior: "smooth",
+			}),
+		);
+		return () => cancelAnimationFrame(frame);
+	}, [boardId, boardTitle]);
 
 	// ⌘K / Ctrl+K toggles the palette (which only loads once it's needed).
 	useEffect(() => {
@@ -369,6 +378,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			FolderDialog.preload();
 			SettingsPanel.preload();
 			GroupDialog.preload();
+			BoardDialog.preload();
+			NewFolderDialog.preload();
+			BulkAddDialog.preload();
+			ShortcutsDialog.preload();
 			if (vault.configured) VaultUnlockDialog.preload();
 		});
 	}, [vault.configured]);
@@ -655,22 +668,22 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		};
 	}, [vault.unlocked, vault.expiresAt, lockVault]);
 
-	const links = useMemo(
-		() =>
-			boards.flatMap((b) =>
-				b.groups.flatMap((group) =>
-					linksIn(group.bookmarks).map((bookmark) => ({
-						bookmark: bookmark as LinkItem,
-						group: [
-							group.name,
-							...(findInTree(group.bookmarks, bookmark.id)?.path.map(
-								(folder) => folder.title,
-							) ?? []),
-						].join(" / "),
-					})),
-				),
-			),
-		[boards],
+	// Every link with where it lives ("Group / Folder / Subfolder"), in one walk.
+	const links = useMemo(() => {
+		const out: { bookmark: LinkItem; group: string }[] = [];
+		const walk = (items: TreeItem[], where: string) => {
+			for (const item of items)
+				if (item.kind === "folder")
+					walk(item.children, `${where} / ${item.title}`);
+				else out.push({ bookmark: item, group: where });
+		};
+		for (const b of boards)
+			for (const group of b.groups) walk(group.bookmarks, group.name);
+		return out;
+	}, [boards]);
+	const linkItems = useMemo(
+		() => links.map((entry) => entry.bookmark),
+		[links],
 	);
 
 	const onVisit = useCallback(
@@ -714,20 +727,26 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	);
 
 	// Folders that are private themselves or sit inside a private folder.
-	const incognitoFolders = useMemo(() => {
-		const ids = new Set<string>();
+	// Keyed by content, so the set (and everything built on it) keeps its
+	// identity across refetches unless private folders actually change.
+	const incognitoKey = useMemo(() => {
+		const ids: string[] = [];
 		const walk = (items: TreeItem[], inherited: boolean) => {
 			for (const item of items) {
 				if (item.kind !== "folder") continue;
 				const privateHere = inherited || item.incognito;
-				if (privateHere) ids.add(item.id);
+				if (privateHere) ids.push(item.id);
 				walk(item.children, privateHere);
 			}
 		};
 		for (const group of boards.flatMap((b) => b.groups))
 			walk(group.bookmarks, false);
-		return ids;
+		return ids.sort().join(",");
 	}, [boards]);
+	const incognitoFolders = useMemo(
+		() => new Set(incognitoKey ? incognitoKey.split(",") : []),
+		[incognitoKey],
+	);
 
 	const isIncognito = useCallback(
 		(bookmark: LinkItem) =>
@@ -789,6 +808,19 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		],
 	);
 
+	const tileContext = useMemo(
+		() => ({
+			settings,
+			editing,
+			openDialog: setDialog,
+			onVisit,
+			isIncognito,
+			openLink,
+			readOnly,
+		}),
+		[settings, editing, onVisit, isIncognito, openLink, readOnly],
+	);
+
 	if (!board) return null;
 	const close = () => setDialog(null);
 	const isDark =
@@ -799,381 +831,386 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	return (
 		<HomeContext.Provider value={context}>
-			<div className="relative min-h-dvh" data-board={board.name}>
-				{settings.customCss && (
-					// User-authored styles for their own page; can't close the tag.
-					<style>{settings.customCss.replace(/<\/?\s*style/gi, "")}</style>
-				)}
-				<Backdrop background={settings.background} />
+			<TileContext.Provider value={tileContext}>
+				<div className="relative min-h-dvh" data-board={board.name}>
+					{settings.customCss && (
+						// User-authored styles for their own page; can't close the tag.
+						<style>{settings.customCss.replace(/<\/?\s*style/gi, "")}</style>
+					)}
+					<Backdrop background={settings.background} />
 
-				<header className="sticky top-0 z-30 bg-[color-mix(in_srgb,var(--canvas)_60%,transparent)] pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:bg-transparent sm:backdrop-blur-none">
-					<div
-						className={cn(
-							"mx-auto flex items-center gap-2 px-4 py-3 sm:px-6",
-							widths[board.layout.width],
-						)}
-					>
-						<Logo className="mr-2 hidden text-base sm:inline-flex" />
-						<nav className="glass flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]">
-							{[
-								...boards.filter((b) => !b.vault),
-								...boards.filter((b) => b.vault),
-							].map((b: HomeBoard, index, list) => (
+					<header className="sticky top-0 z-30 bg-[color-mix(in_srgb,var(--canvas)_60%,transparent)] pt-[env(safe-area-inset-top)] backdrop-blur-xl sm:bg-transparent sm:backdrop-blur-none">
+						<div
+							className={cn(
+								"mx-auto flex items-center gap-2 px-4 py-3 sm:px-6",
+								widths[board.layout.width],
+							)}
+						>
+							<Logo className="mr-2 hidden text-base sm:inline-flex" />
+							<nav className="glass flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]">
+								{[
+									...boards.filter((b) => !b.vault),
+									...boards.filter((b) => b.vault),
+								].map((b: HomeBoard, index, list) => (
+									<button
+										key={b.id}
+										type="button"
+										data-board-tab={b.id}
+										onClick={() => selectBoard(b.id)}
+										onDoubleClick={() => setDialog({ type: "board", board: b })}
+										className={cn(
+											"focus-ring flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm transition",
+											b.id === board.id
+												? "bg-surface-2 font-medium text-ink shadow-sm"
+												: "text-muted hover:text-ink",
+											b.vault &&
+												"border border-dashed border-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
+											b.vault && !list[index - 1]?.vault && "ml-2",
+										)}
+									>
+										{b.vault && <Lock className="size-3 text-accent" />}
+										{b.icon && <span>{b.icon}</span>}
+										{b.name}
+										{(b.ownerName || b.shareSlug) && (
+											<Users
+												className="size-3 text-muted"
+												aria-label={
+													b.ownerName
+														? `Shared by ${b.ownerName}`
+														: "Shared publicly"
+												}
+											/>
+										)}
+										{editing && b.id === board.id && (
+											<Pencil
+												className="size-3 text-muted"
+												onClick={(event) => {
+													event.stopPropagation();
+													setDialog({ type: "board", board: b });
+												}}
+											/>
+										)}
+									</button>
+								))}
 								<button
-									key={b.id}
 									type="button"
-									data-board-tab={b.id}
-									onClick={() => selectBoard(b.id)}
-									onDoubleClick={() => setDialog({ type: "board", board: b })}
-									className={cn(
-										"focus-ring flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm transition",
-										b.id === board.id
-											? "bg-surface-2 font-medium text-ink shadow-sm"
-											: "text-muted hover:text-ink",
-										b.vault &&
-											"border border-dashed border-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
-										b.vault && !list[index - 1]?.vault && "ml-2",
-									)}
+									className="icon-btn size-8"
+									aria-label="New board"
+									onClick={() => setDialog({ type: "board" })}
 								>
-									{b.vault && <Lock className="size-3 text-accent" />}
-									{b.icon && <span>{b.icon}</span>}
-									{b.name}
-									{(b.ownerName || b.shareSlug) && (
-										<Users
-											className="size-3 text-muted"
-											aria-label={
-												b.ownerName
-													? `Shared by ${b.ownerName}`
-													: "Shared publicly"
-											}
-										/>
-									)}
-									{editing && b.id === board.id && (
-										<Pencil
-											className="size-3 text-muted"
-											onClick={(event) => {
-												event.stopPropagation();
-												setDialog({ type: "board", board: b });
-											}}
-										/>
-									)}
+									<Plus className="size-4" />
 								</button>
-							))}
-							<button
-								type="button"
-								className="icon-btn size-8"
-								aria-label="New board"
-								onClick={() => setDialog({ type: "board" })}
-							>
-								<Plus className="size-4" />
-							</button>
-						</nav>
-						<div className="ml-auto hidden items-center gap-1 sm:flex">
-							{vault.unlocked && (
+							</nav>
+							<div className="ml-auto hidden items-center gap-1 sm:flex">
+								{vault.unlocked && (
+									<button
+										type="button"
+										onClick={() => lockVault()}
+										title="Lock vault"
+										aria-label="Lock vault"
+										className="btn-ghost text-accent"
+									>
+										<Lock className="size-4" />
+										<span className="hidden text-xs tabular-nums sm:inline">
+											{vault.expiresAt
+												? `${Math.max(1, Math.ceil((vault.expiresAt - now) / 60_000))}m`
+												: "Lock"}
+										</span>
+									</button>
+								)}
 								<button
 									type="button"
-									onClick={() => lockVault()}
-									title="Lock vault"
-									aria-label="Lock vault"
-									className="btn-ghost text-accent"
+									onClick={() => setPaletteOpen(true)}
+									className="glass focus-ring hidden items-center gap-2 rounded-xl py-1.5 pr-1.5 pl-3 text-sm text-muted transition hover:text-ink md:flex"
 								>
-									<Lock className="size-4" />
-									<span className="hidden text-xs tabular-nums sm:inline">
-										{vault.expiresAt
-											? `${Math.max(1, Math.ceil((vault.expiresAt - now) / 60_000))}m`
-											: "Lock"}
+									Jump to…
+									<kbd className="flex items-center gap-0.5 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">
+										<Command className="size-3" />K
+									</kbd>
+								</button>
+								<button
+									type="button"
+									className={cn(
+										"btn-ghost",
+										editing && "bg-accent text-white hover:bg-accent",
+									)}
+									onClick={() => setEditing((value) => !value)}
+									disabled={readOnly}
+									title={
+										readOnly ? "This board is view-only" : "Edit layout (E)"
+									}
+								>
+									{editing ? (
+										<Check className="size-4" />
+									) : (
+										<Pencil className="size-4" />
+									)}
+									<span className="hidden sm:inline">
+										{editing ? "Done" : "Edit"}
 									</span>
 								</button>
-							)}
-							<button
-								type="button"
-								onClick={() => setPaletteOpen(true)}
-								className="glass focus-ring hidden items-center gap-2 rounded-xl py-1.5 pr-1.5 pl-3 text-sm text-muted transition hover:text-ink md:flex"
-							>
-								Jump to…
-								<kbd className="flex items-center gap-0.5 rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">
-									<Command className="size-3" />K
-								</kbd>
-							</button>
-							<button
-								type="button"
-								className={cn(
-									"btn-ghost",
-									editing && "bg-accent text-white hover:bg-accent",
-								)}
-								onClick={() => setEditing((value) => !value)}
-								disabled={readOnly}
-								title={readOnly ? "This board is view-only" : "Edit layout (E)"}
-							>
-								{editing ? (
-									<Check className="size-4" />
-								) : (
-									<Pencil className="size-4" />
-								)}
-								<span className="hidden sm:inline">
-									{editing ? "Done" : "Edit"}
-								</span>
-							</button>
-							<button
-								type="button"
-								className="icon-btn"
-								aria-label="Add bookmark"
-								title="Add bookmark (N)"
-								disabled={readOnly || !board.groups.find(isLinksGroup)}
-								onClick={() =>
-									board.groups.find(isLinksGroup) &&
-									setDialog({
-										type: "bookmark",
-										groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
-									})
-								}
-							>
-								<Plus className="size-5" />
-							</button>
-							<button
-								type="button"
-								className="icon-btn"
-								aria-label="Customize"
-								title="Customize"
-								onClick={() => setDialog({ type: "settings" })}
-							>
-								<SlidersHorizontal className="size-4" />
-							</button>
+								<button
+									type="button"
+									className="icon-btn"
+									aria-label="Add bookmark"
+									title="Add bookmark (N)"
+									disabled={readOnly || !board.groups.find(isLinksGroup)}
+									onClick={() =>
+										board.groups.find(isLinksGroup) &&
+										setDialog({
+											type: "bookmark",
+											groupId: (board.groups.find(isLinksGroup) as HomeGroup)
+												.id,
+										})
+									}
+								>
+									<Plus className="size-5" />
+								</button>
+								<button
+									type="button"
+									className="icon-btn"
+									aria-label="Customize"
+									title="Customize"
+									onClick={() => setDialog({ type: "settings" })}
+								>
+									<SlidersHorizontal className="size-4" />
+								</button>
+							</div>
 						</div>
-					</div>
-				</header>
+					</header>
 
-				<main
-					className={cn(
-						"relative mx-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-24",
-						widths[board.layout.width],
-					)}
-					onTouchStart={onSwipeStart}
-					onTouchEnd={onSwipeEnd}
-				>
-					<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
-						{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
-						{/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users open the vault by typing the code */}
-						<div
-							onClick={onClockTap}
-							className={cn(
-								"select-none",
-								// Keep a tap target for the vault even with the clock hidden.
-								!settings.showClock && !settings.showGreeting && "min-h-16",
+					<main
+						className={cn(
+							"relative mx-auto px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-24",
+							widths[board.layout.width],
+						)}
+						onTouchStart={onSwipeStart}
+						onTouchEnd={onSwipeEnd}
+					>
+						<div className="flex flex-col gap-6 pt-6 pb-10 sm:pt-10">
+							{/* biome-ignore lint/a11y/noStaticElementInteractions: hidden vault gesture, intentionally undiscoverable */}
+							{/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users open the vault by typing the code */}
+							<div
+								onClick={onClockTap}
+								className={cn(
+									"select-none",
+									// Keep a tap target for the vault even with the clock hidden.
+									!settings.showClock && !settings.showGreeting && "min-h-16",
+								)}
+								data-clock
+							>
+								<Clock
+									name={settings.greetingName || session.name}
+									showClock={settings.showClock}
+									showGreeting={settings.showGreeting}
+									format={settings.clockFormat}
+									timeZone={settings.timeZone}
+								/>
+							</div>
+							{settings.showSearch && (
+								<SearchBar
+									bookmarks={links}
+									engine={settings.searchEngine}
+									openInNewTab={settings.openInNewTab}
+								/>
 							)}
-							data-clock
-						>
-							<Clock
-								name={settings.greetingName || session.name}
-								showClock={settings.showClock}
-								showGreeting={settings.showGreeting}
-								format={settings.clockFormat}
-								timeZone={settings.timeZone}
+							<TopSites links={linkItems} />
+							<ReportBanner
+								onOpen={(month) => setDialog({ type: "report", month })}
 							/>
 						</div>
-						{settings.showSearch && (
-							<SearchBar
-								bookmarks={links}
-								engine={settings.searchEngine}
-								openInNewTab={settings.openInNewTab}
+						{board.vault && vault.encrypted && !vaultKeyReady && (
+							<button
+								type="button"
+								onClick={() => setDialog({ type: "vault-unlock" })}
+								className="glass mx-auto mb-4 flex items-center gap-2 rounded-full px-4 py-2 text-sm"
+							>
+								<Lock className="size-4 text-accent" /> Enter your vault
+								password to read these links in this tab
+							</button>
+						)}
+						{!online && (
+							<p
+								role="status"
+								className="glass mx-auto mb-4 w-fit rounded-full px-4 py-1.5 text-sm text-muted"
+							>
+								📡 You're offline. Links still open; changes will save once
+								you're back.
+							</p>
+						)}
+						{hiddenForFocus > 0 && (
+							<p
+								role="status"
+								className="glass mx-auto mb-4 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-sm text-muted"
+							>
+								🎯 Focus mode: {hiddenForFocus} distracting group
+								{hiddenForFocus === 1 ? "" : "s"} hidden until{" "}
+								{new Date(
+									focusEndsAt(settings.focus, now, settings.timeZone),
+								).toLocaleTimeString(undefined, {
+									hour: "numeric",
+									minute: "2-digit",
+								})}
+								<button
+									type="button"
+									className="font-medium text-accent hover:underline"
+									onClick={() => setPeek(true)}
+								>
+									Show anyway
+								</button>
+							</p>
+						)}
+						<div key={board.id} className="animate-pop">
+							<BoardGrid board={shownBoard} />
+						</div>
+						<Rediscover />
+					</main>
+
+					<MobileDock
+						editing={editing}
+						vaultUnlocked={vault.unlocked}
+						onSearch={() => setPaletteOpen(true)}
+						onAdd={() =>
+							board.groups.find(isLinksGroup) &&
+							setDialog({
+								type: "bookmark",
+								groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+							})
+						}
+						onEdit={() => setEditing((value) => !value)}
+						onCustomize={() => setDialog({ type: "settings" })}
+						onLock={() => lockVault()}
+						dark={isDark}
+						onToggleTheme={() =>
+							saveSettings.mutate({ theme: isDark ? "light" : "dark" })
+						}
+					/>
+
+					<Suspense fallback={null}>
+						{paletteOpen && (
+							<CommandPalette
+								open={paletteOpen}
+								onOpenChange={(open) => {
+									setPaletteOpen(open);
+									if (!open) setPaletteQuery("");
+								}}
+								board={board}
+								onSelectBoard={selectBoard}
+								onToggleEdit={() => setEditing((value) => !value)}
+								onSaveSettings={(patch) => saveSettings.mutate(patch)}
+								onLockVault={vault.unlocked ? () => lockVault() : undefined}
+								onUndo={() => undoLast()}
+								initialQuery={paletteQuery}
+								aiEnabled={data.features.ai}
 							/>
 						)}
-						<TopSites links={links.map((entry) => entry.bookmark)} />
-						<ReportBanner
-							onOpen={(month) => setDialog({ type: "report", month })}
-						/>
-					</div>
-					{board.vault && vault.encrypted && !vaultKeyReady && (
-						<button
-							type="button"
-							onClick={() => setDialog({ type: "vault-unlock" })}
-							className="glass mx-auto mb-4 flex items-center gap-2 rounded-full px-4 py-2 text-sm"
-						>
-							<Lock className="size-4 text-accent" /> Enter your vault password
-							to read these links in this tab
-						</button>
-					)}
-					{!online && (
-						<p
-							role="status"
-							className="glass mx-auto mb-4 w-fit rounded-full px-4 py-1.5 text-sm text-muted"
-						>
-							📡 You're offline. Links still open; changes will save once you're
-							back.
-						</p>
-					)}
-					{hiddenForFocus > 0 && (
-						<p
-							role="status"
-							className="glass mx-auto mb-4 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-sm text-muted"
-						>
-							🎯 Focus mode: {hiddenForFocus} distracting group
-							{hiddenForFocus === 1 ? "" : "s"} hidden until{" "}
-							{new Date(
-								focusEndsAt(settings.focus, now, settings.timeZone),
-							).toLocaleTimeString(undefined, {
-								hour: "numeric",
-								minute: "2-digit",
-							})}
-							<button
-								type="button"
-								className="font-medium text-accent hover:underline"
-								onClick={() => setPeek(true)}
-							>
-								Show anyway
-							</button>
-						</p>
-					)}
-					<div key={board.id} className="animate-pop">
-						<BoardGrid board={shownBoard} />
-					</div>
-					<Rediscover />
-				</main>
 
-				<MobileDock
-					editing={editing}
-					vaultUnlocked={vault.unlocked}
-					onSearch={() => setPaletteOpen(true)}
-					onAdd={() =>
-						board.groups.find(isLinksGroup) &&
-						setDialog({
-							type: "bookmark",
-							groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
-						})
-					}
-					onEdit={() => setEditing((value) => !value)}
-					onCustomize={() => setDialog({ type: "settings" })}
-					onLock={() => lockVault()}
-					dark={isDark}
-					onToggleTheme={() =>
-						saveSettings.mutate({ theme: isDark ? "light" : "dark" })
-					}
-				/>
-
-				<Suspense fallback={null}>
-					{paletteOpen && (
-						<CommandPalette
-							open={paletteOpen}
-							onOpenChange={(open) => {
-								setPaletteOpen(open);
-								if (!open) setPaletteQuery("");
-							}}
-							board={board}
-							onSelectBoard={selectBoard}
-							onToggleEdit={() => setEditing((value) => !value)}
-							onSaveSettings={(patch) => saveSettings.mutate(patch)}
-							onLockVault={vault.unlocked ? () => lockVault() : undefined}
-							onUndo={() => undoLast()}
-							initialQuery={paletteQuery}
-							aiEnabled={data.features.ai}
-						/>
-					)}
-
-					{dialog?.type === "bookmark" && (
-						<BookmarkDialog
-							boards={boards}
-							groupId={dialog.groupId}
-							bookmark={dialog.bookmark}
-							parentId={dialog.parentId}
-							initialUrl={dialog.url}
-							festive={settings.celebrate}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "history" && (
-						<HistoryDialog initialTab={dialog.tab} onClose={close} />
-					)}
-					{dialog?.type === "duplicates" && (
-						<DuplicatesDialog onClose={close} />
-					)}
-					{dialog?.type === "link-health" && (
-						<LinkHealthDialog onClose={close} />
-					)}
-					{dialog?.type === "ai-command" && (
-						<AiCommandDialog text={dialog.text} onClose={close} />
-					)}
-					{dialog?.type === "shortcuts" && (
-						<ShortcutsDialog
-							showVault={!vault.configured || vault.unlocked}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "report" && (
-						<MonthlyReportDialog month={dialog.month} onClose={close} />
-					)}
-					{dialog?.type === "bulk-add" &&
-						(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
-							<BulkAddDialog
+						{dialog?.type === "bookmark" && (
+							<BookmarkDialog
 								boards={boards}
-								groupId={
-									(dialog.groupId ??
-										board.groups.find(isLinksGroup)?.id) as string
-								}
-								initialText={dialog.text}
+								groupId={dialog.groupId}
+								bookmark={dialog.bookmark}
+								parentId={dialog.parentId}
+								initialUrl={dialog.url}
 								festive={settings.celebrate}
 								onClose={close}
 							/>
 						)}
-					{dialog?.type === "folder" && (
-						<FolderDialog
-							key={dialog.folderId}
-							folderId={dialog.folderId}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "new-folder" && (
-						<NewFolderDialog
-							groupId={dialog.groupId}
-							parentId={dialog.parentId}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "group" && (
-						<GroupDialog
-							boards={boards}
-							boardId={dialog.boardId}
-							group={dialog.group}
-							initialKind={dialog.kind}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "board" && (
-						<BoardDialog
-							board={dialog.board}
-							canDelete={
-								(!dialog.board || dialog.board.role === "owner") &&
-								(Boolean(dialog.board?.vault) ||
-									boards.filter((b) => !b.vault && b.role === "owner").length >
-										1)
-							}
-							vaultUnlocked={vault.unlocked}
-							userId={data.userId}
-							onClose={close}
-						/>
-					)}
-					{dialog?.type === "vault-unlock" && (
-						<VaultUnlockDialog
-							onClose={close}
-							onUnlocked={(boardId) => {
-								close();
-								saveSettings.mutate({ activeBoardId: boardId });
-							}}
-						/>
-					)}
-					{dialog?.type === "settings" && (
-						<SettingsPanel
-							settings={settings}
-							vault={vault}
-							board={board}
-							boards={boards}
-							session={session}
-							aiAvailable={data.features.ai}
-							initialTab={dialog.tab}
-							onClose={close}
-						/>
-					)}
-				</Suspense>
-			</div>
+						{dialog?.type === "history" && (
+							<HistoryDialog initialTab={dialog.tab} onClose={close} />
+						)}
+						{dialog?.type === "duplicates" && (
+							<DuplicatesDialog onClose={close} />
+						)}
+						{dialog?.type === "link-health" && (
+							<LinkHealthDialog onClose={close} />
+						)}
+						{dialog?.type === "ai-command" && (
+							<AiCommandDialog text={dialog.text} onClose={close} />
+						)}
+						{dialog?.type === "shortcuts" && (
+							<ShortcutsDialog
+								showVault={!vault.configured || vault.unlocked}
+								onClose={close}
+							/>
+						)}
+						{dialog?.type === "report" && (
+							<MonthlyReportDialog month={dialog.month} onClose={close} />
+						)}
+						{dialog?.type === "bulk-add" &&
+							(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
+								<BulkAddDialog
+									boards={boards}
+									groupId={
+										(dialog.groupId ??
+											board.groups.find(isLinksGroup)?.id) as string
+									}
+									initialText={dialog.text}
+									festive={settings.celebrate}
+									onClose={close}
+								/>
+							)}
+						{dialog?.type === "folder" && (
+							<FolderDialog
+								key={dialog.folderId}
+								folderId={dialog.folderId}
+								onClose={close}
+							/>
+						)}
+						{dialog?.type === "new-folder" && (
+							<NewFolderDialog
+								groupId={dialog.groupId}
+								parentId={dialog.parentId}
+								onClose={close}
+							/>
+						)}
+						{dialog?.type === "group" && (
+							<GroupDialog
+								boards={boards}
+								boardId={dialog.boardId}
+								group={dialog.group}
+								initialKind={dialog.kind}
+								onClose={close}
+							/>
+						)}
+						{dialog?.type === "board" && (
+							<BoardDialog
+								board={dialog.board}
+								canDelete={
+									(!dialog.board || dialog.board.role === "owner") &&
+									(Boolean(dialog.board?.vault) ||
+										boards.filter((b) => !b.vault && b.role === "owner")
+											.length > 1)
+								}
+								vaultUnlocked={vault.unlocked}
+								userId={data.userId}
+								onClose={close}
+							/>
+						)}
+						{dialog?.type === "vault-unlock" && (
+							<VaultUnlockDialog
+								onClose={close}
+								onUnlocked={(boardId) => {
+									close();
+									saveSettings.mutate({ activeBoardId: boardId });
+								}}
+							/>
+						)}
+						{dialog?.type === "settings" && (
+							<SettingsPanel
+								settings={settings}
+								vault={vault}
+								board={board}
+								boards={boards}
+								session={session}
+								aiAvailable={data.features.ai}
+								initialTab={dialog.tab}
+								onClose={close}
+							/>
+						)}
+					</Suspense>
+				</div>
+			</TileContext.Provider>
 		</HomeContext.Provider>
 	);
 }

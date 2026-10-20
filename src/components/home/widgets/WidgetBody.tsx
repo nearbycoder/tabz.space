@@ -7,6 +7,7 @@ import {
 	Suspense,
 	useCallback,
 	useMemo,
+	useState,
 } from "react";
 import { lazyNamed } from "#/lib/lazy";
 import type { Widget } from "#/lib/preferences";
@@ -39,11 +40,24 @@ const FeedWidget = lazyNamed(() => import("./DataWidgets"), "FeedWidget");
 type Data = Record<string, JsonValue>;
 type Lazy = LazyExoticComponent<ComponentType<WidgetProps<Data>>>;
 const components = new Map<CatalogType, Lazy>();
+/** Widgets whose code has arrived: rendered directly, without suspending. */
+const ready = new Map<CatalogType, ComponentType<WidgetProps<Data>>>();
+
+const loadWidget = (type: CatalogType) =>
+	REGISTRY[type].load().then((module) => {
+		ready.set(type, module.default);
+		return module;
+	});
 
 const componentFor = (type: CatalogType) => {
+	// A lazy component suspends on first render even when its code is already
+	// loaded, and React holds suspended content back ~300ms: preloaded widgets
+	// skip it so switching boards shows them at once.
+	const loaded = ready.get(type);
+	if (loaded) return loaded;
 	let found = components.get(type);
 	if (!found) {
-		found = lazy(REGISTRY[type].load);
+		found = lazy(() => loadWidget(type));
 		components.set(type, found);
 	}
 	return found;
@@ -52,7 +66,7 @@ const componentFor = (type: CatalogType) => {
 /** Starts downloading widgets' code early (e.g. when the browser is idle). */
 export const preloadWidgets = (types: string[]) => {
 	for (const type of new Set(types))
-		if (isCatalogType(type)) void REGISTRY[type].load();
+		if (isCatalogType(type)) void loadWidget(type);
 };
 
 /** One broken widget shouldn't take the whole page down. */
@@ -101,7 +115,17 @@ function CatalogBody({
 		() => ({ ...REGISTRY[widget.type].defaults, ...widget.data }),
 		[widget],
 	);
-	const Body = componentFor(widget.type);
+	// Chosen per mount (and per type), so a widget never remounts mid-use
+	// when its code finishes loading.
+	const [picked, setPicked] = useState(() => ({
+		type: widget.type,
+		Body: componentFor(widget.type),
+	}));
+	let Body = picked.Body;
+	if (picked.type !== widget.type) {
+		Body = componentFor(widget.type);
+		setPicked({ type: widget.type, Body });
+	}
 	return <Body group={group} data={data} save={save} readOnly={readOnly} />;
 }
 

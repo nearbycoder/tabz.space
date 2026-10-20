@@ -7,6 +7,7 @@ import {
 import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import type { UserSettings } from "#/lib/preferences";
+import { shareStructure } from "#/lib/share-structure";
 import { getHome, type HomeData, saveSettings, undo } from "#/server/home";
 
 export const homeKey = ["home"] as const;
@@ -14,6 +15,7 @@ export const homeKey = ["home"] as const;
 export const homeQuery = queryOptions({
 	queryKey: homeKey,
 	queryFn: () => run(call(getHome)),
+	structuralSharing: (prev, next) => shareStructure(prev, next),
 });
 
 export const useHome = () => useSuspenseQuery(homeQuery).data;

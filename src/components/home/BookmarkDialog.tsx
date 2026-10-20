@@ -29,6 +29,7 @@ import {
 	flattenTree,
 	type HomeBoard,
 	type LinkItem,
+	patchBookmark,
 	removeFromTree,
 	type TreeItem,
 } from "./types";
@@ -138,7 +139,27 @@ export function BookmarkForm({
 			done();
 		},
 	});
-	const update = useHomeAction(updateBookmark, { onSuccess: done });
+	const update = useHomeAction(updateBookmark, {
+		onSuccess: done,
+		// Edits in place show at once; moves and vault items wait for the server.
+		optimistic: (data, input) =>
+			!bookmark ||
+			input.sealed ||
+			input.groupId !== bookmark.groupId ||
+			(input.parentId ?? null) !== bookmark.parentId
+				? data
+				: patchBookmark(data, input.id, {
+						title: input.title || bookmark.title,
+						url: (input.url && normalizeUrl(input.url)) || bookmark.url,
+						description:
+							input.description === undefined
+								? bookmark.description
+								: input.description,
+						icon: input.icon === undefined ? bookmark.icon : input.icon,
+						color: input.color === undefined ? bookmark.color : input.color,
+						incognito: input.incognito ?? bookmark.incognito,
+					}),
+	});
 	const remove = useHomeAction(deleteBookmark, {
 		undoable: () => `Deleted “${bookmark?.title}”`,
 		optimistic: (data, input) => ({

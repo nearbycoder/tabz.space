@@ -22,6 +22,7 @@ import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { useDragSensors } from "#/lib/dnd-sensors";
 import { homeKey, useHomeAction } from "#/lib/home-query";
+import { useStableIds } from "#/lib/stable";
 import { useVisibleArea } from "#/lib/use-keyboard-inset";
 import { sealContents } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
@@ -73,6 +74,7 @@ export function FolderDialog({
 	const folder = found?.item;
 	const [title, setTitle] = useState(folder?.title ?? "");
 	const [order, setOrder] = useState(folder?.children ?? []);
+	const orderIds = useStableIds(order.map((c) => c.id));
 	const [confirming, setConfirming] = useState(false);
 	useEffect(() => setOrder(folder?.children ?? []), [folder?.children]);
 	useEffect(() => {
@@ -237,10 +239,7 @@ export function FolderDialog({
 					collisionDetection={closestCenter}
 					onDragEnd={onDragEnd}
 				>
-					<SortableContext
-						items={order.map((c) => c.id)}
-						strategy={rectSortingStrategy}
-					>
+					<SortableContext items={orderIds} strategy={rectSortingStrategy}>
 						<div
 							className="grid max-h-[50vh] gap-3 overflow-y-auto p-1"
 							style={gridFor("tile", "md")}
