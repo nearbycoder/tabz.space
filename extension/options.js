@@ -13,12 +13,14 @@ const stored = await chrome.storage.sync.get([
 	"newTab",
 	"focusPage",
 	"syncBookmarks",
+	"autoArchive",
 ]);
 const local = await chrome.storage.local.get(["lastSync", "lastSyncCount"]);
 $("baseUrl").value = stored.baseUrl || DEFAULT_BASE_URL;
 $("newTab").checked = stored.newTab ?? true;
 $("focusPage").checked = stored.focusPage ?? true;
 $("syncBookmarks").checked = stored.syncBookmarks ?? false;
+$("autoArchive").value = stored.autoArchive ?? "";
 // Private links need the browser's own per-extension switch.
 const firefox = navigator.userAgent.includes("Firefox");
 if (await chrome.extension.isAllowedIncognitoAccess()) {
@@ -56,6 +58,7 @@ $("save").addEventListener("click", async () => {
 		newTab: $("newTab").checked,
 		focusPage: $("focusPage").checked,
 		syncBookmarks: $("syncBookmarks").checked,
+		autoArchive: $("autoArchive").value,
 	});
 	flash("Saved");
 	if ($("syncBookmarks").checked)

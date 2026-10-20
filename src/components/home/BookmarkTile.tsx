@@ -404,6 +404,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			type="button"
 			onClick={open}
 			title={item.title}
+			data-tile-link={overlay ? undefined : item.id}
 			className={cn(
 				"focus-ring block w-full rounded-2xl text-left transition-transform pointer-coarse:active:scale-95",
 				overlay && "pointer-events-none",
@@ -418,6 +419,7 @@ export function TileBody({ item, style, size, overlay }: Props) {
 			rel="noopener noreferrer"
 			draggable={false}
 			onClick={open}
+			data-tile-link={overlay ? undefined : item.id}
 			onAuxClick={(event) => {
 				if (incognito && event.button === 1) {
 					event.preventDefault();

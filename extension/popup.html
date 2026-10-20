@@ -20,10 +20,13 @@
 				<small id="page-host"></small>
 			</div>
 			<button type="button" id="save-page" class="primary">Save this page</button>
+			<button type="button" id="read-later">Read later</button>
 			<button type="button" id="save-details">Save with details…</button>
 			<hr />
+			<input type="text" id="session-name" maxlength="60" placeholder="Session name (optional)" aria-label="Session name" />
 			<button type="button" id="save-tabs">Save all tabs as a group</button>
 			<label class="check"><input type="checkbox" id="close-tabs" /> Close them after saving</label>
+			<button type="button" id="archive-idle" hidden></button>
 		</section>
 		<p id="message" role="status"></p>
 		<footer><button type="button" id="options" class="link">Settings</button></footer>

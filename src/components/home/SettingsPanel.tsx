@@ -31,9 +31,10 @@ import {
 import { Modal } from "#/components/ui/Modal";
 import { loadFont } from "#/lib/appearance";
 import { authClient } from "#/lib/auth-client";
-import { parseBookmarkHtml, toBookmarkHtml } from "#/lib/bookmark-file";
+import { toBookmarkHtml } from "#/lib/bookmark-file";
 import { cn } from "#/lib/cn";
 import { homeKey, useHomeAction, useSaveSettings } from "#/lib/home-query";
+import { parseImportFile } from "#/lib/import-formats";
 import {
 	type ExtensionStatus,
 	getExtensionStatus,
@@ -61,6 +62,7 @@ import { CommunityThemes, CustomCssEditor } from "./CommunityThemes";
 import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
 import { ApiTokens, Channels, Webhooks } from "./Developer";
+import { FocusSettings } from "./FocusSettings";
 import type { HomeBoard } from "./types";
 import { VaultSettings, type VaultState } from "./Vault";
 
@@ -253,7 +255,7 @@ export function SettingsPanel({
 	}, [tab]);
 
 	const onImport = async (file: File) => {
-		const groups = parseBookmarkHtml(await file.text());
+		const groups = parseImportFile(await file.text());
 		if (groups.length === 0) {
 			toast.error("No bookmarks found in that file");
 			return;
@@ -781,6 +783,13 @@ export function SettingsPanel({
 							onChange={(openInNewTab) => set({ openInNewTab })}
 						/>
 					</Section>
+					<Section title="Focus mode">
+						<FocusSettings
+							focus={settings.focus}
+							timeZone={settings.timeZone}
+							onChange={(focus) => set({ focus })}
+						/>
+					</Section>
 					<Section title="Private browsing">
 						<Toggle
 							label="🕶️ Open every link in incognito"
@@ -804,7 +813,7 @@ export function SettingsPanel({
 							<input
 								ref={fileInput}
 								type="file"
-								accept=".html,.htm,text/html"
+								accept=".html,.htm,.json,.csv,.opml,.xml,.txt,text/html,application/json,text/csv"
 								className="hidden"
 								onChange={(event) => {
 									const file = event.target.files?.[0];
@@ -823,14 +832,18 @@ export function SettingsPanel({
 								) : (
 									<Upload className="size-4" />
 								)}{" "}
-								Import from browser
+								Import bookmarks
 							</button>
 							<button type="button" className="btn-outline" onClick={onExport}>
 								<Download className="size-4" /> Export
 							</button>
 						</div>
 						<p className="text-xs text-muted">
-							Chrome: Bookmarks → Bookmark manager → ⋮ → Export bookmarks.
+							Takes a browser bookmarks file (Chrome: Bookmark manager → ⋮ →
+							Export bookmarks), a Raindrop.io or Pocket export (CSV or HTML),
+							Toby (JSON), start.me (OPML or HTML), or Momentum and other JSON
+							exports. To keep tabz and your browser in step, turn on bookmark
+							sync in the extension's settings.
 						</p>
 					</Section>
 					<Section title="Safety net">

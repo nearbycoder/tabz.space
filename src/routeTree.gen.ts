@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AddRouteImport } from './routes/add'
 import { Route as ConsentRouteImport } from './routes/consent'
+import { Route as FocusRouteImport } from './routes/focus'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
@@ -20,6 +21,8 @@ import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as ApiVisitRouteImport } from './routes/api/visit'
 import { Route as BSlugRouteImport } from './routes/b.$slug'
 import { Route as MediaDemoRouteImport } from './routes/media/demo'
+import { Route as ReadIndexRouteImport } from './routes/read.index'
+import { Route as ReadIdRouteImport } from './routes/read.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiChannelsEmailRouteImport } from './routes/api/channels/email'
 import { Route as ApiChannelsTelegramRouteImport } from './routes/api/channels/telegram'
@@ -39,6 +42,11 @@ const AddRoute = AddRouteImport.update({
 const ConsentRoute = ConsentRouteImport.update({
   id: '/consent',
   path: '/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FocusRoute = FocusRouteImport.update({
+  id: '/focus',
+  path: '/focus',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -81,6 +89,16 @@ const MediaDemoRoute = MediaDemoRouteImport.update({
   path: '/media/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReadIndexRoute = ReadIndexRouteImport.update({
+  id: '/read/',
+  path: '/read/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReadIdRoute = ReadIdRouteImport.update({
+  id: '/read/$id',
+  path: '/read/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -111,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/add': typeof AddRoute
   '/consent': typeof ConsentRoute
+  '/focus': typeof FocusRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
@@ -119,6 +138,8 @@ export interface FileRoutesByFullPath {
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/media/demo': typeof MediaDemoRoute
+  '/read/$id': typeof ReadIdRoute
+  '/read/': typeof ReadIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -129,6 +150,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/add': typeof AddRoute
   '/consent': typeof ConsentRoute
+  '/focus': typeof FocusRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
@@ -137,6 +159,8 @@ export interface FileRoutesByTo {
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/media/demo': typeof MediaDemoRoute
+  '/read/$id': typeof ReadIdRoute
+  '/read': typeof ReadIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -148,6 +172,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/add': typeof AddRoute
   '/consent': typeof ConsentRoute
+  '/focus': typeof FocusRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
@@ -156,6 +181,8 @@ export interface FileRoutesById {
   '/api/visit': typeof ApiVisitRoute
   '/b/$slug': typeof BSlugRoute
   '/media/demo': typeof MediaDemoRoute
+  '/read/$id': typeof ReadIdRoute
+  '/read/': typeof ReadIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/channels/email': typeof ApiChannelsEmailRoute
   '/api/channels/telegram': typeof ApiChannelsTelegramRoute
@@ -168,6 +195,7 @@ export interface FileRouteTypes {
     | '/'
     | '/add'
     | '/consent'
+    | '/focus'
     | '/sign-in'
     | '/sign-up'
     | '/.well-known/$'
@@ -176,6 +204,8 @@ export interface FileRouteTypes {
     | '/api/visit'
     | '/b/$slug'
     | '/media/demo'
+    | '/read/$id'
+    | '/read/'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -186,6 +216,7 @@ export interface FileRouteTypes {
     | '/'
     | '/add'
     | '/consent'
+    | '/focus'
     | '/sign-in'
     | '/sign-up'
     | '/.well-known/$'
@@ -194,6 +225,8 @@ export interface FileRouteTypes {
     | '/api/visit'
     | '/b/$slug'
     | '/media/demo'
+    | '/read/$id'
+    | '/read'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -204,6 +237,7 @@ export interface FileRouteTypes {
     | '/'
     | '/add'
     | '/consent'
+    | '/focus'
     | '/sign-in'
     | '/sign-up'
     | '/.well-known/$'
@@ -212,6 +246,8 @@ export interface FileRouteTypes {
     | '/api/visit'
     | '/b/$slug'
     | '/media/demo'
+    | '/read/$id'
+    | '/read/'
     | '/api/auth/$'
     | '/api/channels/email'
     | '/api/channels/telegram'
@@ -223,6 +259,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AddRoute: typeof AddRoute
   ConsentRoute: typeof ConsentRoute
+  FocusRoute: typeof FocusRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
@@ -231,6 +268,8 @@ export interface RootRouteChildren {
   ApiVisitRoute: typeof ApiVisitRoute
   BSlugRoute: typeof BSlugRoute
   MediaDemoRoute: typeof MediaDemoRoute
+  ReadIdRoute: typeof ReadIdRoute
+  ReadIndexRoute: typeof ReadIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiChannelsEmailRoute: typeof ApiChannelsEmailRoute
   ApiChannelsTelegramRoute: typeof ApiChannelsTelegramRoute
@@ -259,6 +298,13 @@ declare module '@tanstack/react-router' {
       path: '/consent'
       fullPath: '/consent'
       preLoaderRoute: typeof ConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/focus': {
+      id: '/focus'
+      path: '/focus'
+      fullPath: '/focus'
+      preLoaderRoute: typeof FocusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -317,6 +363,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MediaDemoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/read/': {
+      id: '/read/'
+      path: '/read'
+      fullPath: '/read/'
+      preLoaderRoute: typeof ReadIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/read/$id': {
+      id: '/read/$id'
+      path: '/read/$id'
+      fullPath: '/read/$id'
+      preLoaderRoute: typeof ReadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -359,6 +419,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AddRoute: AddRoute,
   ConsentRoute: ConsentRoute,
+  FocusRoute: FocusRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
@@ -367,6 +428,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiVisitRoute: ApiVisitRoute,
   BSlugRoute: BSlugRoute,
   MediaDemoRoute: MediaDemoRoute,
+  ReadIdRoute: ReadIdRoute,
+  ReadIndexRoute: ReadIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiChannelsEmailRoute: ApiChannelsEmailRoute,
   ApiChannelsTelegramRoute: ApiChannelsTelegramRoute,

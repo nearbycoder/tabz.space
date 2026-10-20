@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
 	BarChart3,
+	BookOpen,
 	Bot,
 	ClipboardList,
 	Copy,
@@ -21,13 +22,16 @@ import {
 	Plus,
 	Search,
 	SlidersHorizontal,
+	Sparkles,
 	Sun,
+	Target,
 	Trash2,
 	Undo2,
 	Upload,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import { Favicon } from "#/components/ui/Favicon";
 import { call, run as runEffect } from "#/lib/api";
 import { showLeaving } from "#/lib/leaving";
@@ -36,8 +40,9 @@ import {
 	THEME_PRESETS,
 	type UserSettings,
 } from "#/lib/preferences";
+import { focusActive } from "#/lib/schedule";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
-import { searchContent } from "#/server/home";
+import { saveForLater, searchContent } from "#/server/home";
 import { useHomeContext } from "./context";
 import {
 	type HomeBoard,
@@ -56,6 +61,10 @@ type Props = {
 	/** Only passed while the vault is unlocked; the palette never mentions a locked vault. */
 	onLockVault?: () => void;
 	onUndo: () => void;
+	/** Text to start with (the address bar's "t" keyword sends it here). */
+	initialQuery?: string;
+	/** The server can run AI commands. */
+	aiEnabled?: boolean;
 };
 
 type Entry = { bookmark: LinkItem; path: string };
@@ -129,10 +138,12 @@ export function CommandPalette({
 	onSaveSettings,
 	onLockVault,
 	onUndo,
+	initialQuery = "",
+	aiEnabled = false,
 }: Props) {
 	const { boards, settings, openDialog, openLink, isIncognito } =
 		useHomeContext();
-	const [query, setQuery] = useState("");
+	const [query, setQuery] = useState(initialQuery);
 	const newTab = useRef(false);
 
 	// ⌘K is handled by the home screen, which mounts this only while open.
@@ -321,6 +332,39 @@ export function CommandPalette({
 									</Row>
 								</Command.Item>
 							)}
+							{typedUrl && (
+								<Command.Item
+									forceMount
+									value={`read later ${typedUrl}`}
+									onSelect={() =>
+										run(() => {
+											runEffect(call(saveForLater, { url: typedUrl })).then(
+												() => toast.success("Saved to Read later"),
+												(error: Error) => toast.error(error.message),
+											);
+										})
+									}
+									className={itemClass}
+								>
+									<Row icon={<BookOpen className="size-4" />}>
+										Read {hostnameOf(typedUrl)} later
+									</Row>
+								</Command.Item>
+							)}
+							{aiEnabled && !typedUrl && /\s/.test(trimmed) && (
+								<Command.Item
+									forceMount
+									value={`ask ai ${trimmed}`}
+									onSelect={() =>
+										run(() => openDialog({ type: "ai-command", text: trimmed }))
+									}
+									className={itemClass}
+								>
+									<Row icon={<Sparkles className="size-4" />} hint="AI">
+										Ask AI: “{trimmed}”
+									</Row>
+								</Command.Item>
+							)}
 						</Command.Group>
 					)}
 
@@ -480,6 +524,64 @@ export function CommandPalette({
 								className={itemClass}
 							>
 								<Row icon={<FolderPlus className="size-4" />}>New folder</Row>
+							</Command.Item>
+						)}
+						<Command.Item
+							value="read later reading list reader articles"
+							onSelect={() => run(() => window.location.assign("/read"))}
+							className={itemClass}
+						>
+							<Row icon={<BookOpen className="size-4" />}>Read later list</Row>
+						</Command.Item>
+						{focusActive(settings.focus, Date.now(), settings.timeZone) ? (
+							settings.focus.until &&
+							settings.focus.until > Date.now() && (
+								<Command.Item
+									value="end focus session stop"
+									onSelect={() =>
+										run(() =>
+											onSaveSettings({
+												focus: { ...settings.focus, until: null },
+											}),
+										)
+									}
+									className={itemClass}
+								>
+									<Row icon={<Target className="size-4" />}>
+										End focus session
+									</Row>
+								</Command.Item>
+							)
+						) : (
+							<Command.Item
+								value="focus mode start session 25 minutes pomodoro"
+								onSelect={() =>
+									run(() => {
+										onSaveSettings({
+											focus: {
+												...settings.focus,
+												until: Date.now() + 25 * 60_000,
+											},
+										});
+										toast.success("Focusing for 25 minutes");
+									})
+								}
+								className={itemClass}
+							>
+								<Row icon={<Target className="size-4" />}>
+									Focus for 25 minutes
+								</Row>
+							</Command.Item>
+						)}
+						{aiEnabled && (
+							<Command.Item
+								value="ask ai command assistant organize"
+								onSelect={() =>
+									run(() => openDialog({ type: "ai-command", text: "" }))
+								}
+								className={itemClass}
+							>
+								<Row icon={<Sparkles className="size-4" />}>Ask AI…</Row>
 							</Command.Item>
 						)}
 						<Command.Item

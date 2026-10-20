@@ -5,7 +5,7 @@ import type { BookmarkMeta, LinkHealth } from "#/lib/preferences";
 import { canonicalUrl } from "#/lib/url";
 import { autoTag } from "./ai";
 import { indexText, monitoredLinks, setMeta } from "./content";
-import { checkLink, fetchFeed, type PageMetadata } from "./metadata";
+import { checkLink, fetchFeed, fetchText, type PageMetadata } from "./metadata";
 import { query } from "./runtime";
 
 /*
@@ -17,7 +17,57 @@ const DAY = 24 * 60 * 60_000;
 const RECHECK_HEALTH = 7 * DAY;
 const RECHECK_FEED = 2 * 60 * 60_000;
 
-type Candidate = { id: string; url: string; meta: BookmarkMeta };
+type Candidate = {
+	id: string;
+	url: string;
+	meta: BookmarkMeta;
+	incognito?: boolean;
+};
+
+const ARCHIVE_RECHECK = 14 * DAY;
+
+/**
+ * The Wayback Machine's closest copy of a page, if it has one. Only asked
+ * about links that look broken, never private (incognito) or vault links.
+ */
+export const findArchivedCopy = (url: string) =>
+	fetchText(
+		new URL(
+			`https://archive.org/wayback/available?${new URLSearchParams({ url })}`,
+		),
+		"application/json",
+		/json/i,
+	).pipe(
+		Effect.timeout("8 seconds"),
+		Effect.map(({ body }) => {
+			const closest = (
+				JSON.parse(body || "{}") as {
+					archived_snapshots?: {
+						closest?: {
+							available?: boolean;
+							url?: string;
+							timestamp?: string;
+							status?: string;
+						};
+					};
+				}
+			).archived_snapshots?.closest;
+			if (!closest?.available || !closest.url || closest.status !== "200")
+				return null;
+			const copy = new URL(closest.url.replace(/^http:/, "https:"));
+			if (copy.hostname !== "web.archive.org") return null;
+			const stamp = closest.timestamp ?? "";
+			const at = /^\d{8}/.test(stamp)
+				? Date.UTC(
+						+stamp.slice(0, 4),
+						+stamp.slice(4, 6) - 1,
+						+stamp.slice(6, 8),
+					)
+				: null;
+			return { url: copy.toString(), at };
+		}),
+		Effect.catch(() => Effect.succeed(null)),
+	);
 
 const samePlace = (a: URL, b: URL) =>
 	a.hostname.replace(/^www\./, "") === b.hostname.replace(/^www\./, "");
@@ -59,6 +109,19 @@ export const checkHealth = (link: Candidate) =>
 			};
 		}
 		yield* setMeta(link.id, "health", health);
+		// Broken: look for a saved copy on the Wayback Machine to offer instead.
+		if (
+			health.status === "broken" &&
+			!link.incognito &&
+			now - (link.meta.archive?.checkedAt ?? 0) > ARCHIVE_RECHECK
+		) {
+			const copy = yield* findArchivedCopy(link.url);
+			yield* setMeta(link.id, "archive", {
+				url: copy?.url ?? null,
+				at: copy?.at ?? null,
+				checkedAt: now,
+			});
+		}
 		// Remember where permanent redirects lead, so clicks can skip the hop.
 		// Never a sign-in page: those mean "not without your cookies".
 		const go =
@@ -76,6 +139,7 @@ const linkColumns = {
 	id: bookmarks.id,
 	url: bookmarks.url,
 	meta: bookmarks.meta,
+	incognito: bookmarks.incognito,
 };
 
 /** Job: re-checks the links that have gone longest without a check. */

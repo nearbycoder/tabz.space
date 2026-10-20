@@ -245,6 +245,10 @@ export const WIDGET_DETAILS: Record<
 	},
 	"top-links": { category: "links", description: "The links you open most" },
 	"recent-links": { category: "links", description: "Your newest saved links" },
+	"reading-list": {
+		category: "links",
+		description: "Articles saved to read later, with read times",
+	},
 	"library-stats": {
 		category: "links",
 		description: "Links, folders, visits and top sites",

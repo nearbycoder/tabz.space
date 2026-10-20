@@ -1,10 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import { boards, bookmarks, groups } from "#/db/schema";
 import { NotFound } from "#/lib/effect/errors";
 import { DEFAULT_BOARD_LAYOUT } from "#/lib/preferences";
 import { faviconFor, normalizeUrl, titleFromUrl } from "#/lib/url";
+import * as browserSync from "./browser-sync";
 import * as library from "./library";
 import { query } from "./runtime";
 
@@ -99,6 +100,8 @@ export const smartAdd = (userId: string, data: z.infer<typeof smartAddInput>) =>
 export const saveTabsInput = z.object({
 	name: z.string().trim().max(60).optional(),
 	board: z.string().optional(),
+	/** Make the board (by name) when it doesn't exist yet, e.g. "Sessions". */
+	createBoard: z.boolean().optional(),
 	tabs: z
 		.array(
 			z.object({
@@ -117,19 +120,34 @@ export const saveTabsAsGroup = (
 ) =>
 	Effect.gen(function* () {
 		const home = yield* library.loadHome(userId);
-		const targetBoard = findBoard(home, data.board);
-		if (!targetBoard) return yield* new NotFound({ entity: "Board" });
 		const stamp = new Date().toLocaleString("en-US", {
 			month: "short",
 			day: "numeric",
 			hour: "numeric",
 			minute: "2-digit",
 		});
-		const group = yield* library.createGroup(userId, {
-			boardId: targetBoard.id,
-			name: data.name || `Tabs · ${stamp}`,
-			color: "#0ea5e9",
-		});
+		const name = data.name || `Tabs · ${stamp}`;
+		let targetBoard: { id: string } | undefined = findBoard(home, data.board);
+		let group: { id: string; name: string };
+		if (!targetBoard && data.createBoard && data.board) {
+			// A new board comes with an empty group: the session goes there.
+			const made = yield* library.createBoard(userId, {
+				name: data.board.slice(0, 60),
+			});
+			targetBoard = made.board;
+			group = yield* library.updateGroup(userId, {
+				id: made.group.id,
+				name,
+				color: "#0ea5e9",
+			});
+		} else {
+			if (!targetBoard) return yield* new NotFound({ entity: "Board" });
+			group = yield* library.createGroup(userId, {
+				boardId: targetBoard.id,
+				name,
+				color: "#0ea5e9",
+			});
+		}
 		const result = yield* library.bulkCreateBookmarks(userId, {
 			groupId: group.id,
 			urls: data.tabs.map((tab) => tab.url),
@@ -150,9 +168,15 @@ export const browserSyncInput = z.object({
 				path: z.string().max(300),
 				/** Folder names from the root (newer extensions); safer than splitting `path`. */
 				segments: z.array(z.string().max(200)).max(40).optional(),
+				/** The browser's ids for those folders (two-way sync). */
+				segmentIds: z.array(z.string().max(40)).max(40).optional(),
 				links: z
 					.array(
-						z.object({ title: z.string().max(200), url: z.string().max(2048) }),
+						z.object({
+							title: z.string().max(200),
+							url: z.string().max(2048),
+							id: z.string().max(40).optional(),
+						}),
 					)
 					.max(5000),
 			}),
@@ -161,8 +185,10 @@ export const browserSyncInput = z.object({
 });
 
 /**
- * One-way mirror of the browser's bookmarks into a dedicated board. The board
- * is rebuilt on every sync, so edits should happen in the browser.
+ * Mirrors the browser's bookmarks into a dedicated board, rebuilt on every
+ * sync (groups made in tabz are left alone). Edits made to the board in tabz
+ * go back to the browser first (./browser-sync), so a snapshot is refused
+ * while any are still waiting.
  */
 export const syncBrowserBookmarks = (
 	userId: string,
@@ -191,10 +217,30 @@ export const syncBrowserBookmarks = (
 			board = created;
 		}
 		const boardId = board.id;
+		const waiting = yield* browserSync.pendingCount(userId);
+		if (waiting > 0)
+			return {
+				boardId,
+				deferred: true,
+				pending: waiting,
+				links: 0,
+				folders: 0,
+				syncedAt: new Date().toISOString(),
+			};
+		const keep = yield* query((db) =>
+			db
+				.select({ id: groups.id, options: groups.options })
+				.from(groups)
+				.where(eq(groups.boardId, boardId)),
+		);
+		const mirrored = keep
+			.filter((group) => !group.options.local)
+			.map((group) => group.id);
 		let total = 0;
 		yield* query((db) =>
 			db.transaction(async (tx) => {
-				await tx.delete(groups).where(eq(groups.boardId, boardId));
+				if (mirrored.length)
+					await tx.delete(groups).where(inArray(groups.id, mirrored));
 				// The browser's top-level folders (e.g. "Bookmarks bar") become
 				// groups; everything deeper stays as nested folders.
 				const groupIds = new Map<string, string>();
@@ -205,7 +251,7 @@ export const syncBrowserBookmarks = (
 					childCount.set(key, index + 1);
 					return index;
 				};
-				const groupFor = async (name: string) => {
+				const groupFor = async (name: string, browserId?: string) => {
 					const existing = groupIds.get(name);
 					if (existing) return existing;
 					const [group] = await tx
@@ -215,6 +261,7 @@ export const syncBrowserBookmarks = (
 							boardId,
 							name: name.slice(0, 60) || "Bookmarks",
 							position: groupIds.size,
+							options: browserId ? { browserId } : {},
 						})
 						.returning({ id: groups.id });
 					groupIds.set(name, group.id);
@@ -223,12 +270,18 @@ export const syncBrowserBookmarks = (
 				const folderFor = async (
 					groupId: string,
 					trail: string[],
+					trailIds: (string | undefined)[],
 				): Promise<string | null> => {
 					if (trail.length === 0) return null;
 					const key = `${groupId}\u0000${trail.join("\u0000")}`;
 					const existing = folderIds.get(key);
 					if (existing) return existing;
-					const parentId = await folderFor(groupId, trail.slice(0, -1));
+					const parentId = await folderFor(
+						groupId,
+						trail.slice(0, -1),
+						trailIds.slice(0, -1),
+					);
+					const browserId = trailIds.at(-1);
 					const [folder] = await tx
 						.insert(bookmarks)
 						.values({
@@ -239,6 +292,7 @@ export const syncBrowserBookmarks = (
 							title: (trail.at(-1) ?? "Folder").slice(0, 60),
 							url: "",
 							position: nextIndex(parentId ?? groupId),
+							meta: browserId ? { browserId } : {},
 						})
 						.returning({ id: bookmarks.id });
 					folderIds.set(key, folder.id);
@@ -248,22 +302,36 @@ export const syncBrowserBookmarks = (
 					const segments = (folder.segments ?? folder.path.split(" / ")).filter(
 						Boolean,
 					);
+					const ids = folder.segmentIds ?? [];
 					const rows = folder.links.flatMap((link) => {
 						const url = normalizeUrl(link.url);
 						return url
-							? [{ url, title: link.title.trim() || titleFromUrl(url) }]
+							? [
+									{
+										url,
+										title: link.title.trim() || titleFromUrl(url),
+										browserId: link.id,
+									},
+								]
 							: [];
 					});
 					if (rows.length === 0) continue;
-					const groupId = await groupFor(segments[0] ?? "Bookmarks");
-					const parentId = await folderFor(groupId, segments.slice(1, 33));
-					const values = rows.map((row) => ({
+					const groupId = await groupFor(segments[0] ?? "Bookmarks", ids[0]);
+					const parentId = await folderFor(
+						groupId,
+						segments.slice(1, 33),
+						ids.slice(1, 33),
+					);
+					const values = rows.map(({ browserId, ...row }) => ({
 						...row,
 						userId,
 						groupId,
 						parentId,
 						position: nextIndex(parentId ?? groupId),
-						meta: { favicon: faviconFor(row.url) },
+						meta: {
+							favicon: faviconFor(row.url),
+							...(browserId ? { browserId } : {}),
+						},
 					}));
 					for (let i = 0; i < values.length; i += 200)
 						await tx.insert(bookmarks).values(values.slice(i, i + 200));

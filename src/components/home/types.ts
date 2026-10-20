@@ -31,6 +31,7 @@ export type DialogState =
 	| { type: "report"; month?: string }
 	| { type: "shortcuts" }
 	| { type: "bulk-add"; text?: string; groupId?: string }
+	| { type: "ai-command"; text: string }
 	| null;
 
 /** Regular groups hold links; smart groups fill themselves. */

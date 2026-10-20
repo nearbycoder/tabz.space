@@ -1,7 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
+import { Effect } from "effect";
 import { z } from "zod";
+import { InvalidInput } from "#/lib/effect/errors";
+import * as agent from "./agent";
 import * as customWidgets from "./custom-widgets";
 import * as library from "./library";
+import * as marketplace from "./marketplace";
+import * as reader from "./reader";
 import * as report from "./report";
 import { runAuthed, runServer } from "./runtime";
 import * as sharing from "./sharing";
@@ -302,4 +307,89 @@ export const deleteTheme = createServerFn({ method: "POST" })
 	.validator(themes.themeIdInput)
 	.handler(({ data }) =>
 		runAuthed((user) => themes.deleteTheme(user.id, data)),
+	);
+
+/* Read later and the reader view. */
+
+export const getArticle = createServerFn()
+	.validator(reader.idInput)
+	.handler(({ data }) => runAuthed((user) => reader.getArticle(user.id, data)));
+
+export const getReadingList = createServerFn().handler(() =>
+	runAuthed((user) => reader.readingList(user.id)),
+);
+
+export const saveForLater = createServerFn({ method: "POST" })
+	.validator(reader.readLaterInput)
+	.handler(({ data }) =>
+		runAuthed((user) => reader.saveForLater(user.id, data)),
+	);
+
+export const saveReadingProgress = createServerFn({ method: "POST" })
+	.validator(reader.progressInput)
+	.handler(({ data }) =>
+		runAuthed((user) => reader.saveProgress(user.id, data)),
+	);
+
+export const markRead = createServerFn({ method: "POST" })
+	.validator(reader.markReadInput)
+	.handler(({ data }) => runAuthed((user) => reader.markRead(user.id, data)));
+
+export const addHighlight = createServerFn({ method: "POST" })
+	.validator(reader.highlightInput)
+	.handler(({ data }) =>
+		runAuthed((user) => reader.addHighlight(user.id, data)),
+	);
+
+export const removeHighlight = createServerFn({ method: "POST" })
+	.validator(reader.removeHighlightInput)
+	.handler(({ data }) =>
+		runAuthed((user) => reader.removeHighlight(user.id, data)),
+	);
+
+/* The widget marketplace. */
+
+export const listSharedWidgets = createServerFn()
+	.validator(marketplace.listSharedInput)
+	.handler(({ data }) =>
+		runAuthed((user) => marketplace.listShared(user.id, data)),
+	);
+
+export const publishWidget = createServerFn({ method: "POST" })
+	.validator(marketplace.publishInput)
+	.handler(({ data }) =>
+		runAuthed((user) => marketplace.publish(user.id, data)),
+	);
+
+export const installSharedWidget = createServerFn({ method: "POST" })
+	.validator(marketplace.sharedIdInput)
+	.handler(({ data }) =>
+		runAuthed((user) => marketplace.install(user.id, data)),
+	);
+
+export const unpublishWidget = createServerFn({ method: "POST" })
+	.validator(marketplace.sharedIdInput)
+	.handler(({ data }) =>
+		runAuthed((user) => marketplace.unpublish(user.id, data)),
+	);
+
+/* Natural-language commands (⌘K → Ask AI). */
+
+export const runCommand = createServerFn({ method: "POST" })
+	.validator(agent.commandInput)
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			Effect.tryPromise({
+				try: () => agent.runCommand(user.id, data),
+				catch: (error) => {
+					console.error("AI command failed", error);
+					return new InvalidInput({
+						message:
+							error instanceof Error && /ANTHROPIC_API_KEY/.test(error.message)
+								? error.message
+								: "The AI couldn't finish that. Try again in a moment.",
+					});
+				},
+			}),
+		),
 	);

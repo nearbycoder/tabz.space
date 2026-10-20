@@ -35,6 +35,32 @@ export const backgroundSchema = z.object({
 	animate: z.boolean().default(false),
 });
 
+const focusTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
+/**
+ * Focus mode: during the schedule (or a focus session started by hand),
+ * groups marked "distracting" are hidden and the extension blocks `sites`.
+ */
+export const focusSettingsSchema = z.object({
+	enabled: z.boolean(),
+	days: z.array(z.number().int().min(0).max(6)).max(7),
+	from: focusTime,
+	to: focusTime,
+	sites: z
+		.array(
+			z
+				.string()
+				.trim()
+				.toLowerCase()
+				.max(120)
+				.regex(/^[a-z0-9.-]+\.[a-z]{2,}$/),
+		)
+		.max(100),
+	/** A focus session started by hand, until this time (ms). */
+	until: z.number().nullable().optional(),
+});
+export type FocusSettings = z.infer<typeof focusSettingsSchema>;
+
 export const userSettingsSchema = z.object({
 	theme: z.enum(["system", "light", "dark"]),
 	accent: hex,
@@ -66,6 +92,14 @@ export const userSettingsSchema = z.object({
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
+	focus: focusSettingsSchema.default({
+		enabled: false,
+		days: [1, 2, 3, 4, 5],
+		from: "09:00",
+		to: "17:00",
+		sites: [],
+		until: null,
+	}),
 	/** Letters typed anywhere on the home page to open the vault. */
 	vaultCode: z
 		.string()
@@ -187,6 +221,12 @@ export const groupOptionsSchema = z.object({
 	width: z.enum(GROUP_WIDTHS).optional(),
 	smart: smartRulesSchema.optional(),
 	widget: widgetSchema.optional(),
+	/** Hidden while focus mode is on. */
+	distracting: z.boolean().optional(),
+	/** Browser bookmarks board: the browser folder this group mirrors (set by sync only). */
+	browserId: z.string().max(40).optional(),
+	/** Browser bookmarks board: made in tabz, so syncs leave it alone (set by the server). */
+	local: z.boolean().optional(),
 });
 
 export type GroupOptions = z.infer<typeof groupOptionsSchema>;

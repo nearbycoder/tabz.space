@@ -43,9 +43,19 @@ export function ShortcutsDialog({
 			],
 		},
 		{
+			title: "Tiles",
+			rows: [
+				["Open tile 1–9 on this board", ["1", "…", "9"]],
+				["Move between tiles", ["←", "↑", "↓", "→"]],
+				["Open the focused tile", ["↵"]],
+				["Edit the focused tile", ["E"]],
+			],
+		},
+		{
 			title: "Boards",
 			rows: [
-				["Go to board 1–9", ["1", "…", "9"]],
+				["Go to board 1–9", ["G", "1…9"]],
+				["Go to a board by its first letter", ["G", "A…Z"]],
 				["Previous / next board", ["[", "]"]],
 			],
 		},

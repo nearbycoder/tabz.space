@@ -2,7 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Loader2, Sparkles, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ColorSwatches, Field, Segmented } from "#/components/ui/controls";
+import {
+	ColorSwatches,
+	Field,
+	Segmented,
+	Toggle,
+} from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
@@ -57,6 +62,9 @@ export function GroupDialog({
 		group?.options.width ?? "auto",
 	);
 	const [targetBoard, setTargetBoard] = useState(boardId);
+	const [distracting, setDistracting] = useState(
+		Boolean(group?.options.distracting),
+	);
 	const [kind, setKind] = useState<"links" | "smart" | "widget">(
 		group?.kind ?? initialKind ?? "links",
 	);
@@ -128,6 +136,7 @@ export function GroupDialog({
 				options: {
 					tileStyle: style === "inherit" ? undefined : style,
 					width,
+					distracting: distracting || undefined,
 					...(kind === "smart" ? smartOptions() : {}),
 					// Notes and to-dos keep their live content; only settings change here.
 					...(kind === "widget" && configurable ? { widget } : {}),
@@ -390,6 +399,11 @@ export function GroupDialog({
 										</select>
 									</Field>
 								)}
+								<Toggle
+									label="🎯 Distracting: hide during focus mode"
+									checked={distracting}
+									onChange={setDistracting}
+								/>
 							</>
 						)}
 					</>

@@ -86,7 +86,7 @@ export function connectExtension() {
 }
 
 function request(
-	type: "open-incognito" | "open-tabs" | "open-settings",
+	type: "open-incognito" | "open-tabs" | "open-settings" | "focus-snooze",
 	urls: string[] = [],
 ) {
 	const id = crypto.randomUUID();
@@ -192,3 +192,14 @@ export function shareLookWithExtension(look: PageLook) {
 		location.origin,
 	);
 }
+
+/** Focus mode settings, so the extension can block sites on its own schedule. */
+export function shareFocusWithExtension(focus: unknown, timeZone?: string) {
+	window.postMessage(
+		{ source: "tabz-page", type: "focus", focus, timeZone },
+		location.origin,
+	);
+}
+
+/** "5 more minutes": the extension lets this site through briefly, then goes back to it. */
+export const snoozeFocus = (url: string) => request("focus-snooze", [url]);

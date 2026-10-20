@@ -2,8 +2,10 @@ import { Effect } from "effect";
 import type { z } from "zod";
 import { type AppError, InvalidInput, NotFound } from "#/lib/effect/errors";
 import { authenticateToken } from "./api-tokens";
+import * as browserSync from "./browser-sync";
 import * as capture from "./capture";
 import * as library from "./library";
+import * as reader from "./reader";
 import { corsHeaders, runJson } from "./runtime";
 
 /*
@@ -113,11 +115,12 @@ route("GET", "/bookmarks", ({ userId, search }) => {
 		})
 		.pipe(
 			Effect.map((results) =>
-				results.map(({ bookmark, board, group, folder }) => ({
+				results.map(({ bookmark, board, group, folder, private: secret }) => ({
 					...compact(bookmark),
 					board,
 					group,
 					folder,
+					private: secret,
 				})),
 			),
 		);
@@ -186,9 +189,35 @@ route("POST", "/tabs", ({ userId, body }) =>
 	),
 );
 
+/** Two-way sync: edits made in tabz, waiting to be applied to the browser. */
+route("GET", "/sync/browser/ops", ({ userId }) => browserSync.listOps(userId));
+
+route("POST", "/sync/browser/ops/ack", ({ userId, body }) =>
+	parse(browserSync.ackInput, body).pipe(
+		Effect.flatMap((data) => browserSync.ackOps(userId, data)),
+	),
+);
+
 route("PUT", "/sync/browser", ({ userId, body }) =>
 	parse(capture.browserSyncInput, body).pipe(
 		Effect.flatMap((data) => capture.syncBrowserBookmarks(userId, data)),
+	),
+);
+
+/** Focus mode, for the extension's site blocking. */
+route("GET", "/focus", ({ userId }) =>
+	library.loadSettings(userId).pipe(
+		Effect.map((settings) => ({
+			focus: settings.focus,
+			timeZone: settings.timeZone ?? null,
+		})),
+	),
+);
+
+route("POST", "/read-later", ({ userId, body }) =>
+	parse(reader.readLaterInput, body).pipe(
+		Effect.flatMap((data) => reader.saveForLater(userId, data)),
+		Effect.map(compact),
 	),
 );
 

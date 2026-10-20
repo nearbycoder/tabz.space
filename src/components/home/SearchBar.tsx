@@ -4,6 +4,7 @@ import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
 import { showLeaving } from "#/lib/leaving";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
+import { focusFirstTile } from "#/lib/tile-nav";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
 import { useHomeContext } from "./context";
 import type { LinkItem } from "./types";
@@ -146,6 +147,8 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 					onKeyDown={(event) => {
 						if (event.key === "ArrowDown") {
 							event.preventDefault();
+							// Nothing typed: step down into the board's tiles.
+							if (!query.trim() && focusFirstTile()) return;
 							setActive((index) => Math.min(index + 1, results.length - 1));
 						} else if (event.key === "ArrowUp") {
 							event.preventDefault();

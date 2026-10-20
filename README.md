@@ -45,7 +45,9 @@ Every new tab opens to your links, your widgets and your search, instantly and e
 
 ## 🔎 Find anything in a keystroke
 
-Press <kbd>⌘</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) to search every link, folder and board, plus the **text of the pages you've saved**. Jump to a board, run an action, or search the web.
+Press <kbd>⌘</kbd> <kbd>K</kbd> (or <kbd>/</kbd>) to search every link, folder and board, plus the **text of the pages you've saved**. Jump to a board, run an action, or search the web. With the extension, type <kbd>t</kbd> <kbd>space</kbd> in the address bar to search your links from anywhere.
+
+Prefer the keyboard? Press <kbd>1</kbd>–<kbd>9</kbd> to open a tile, use the arrow keys to move between tiles, <kbd>E</kbd> to edit the focused one, and <kbd>G</kbd> then a number or letter to switch boards. You can also **ask in plain words** ("move my recipe links into a Cooking board and tag them by cuisine"), and Claude makes the changes. It never deletes anything, and every change can be undone.
 
 <p align="center">
   <img src="docs/media/command-palette.webp" alt="The tabz command palette searching links across boards" width="880" />
@@ -107,13 +109,15 @@ Install tabz to your home screen for an app-like experience: swipe between board
 - Drag and drop everything, on desktop and touch
 - **Smart groups** that fill themselves (most visited, recent, by tag…)
 - Boards that switch automatically by **time of day**
-- Import and export browser bookmarks
+- Import from your browser, **Raindrop.io, Pocket, Toby, start.me and Momentum**, and export any time
+- **Read later** with a clean reader view, read times, highlights and offline copies
+- **Focus mode**: hide distracting groups on a schedule; the extension blocks sites (with a "5 more minutes" way out)
 - Undo history and a 30-day trash
 
 **Stay on top**
 - **Rediscover** links you saved and forgot
 - Unread badges for sites with new posts
-- Broken-link checks and duplicate finder
+- Broken-link checks (with **Wayback Machine copies** of dead pages) and a duplicate finder
 - A monthly report of your habits
 
 </td>
@@ -129,7 +133,8 @@ Install tabz to your home screen for an app-like experience: swipe between board
 - 🤖 **MCP server** so AI assistants can manage your bookmarks (OAuth, no keys)
 - REST API, personal tokens and signed webhooks
 - Save links by email or Telegram
-- Optional AI auto-tagging
+- Optional AI auto-tagging and plain-language commands
+- A **widget marketplace**: share your custom widgets and install other people's
 
 </td>
   </tr>
@@ -142,8 +147,11 @@ Install tabz to your home screen for an app-like experience: swipe between board
 Make tabz your new tab page and save any page in one click. Works in **Chrome, Edge, Brave and Firefox**.
 
 - **New tab:** opens tabz instantly with the cursor in the search box.
-- **Save:** use the toolbar button, the right-click menu, or save every open tab as a group.
-- **Sync:** mirror your browser's bookmarks into a board (optional).
+- **Save:** use the toolbar button, the right-click menu, or save every open tab as a group. Add **Read later** with one click.
+- **Sessions:** name a window's tabs to save them to a Sessions board, and archive tabs you haven't looked at in days.
+- **Address bar:** type `t` and a space to search your tabz.
+- **Sync:** keep your browser's bookmarks and a tabz board in step, both ways (optional).
+- **Focus:** blocks the sites you choose while you focus.
 - **Incognito:** incognito links open in a private window.
 
 **Download:** [Chrome / Edge / Brave](public/downloads/tabz-chrome.zip) · [Firefox](public/downloads/tabz-firefox.zip). Install guide: [`extension/README.md`](extension/README.md).

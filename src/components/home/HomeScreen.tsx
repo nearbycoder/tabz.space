@@ -28,13 +28,21 @@ import {
 	connectExtension,
 	openIncognito,
 	openTabs,
+	shareFocusWithExtension,
 	shareLookWithExtension,
 } from "#/lib/incognito";
 import { lazyNamed, whenIdle } from "#/lib/lazy";
 import { showLeaving } from "#/lib/leaving";
 import { BACKGROUNDS, type GradientKey } from "#/lib/preferences";
-import { scheduledBoardId } from "#/lib/schedule";
+import { focusActive, focusEndsAt, scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
+import {
+	boardTiles,
+	type Direction,
+	focusedTile,
+	focusFirstTile,
+	moveTileFocus,
+} from "#/lib/tile-nav";
 import { extractUrls } from "#/lib/url";
 import { useVisibleArea } from "#/lib/use-keyboard-inset";
 import { useLockVault } from "#/lib/vault-lock";
@@ -113,6 +121,10 @@ const LinkHealthDialog = lazyNamed(
 const MonthlyReportDialog = lazyNamed(
 	() => import("./MonthlyReport"),
 	"MonthlyReportDialog",
+);
+const AiCommandDialog = lazyNamed(
+	() => import("./AiCommandDialog"),
+	"AiCommandDialog",
 );
 const ShortcutsDialog = lazyNamed(
 	() => import("./ShortcutsDialog"),
@@ -229,10 +241,22 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	const editing = editingState && !readOnly;
 	const [dialog, setDialog] = useState<DialogState>(null);
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const [paletteQuery, setPaletteQuery] = useState("");
+	// "t something" in the address bar (extension) lands on /?q=something.
+	useEffect(() => {
+		const url = new URL(window.location.href);
+		const q = url.searchParams.get("q");
+		if (!q) return;
+		url.searchParams.delete("q");
+		window.history.replaceState(window.history.state, "", url);
+		setPaletteQuery(q.slice(0, 200));
+		setPaletteOpen(true);
+	}, []);
 	const saveSettings = useSaveSettings();
 	const lockVault = useLockVault();
 	const undoLast = useUndo();
 	const typed = useRef("");
+	const goPressed = useRef(0);
 
 	useEffect(() => {
 		applyTheme(settings.theme);
@@ -373,6 +397,13 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	// Hands the extension an API token so it works without setup.
 	useEffect(() => connectExtension(), []);
 
+	// The extension blocks focus-mode sites on its own, so keep it in sync.
+	const focusJson = JSON.stringify(settings.focus);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: focusJson stands in for the object
+	useEffect(() => {
+		shareFocusWithExtension(settings.focus, settings.timeZone);
+	}, [focusJson, settings.timeZone]);
+
 	// Let the extension's new tab page paint this background while tabz loads.
 	const background = settings.background;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: re-share when the theme changes too
@@ -393,6 +424,25 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		});
 	}, [background, settings.theme]);
 
+	// Focus mode hides groups marked distracting (not while editing the layout).
+	const focusing = focusActive(settings.focus, now, settings.timeZone);
+	const [peek, setPeek] = useState(false);
+	useEffect(() => {
+		if (!focusing) setPeek(false);
+	}, [focusing]);
+	const hideDistracting = focusing && !peek && !editing;
+	const shownBoard = useMemo(
+		() =>
+			hideDistracting
+				? {
+						...board,
+						groups: board.groups.filter((g) => !g.options.distracting),
+					}
+				: board,
+		[board, hideDistracting],
+	);
+	const hiddenForFocus = board.groups.length - shownBoard.groups.length;
+
 	const selectBoard = useCallback(
 		(id: string) => {
 			if (scheduledId) setPicked(id);
@@ -403,7 +453,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	);
 
 	// Re-check schedules every half minute, only if any board has one.
-	const hasSchedules = boards.some((b) => b.layout.schedule);
+	const hasSchedules =
+		boards.some((b) => b.layout.schedule) ||
+		settings.focus.enabled ||
+		Boolean(settings.focus.until);
 	useEffect(() => {
 		if (!hasSchedules) return;
 		const tick = setInterval(() => setNow(Date.now()), 30_000);
@@ -478,7 +531,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		};
 	}, [dialog, paletteOpen, undoLast]);
 
-	// Keyboard: e = edit mode, n = new bookmark, 1–9 = switch board (⌘K lives in the palette).
+	// Keyboard: e = edit mode (or the focused tile), n = new bookmark, 1–9 = open
+	// the nth tile, arrows = move between tiles, g + key = switch board.
 	// Typing the secret vault code anywhere opens the vault prompt.
 	useEffect(() => {
 		const code = settings.vaultCode.toLowerCase();
@@ -511,7 +565,46 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				);
 				if (vault.configured && midCode) return;
 			}
-			if (event.key === "e") setEditing((value) => !value);
+			const tile = focusedTile();
+			const arrows: Record<string, Direction> = {
+				ArrowLeft: "left",
+				ArrowRight: "right",
+				ArrowUp: "up",
+				ArrowDown: "down",
+			};
+			// g then a number or letter: jump to that board.
+			if (Date.now() - goPressed.current < 1500 && event.key.length === 1) {
+				goPressed.current = 0;
+				const order = boards.filter((b) => !b.vault);
+				const key = event.key.toLowerCase();
+				const next = /^[1-9]$/.test(key)
+					? order[Number(key) - 1]
+					: order.find((b) => b.name.trim().toLowerCase().startsWith(key));
+				if (next) {
+					event.preventDefault();
+					selectBoard(next.id);
+				}
+				return;
+			}
+			if (event.key in arrows && !event.shiftKey) {
+				if (tile) {
+					if (moveTileFocus(tile, arrows[event.key])) event.preventDefault();
+				} else if (
+					event.key === "ArrowDown" &&
+					(target === document.body || target.tagName === "MAIN") &&
+					focusFirstTile()
+				)
+					event.preventDefault();
+				return;
+			}
+			if (event.key === "g") goPressed.current = Date.now();
+			else if (event.key === "e" && tile) {
+				event.preventDefault();
+				tile
+					.closest("[data-tile]")
+					?.querySelector<HTMLButtonElement>('button[aria-label^="Edit "]')
+					?.click();
+			} else if (event.key === "e") setEditing((value) => !value);
 			else if (event.key === "n" && board?.groups.find(isLinksGroup)) {
 				event.preventDefault();
 				setDialog({
@@ -519,8 +612,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
 				});
 			} else if (/^[1-9]$/.test(event.key)) {
-				const next = boards[Number(event.key) - 1];
-				if (next) selectBoard(next.id);
+				// The nth tile on this board, as if clicked.
+				boardTiles()[Number(event.key) - 1]?.click();
 			} else if (event.key === "[" || event.key === "]") {
 				const order = [
 					...boards.filter((b) => !b.vault),
@@ -909,8 +1002,30 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							back.
 						</p>
 					)}
+					{hiddenForFocus > 0 && (
+						<p
+							role="status"
+							className="glass mx-auto mb-4 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-sm text-muted"
+						>
+							🎯 Focus mode: {hiddenForFocus} distracting group
+							{hiddenForFocus === 1 ? "" : "s"} hidden until{" "}
+							{new Date(
+								focusEndsAt(settings.focus, now, settings.timeZone),
+							).toLocaleTimeString(undefined, {
+								hour: "numeric",
+								minute: "2-digit",
+							})}
+							<button
+								type="button"
+								className="font-medium text-accent hover:underline"
+								onClick={() => setPeek(true)}
+							>
+								Show anyway
+							</button>
+						</p>
+					)}
 					<div key={board.id} className="animate-pop">
-						<BoardGrid board={board} />
+						<BoardGrid board={shownBoard} />
 					</div>
 					<Rediscover />
 				</main>
@@ -939,13 +1054,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					{paletteOpen && (
 						<CommandPalette
 							open={paletteOpen}
-							onOpenChange={setPaletteOpen}
+							onOpenChange={(open) => {
+								setPaletteOpen(open);
+								if (!open) setPaletteQuery("");
+							}}
 							board={board}
 							onSelectBoard={selectBoard}
 							onToggleEdit={() => setEditing((value) => !value)}
 							onSaveSettings={(patch) => saveSettings.mutate(patch)}
 							onLockVault={vault.unlocked ? () => lockVault() : undefined}
 							onUndo={() => undoLast()}
+							initialQuery={paletteQuery}
+							aiEnabled={data.features.ai}
 						/>
 					)}
 
@@ -968,6 +1088,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					)}
 					{dialog?.type === "link-health" && (
 						<LinkHealthDialog onClose={close} />
+					)}
+					{dialog?.type === "ai-command" && (
+						<AiCommandDialog text={dialog.text} onClose={close} />
 					)}
 					{dialog?.type === "shortcuts" && (
 						<ShortcutsDialog

@@ -140,6 +140,17 @@ export function LinkHealthDialog({ onClose }: { onClose: () => void }) {
 									<Loader2 className="size-4 animate-spin text-muted" />
 								) : (
 									<div className="flex shrink-0 items-center gap-1">
+										{link.health.status === "broken" && link.archive && (
+											<a
+												href={link.archive}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="btn-outline px-2.5 py-1 text-xs"
+												title="The Wayback Machine's saved copy of this page"
+											>
+												Archived copy
+											</a>
+										)}
 										{link.health.status === "redirected" &&
 											link.health.location && (
 												<button

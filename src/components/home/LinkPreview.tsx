@@ -1,4 +1,4 @@
-import { ExternalLink, Rss, TriangleAlert } from "lucide-react";
+import { ExternalLink, History, Rss, TriangleAlert } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Favicon } from "#/components/ui/Favicon";
@@ -127,6 +127,16 @@ export function LinkPreview({
 											? `Looks broken${health.code ? ` (${health.code})` : ""}`
 											: `Moved to ${health.location?.replace(/^https?:\/\//, "")}`}
 									</span>
+								</p>
+							)}
+							{health?.status === "broken" && bookmark.meta.archive?.url && (
+								<p className="flex items-center gap-1 text-[11px] text-muted">
+									<History className="size-3 shrink-0" />
+									Archived copy
+									{bookmark.meta.archive.at
+										? ` from ${new Date(bookmark.meta.archive.at).getFullYear()}`
+										: ""}{" "}
+									in Edit
 								</p>
 							)}
 							{feed.length > 0 && (

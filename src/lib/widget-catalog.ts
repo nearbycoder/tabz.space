@@ -296,6 +296,10 @@ export const CATALOG_WIDGETS = {
 		label: "Library stats",
 		icon: "📈",
 	},
+	"reading-list": {
+		label: "Read later",
+		icon: "📖",
+	},
 	// Custom
 	"custom-html": {
 		label: "Custom code",

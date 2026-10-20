@@ -1,4 +1,5 @@
 import type { BoardSchedule } from "./preferences";
+import type { FocusSettings } from "./schemas";
 
 /*
  * Time-based boards: a board with a schedule shows up on its own during that
@@ -99,3 +100,27 @@ export const describeSchedule = (schedule: BoardSchedule) => {
 		? label
 		: `${label}, ${schedule.from}–${schedule.to}`;
 };
+
+/** Whether focus mode is on right now: a session started by hand, or the schedule. */
+export function focusActive(
+	focus: FocusSettings | undefined,
+	now: number,
+	zone?: string,
+) {
+	if (!focus) return false;
+	if (focus.until && focus.until > now) return true;
+	return (
+		focus.enabled && focus.days.length > 0 && scheduleMatches(focus, now, zone)
+	);
+}
+
+/** When the current focus period ends (ms), for "until 5:00 PM". */
+export function focusEndsAt(focus: FocusSettings, now: number, zone?: string) {
+	if (focus.until && focus.until > now && !scheduleMatches(focus, now, zone))
+		return focus.until;
+	// Step forward a minute at a time (at most a day) until the window closes.
+	let at = now - (now % 60_000) + 60_000;
+	for (let i = 0; i < 24 * 60 && focusActive(focus, at, zone); i++)
+		at += 60_000;
+	return at;
+}

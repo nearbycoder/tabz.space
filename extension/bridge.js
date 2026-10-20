@@ -53,6 +53,16 @@ window.addEventListener("message", async (event) => {
 	const { type, id } = event.data;
 	if (type === "hello") return announce();
 	if (type === "look") return rememberLook(event.data.look);
+	if (type === "sync-browser")
+		return chrome.runtime.sendMessage({ type: "pull-ops" }).catch(() => {});
+	if (type === "focus")
+		return chrome.runtime
+			.sendMessage({
+				type: "focus-settings",
+				focus: event.data.focus,
+				timeZone: event.data.timeZone,
+			})
+			.catch(() => {});
 	try {
 		if (type === "set-token") {
 			await chrome.runtime.sendMessage({
@@ -67,7 +77,11 @@ window.addEventListener("message", async (event) => {
 			post({ type: "opened", id, ok: result?.ok === true });
 			return;
 		}
-		if (type === "open-incognito" || type === "open-tabs") {
+		if (
+			type === "open-incognito" ||
+			type === "open-tabs" ||
+			type === "focus-snooze"
+		) {
 			const result = await chrome.runtime.sendMessage({
 				type,
 				urls: event.data.urls,

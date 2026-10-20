@@ -77,7 +77,10 @@ export function useHomeAction<I, O>(
 			} else if (options.success) toast.success(options.success);
 			options.onSuccess?.(output, input);
 		},
-		onSettled: () => queryClient.invalidateQueries({ queryKey: homeKey }),
+		onSettled: () => {
+			nudgeBrowserSync();
+			return queryClient.invalidateQueries({ queryKey: homeKey });
+		},
 	});
 }
 
@@ -88,4 +91,23 @@ export function useSaveSettings() {
 			settings: { ...data.settings, ...input },
 		}),
 	});
+}
+
+let nudge: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * After a change, tell the extension (if any) to pick up edits meant for the
+ * browser's bookmarks now rather than at its next check.
+ */
+function nudgeBrowserSync() {
+	if (typeof window === "undefined") return;
+	clearTimeout(nudge);
+	nudge = setTimeout(
+		() =>
+			window.postMessage(
+				{ source: "tabz-page", type: "sync-browser" },
+				location.origin,
+			),
+		1500,
+	);
 }

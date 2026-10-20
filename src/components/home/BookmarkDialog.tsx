@@ -1,5 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ClipboardPaste, Loader2, Trash2 } from "lucide-react";
+import {
+	BookOpen,
+	ChevronRight,
+	ClipboardPaste,
+	Loader2,
+	Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ColorSwatches, Field, Toggle } from "#/components/ui/controls";
@@ -68,6 +74,9 @@ export function BookmarkForm({
 		),
 	);
 	const [targetGroup, setTargetGroup] = useState(bookmark?.groupId ?? groupId);
+	const inVault = Boolean(
+		boards.find((b) => b.groups.some((g) => g.id === targetGroup))?.vault,
+	);
 	const [targetFolder, setTargetFolder] = useState<string | null>(
 		bookmark?.parentId ?? parentId ?? null,
 	);
@@ -338,6 +347,35 @@ export function BookmarkForm({
 						: ""}
 					. You can still save it again.
 				</p>
+			)}
+			{bookmark &&
+				bookmark.meta.health?.status === "broken" &&
+				bookmark.meta.archive?.url && (
+					<p className="-mt-2 flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+						<span>
+							This page looks gone. The Wayback Machine has a copy
+							{bookmark.meta.archive.at
+								? ` from ${new Date(bookmark.meta.archive.at).toLocaleDateString(undefined, { year: "numeric", month: "short" })}`
+								: ""}
+							.
+						</span>
+						<a
+							href={bookmark.meta.archive.url}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="shrink-0 font-medium text-accent hover:underline"
+						>
+							Open archived copy
+						</a>
+					</p>
+				)}
+			{bookmark && !inVault && bookmark.kind === "link" && (
+				<a
+					href={`/read/${bookmark.id}`}
+					className="-mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+				>
+					<BookOpen className="size-3.5" /> Read in reader view
+				</a>
 			)}
 			<Field label="Title">
 				<input

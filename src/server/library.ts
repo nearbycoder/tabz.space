@@ -29,6 +29,7 @@ import {
 	activity,
 	type Board,
 	type Bookmark,
+	type BrowserOp,
 	boardMembers,
 	boards,
 	bookmarks,
@@ -57,6 +58,7 @@ import {
 	titleFromUrl,
 } from "#/lib/url";
 import { aiEnabled } from "./ai";
+import * as browserSync from "./browser-sync";
 import { searchText } from "./content";
 import { fetchPageMetadata } from "./metadata";
 import { afterFetch, checkLinksNow } from "./monitors";
@@ -197,7 +199,7 @@ const accessGroup = (
 	});
 
 /** A bookmark or folder the caller can use (through its group and board). */
-const accessBookmark = (
+export const accessBookmark = (
 	userId: string,
 	id: string,
 	options: { write?: boolean; includeDeleted?: boolean } = {},
@@ -677,6 +679,14 @@ export const loadHome = (userId: string) =>
 
 export const settingsInput = userSettingsSchema.partial();
 
+/** Just the user's settings (with defaults), without loading the library. */
+export const loadSettings = (userId: string) =>
+	query((db) =>
+		db.query.userSettings.findFirst({
+			where: eq(userSettings.userId, userId),
+		}),
+	).pipe(Effect.map((row) => resolveSettings(row?.settings)));
+
 export const saveSettings = (
 	userId: string,
 	data: z.infer<typeof settingsInput>,
@@ -982,7 +992,12 @@ export const createGroup = (
 					name: data.name,
 					color: data.color ?? null,
 					kind: data.kind ?? "links",
-					options: data.options ?? {},
+					// On the browser bookmarks board, groups made here stay tabz-only.
+					options: {
+						...data.options,
+						browserId: undefined,
+						local: browserSync.isBrowserBoard(board) || undefined,
+					},
 					position,
 				})
 				.returning(),
@@ -1027,12 +1042,30 @@ export const updateGroup = (
 					collapsed: data.collapsed ?? group.collapsed,
 					boardId: data.boardId ?? group.boardId,
 					options: data.options
-						? { ...group.options, ...data.options }
+						? {
+								...group.options,
+								...data.options,
+								// Only sync sets these.
+								browserId: group.options.browserId,
+								local: group.options.local,
+							}
 						: group.options,
 				})
 				.where(eq(groups.id, group.id))
 				.returning(),
 		);
+		if (
+			browserSync.isBrowserBoard(board) &&
+			group.options.browserId &&
+			updated.name !== group.name
+		)
+			yield* browserSync.queueOps(board.userId, [
+				{
+					type: "update",
+					browserId: group.options.browserId,
+					title: updated.name,
+				},
+			]);
 		// Collapsing is UI state, not something worth an undo step.
 		const onlyCollapse = Object.keys(data).every(
 			(key) => key === "id" || key === "collapsed",
@@ -1286,6 +1319,22 @@ export const createBookmark = (
 		yield* record(userId, "create", `Added ${quote(bookmark.title)}`, [
 			created("bookmarks", bookmark.id),
 		]);
+		if (browserSync.isBrowserBoard(target.board)) {
+			const parent = browserSync.browserParent(
+				target.group,
+				"bookmark" in target ? (target.bookmark as Bookmark) : null,
+			);
+			if (parent)
+				yield* browserSync.queueOps(target.board.userId, [
+					{
+						type: "create",
+						title: bookmark.title,
+						url: bookmark.url,
+						bookmarkId: bookmark.id,
+						...parent,
+					},
+				]);
+		}
 		// Index the page text and load its feed in the background.
 		yield* Effect.forkDetach(
 			(fetched ? Effect.succeed(fetched) : fetchPageMetadata(url)).pipe(
@@ -1366,6 +1415,20 @@ export const bulkCreateBookmarks = (
 			`Added ${rows.length} links to ${quote(group.name)}`,
 			rows.map((row) => created("bookmarks", row.id)),
 		);
+		const parent =
+			browserSync.isBrowserBoard(board) &&
+			browserSync.browserParent(group, null);
+		if (parent)
+			yield* browserSync.queueOps(
+				board.userId,
+				rows.map((row) => ({
+					type: "create" as const,
+					title: titleFromUrl(row.url),
+					url: row.url,
+					bookmarkId: row.id,
+					...parent,
+				})),
+			);
 		// Enrich in the background, a few at a time.
 		yield* Effect.forkDetach(
 			Effect.forEach(
@@ -1462,12 +1525,38 @@ export const createFolder = (
 		yield* record(userId, "create", `Created folder ${quote(folder.title)}`, [
 			created("bookmarks", folder.id),
 		]);
+		if (browserSync.isBrowserBoard(board)) {
+			const parent = yield* browserParentOf(group.id, data.parentId ?? null);
+			if (parent)
+				yield* browserSync.queueOps(board.userId, [
+					{
+						type: "folder",
+						title: folder.title,
+						bookmarkId: folder.id,
+						...parent,
+					},
+				]);
+		}
 		if (data.bookmarkIds?.length)
 			yield* arrangeFolder(userId, {
 				folderId: folder.id,
 				ids: data.bookmarkIds,
 			});
 		return folder;
+	});
+
+/** The browser folder a tabz group/folder corresponds to (browser bookmarks board). */
+const browserParentOf = (groupId: string, parentId: string | null) =>
+	Effect.gen(function* () {
+		const group = yield* query((db) =>
+			db.query.groups.findFirst({ where: eq(groups.id, groupId) }),
+		);
+		const folder = parentId
+			? yield* query((db) =>
+					db.query.bookmarks.findFirst({ where: eq(bookmarks.id, parentId) }),
+				)
+			: null;
+		return group ? browserSync.browserParent(group, folder ?? null) : null;
 	});
 
 export const updateBookmarkInput = z.object({
@@ -1608,6 +1697,46 @@ export const updateBookmark = (
 			`${moved ? "Moved" : "Edited"} ${quote(bookmark.title)}`,
 			before,
 		);
+		// Browser bookmarks board: send the change back to the browser.
+		const browserId = bookmark.meta.browserId;
+		if (
+			browserSync.isBrowserBoard(destination) &&
+			destination.id === board.id &&
+			browserId
+		) {
+			const ops: BrowserOp[] = [];
+			if (updated.title !== bookmark.title || updated.url !== bookmark.url)
+				ops.push({
+					type: "update",
+					browserId,
+					title: updated.title,
+					...(!isFolder && updated.url !== bookmark.url
+						? { url: updated.url }
+						: {}),
+				});
+			if (moved) {
+				const parent = yield* browserParentOf(groupId, parentId);
+				if (parent) ops.push({ type: "move", browserId, ...parent });
+			}
+			yield* browserSync.queueOps(board.userId, ops);
+		} else if (
+			browserSync.isBrowserBoard(destination) &&
+			destination.id !== board.id &&
+			!isFolder
+		) {
+			// Moved in from another board: add it to the browser too.
+			const parent = yield* browserParentOf(groupId, parentId);
+			if (parent)
+				yield* browserSync.queueOps(destination.userId, [
+					{
+						type: "create",
+						title: updated.title,
+						url: updated.url,
+						bookmarkId: updated.id,
+						...parent,
+					},
+				]);
+		}
 		return updated;
 	});
 
@@ -1622,7 +1751,7 @@ export const deleteBookmark = (
 	data: z.infer<typeof deleteBookmarkInput>,
 ) =>
 	Effect.gen(function* () {
-		const { bookmark } = yield* accessBookmark(userId, data.id, {
+		const { bookmark, board } = yield* accessBookmark(userId, data.id, {
 			write: true,
 		});
 		const isFolder = bookmark.kind === "folder";
@@ -1630,7 +1759,7 @@ export const deleteBookmark = (
 			isFolder && !data.withContents
 				? yield* query((db) =>
 						db
-							.select({ id: bookmarks.id })
+							.select({ id: bookmarks.id, meta: bookmarks.meta })
 							.from(bookmarks)
 							.where(
 								and(
@@ -1668,6 +1797,25 @@ export const deleteBookmark = (
 			`Deleted ${isFolder ? "folder " : ""}${quote(bookmark.title)}`,
 			before,
 		);
+		const browserId = bookmark.meta.browserId;
+		if (browserSync.isBrowserBoard(board) && browserId) {
+			const ops: BrowserOp[] = [];
+			// Contents kept: move them up in the browser too, then drop the folder.
+			const up = inside.length
+				? yield* browserParentOf(bookmark.groupId, bookmark.parentId)
+				: null;
+			for (const child of inside)
+				if (child.meta.browserId && up)
+					ops.push({ type: "move", browserId: child.meta.browserId, ...up });
+			ops.push({
+				type: "remove",
+				browserId,
+				...(isFolder
+					? { tree: Boolean(data.withContents) }
+					: { url: bookmark.url }),
+			});
+			yield* browserSync.queueOps(board.userId, ops);
+		}
 		return { ok: true, id: bookmark.id };
 	});
 
@@ -1947,6 +2095,8 @@ type LinkEntry = {
 	board: string;
 	group: string;
 	folder: string | null;
+	/** Opens in a private window (its own switch, a private folder, or "all links"). */
+	private: boolean;
 	/** Matching passage from the page text, when found by full-text search. */
 	snippet?: string;
 };
@@ -1954,21 +2104,39 @@ type LinkEntry = {
 type Home = Effect.Success<ReturnType<typeof loadHome>>;
 
 /** Every link on the given boards (default: all the caller can see), with where it lives. */
-const visibleLinks = (home: Home, boardList: Home["boards"] = home.boards) =>
-	boardList.flatMap((board) =>
-		board.groups.flatMap((group) =>
-			walkTree(group.bookmarks)
-				.filter(({ item }) => item.kind === "link")
-				.map(
-					({ item, path }): LinkEntry => ({
-						bookmark: item,
-						board: board.name,
-						group: group.name,
-						folder: path.length ? path.join(" / ") : null,
-					}),
-				),
-		),
-	);
+const visibleLinks = (home: Home, boardList: Home["boards"] = home.boards) => {
+	const out: LinkEntry[] = [];
+	const walk = (
+		items: TreeItem[],
+		path: string[],
+		inPrivate: boolean,
+		board: string,
+		group: string,
+	) => {
+		for (const item of items) {
+			if (item.kind === "folder")
+				walk(
+					item.children,
+					[...path, item.title],
+					inPrivate || item.incognito,
+					board,
+					group,
+				);
+			else
+				out.push({
+					bookmark: item,
+					board,
+					group,
+					folder: path.length ? path.join(" / ") : null,
+					private: home.settings.incognitoAll || inPrivate || item.incognito,
+				});
+		}
+	};
+	for (const board of boardList)
+		for (const group of board.groups)
+			walk(group.bookmarks, [], false, board.name, group.name);
+	return out;
+};
 
 /**
  * Case-insensitive match on title, URL, description and tags (most-visited
@@ -2049,6 +2217,7 @@ export const listLinkHealth = (userId: string) =>
 									groupId: bookmark.groupId,
 									path: [board, group, folder].filter(Boolean).join(" / "),
 									health,
+									archive: bookmark.meta.archive?.url ?? null,
 								},
 							]
 						: [];

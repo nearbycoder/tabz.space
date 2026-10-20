@@ -595,6 +595,11 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		load: () => import("./catalog/library-stats"),
 		defaults: {},
 	},
+	"reading-list": {
+		load: () => import("./catalog/reading-list"),
+		defaults: { count: 6 },
+		fields: [count("Articles")],
+	},
 	// Custom
 	"custom-html": {
 		load: () => import("./catalog/custom-html"),

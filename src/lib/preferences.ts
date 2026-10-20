@@ -151,6 +151,14 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	celebrate: true,
 	tilt: true,
 	activeBoardId: null,
+	focus: {
+		enabled: false,
+		days: [1, 2, 3, 4, 5],
+		from: "09:00",
+		to: "17:00",
+		sites: [],
+		until: null,
+	},
 	vaultCode: "vault",
 };
 
@@ -397,6 +405,8 @@ export type BookmarkMeta = {
 	feedUrl?: string;
 	/** Last link-health check. */
 	health?: LinkHealth;
+	/** For broken links: the Wayback Machine's closest copy (url null = none). */
+	archive?: { url: string | null; at: number | null; checkedAt: number };
 	/**
 	 * Where the link ends up after only permanent redirects (http→https,
 	 * renamed domains…). Opening it directly skips a round trip per click.
@@ -411,6 +421,8 @@ export type BookmarkMeta = {
 	 * Only the browser holding the vault key can read it.
 	 */
 	sealed?: string;
+	/** Browser bookmarks board: the browser's id for this link or folder. */
+	browserId?: string;
 };
 
 export type LinkHealth = {

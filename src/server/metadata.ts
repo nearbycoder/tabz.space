@@ -101,12 +101,12 @@ export const assertPublicHost = (url: URL) =>
 			new FetchError({ url: url.toString(), reason: String(error) }),
 	});
 
-const readLimited = async (response: Response) => {
+const readLimited = async (response: Response, max = MAX_BYTES) => {
 	const reader = response.body?.getReader();
 	if (!reader) return "";
 	const chunks: Uint8Array[] = [];
 	let size = 0;
-	while (size < MAX_BYTES) {
+	while (size < max) {
 		const { done, value } = await reader.read();
 		if (done) break;
 		chunks.push(value);
@@ -212,7 +212,12 @@ export const fetchBytes = (start: URL, accept: string, max = 256 * 1024) =>
 		return { url, body };
 	});
 
-export const fetchText = (start: URL, accept: string, accepts: RegExp) =>
+export const fetchText = (
+	start: URL,
+	accept: string,
+	accepts: RegExp,
+	maxBytes = MAX_BYTES,
+) =>
 	Effect.gen(function* () {
 		const { url, response } = yield* follow(start, accept);
 		if (!response.ok)
@@ -225,7 +230,7 @@ export const fetchText = (start: URL, accept: string, accepts: RegExp) =>
 			return { url, body: "" };
 		}
 		const body = yield* Effect.tryPromise({
-			try: () => readLimited(response),
+			try: () => readLimited(response, maxBytes),
 			catch: (error) =>
 				new FetchError({ url: url.toString(), reason: String(error) }),
 		});

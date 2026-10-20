@@ -18,6 +18,8 @@
 const PAGES = "tabz-pages-v1";
 const ASSETS = "tabz-assets-v1";
 const ICONS = "tabz-icons-v1";
+const READS = "tabz-reads-v1";
+const MAX_READS = 150;
 const MAX_ASSETS = 400;
 const MAX_ICONS = 800;
 const HOME = "/";
@@ -30,7 +32,7 @@ self.addEventListener("activate", (event) => {
 	event.waitUntil(
 		(async () => {
 			for (const key of await caches.keys())
-				if (key !== PAGES && key !== ASSETS && key !== ICONS)
+				if (![PAGES, ASSETS, ICONS, READS].includes(key))
 					await caches.delete(key);
 			await self.clients.claim();
 		})(),
@@ -109,6 +111,38 @@ async function cached(event, name = ASSETS, max = MAX_ASSETS) {
 	return response;
 }
 
+/**
+ * Reader pages (/read, /read/<id>): network first, keeping a copy of each
+ * article you open so it reads offline. Sign-in redirects are never kept.
+ */
+async function reading(event) {
+	const cache = await caches.open(READS);
+	const key = new URL(event.request.url);
+	key.search = "";
+	try {
+		const response = await fetch(event.request);
+		const html = (response.headers.get("content-type") || "").includes(
+			"text/html",
+		);
+		if (response.ok && !response.redirected && html) {
+			const copy = response.clone();
+			event.waitUntil(
+				(async () => {
+					await cache.put(key.toString(), copy);
+					const keys = await cache.keys();
+					for (const old of keys.slice(0, Math.max(0, keys.length - MAX_READS)))
+						await cache.delete(old);
+				})(),
+			);
+		}
+		return response;
+	} catch (error) {
+		const hit = await cache.match(key.toString());
+		if (hit) return hit;
+		throw error;
+	}
+}
+
 self.addEventListener("fetch", (event) => {
 	const { request } = event;
 	if (request.method !== "GET") return;
@@ -116,6 +150,11 @@ self.addEventListener("fetch", (event) => {
 	if (url.origin !== self.location.origin) return;
 	if (request.mode === "navigate" && url.pathname === HOME)
 		event.respondWith(home(event));
+	else if (
+		request.mode === "navigate" &&
+		(url.pathname === "/read" || url.pathname.startsWith("/read/"))
+	)
+		event.respondWith(reading(event));
 	else if (url.pathname.startsWith("/assets/")) event.respondWith(cached(event));
 	// Site icons, so tiles keep their icons on an offline new tab.
 	else if (url.pathname === "/api/icon")
@@ -142,7 +181,8 @@ async function refresh() {
 self.addEventListener("message", (event) => {
 	const type = event.data && event.data.type;
 	if (type === "tabz:refresh") event.waitUntil(refresh());
-	if (type === "tabz:forget") event.waitUntil(caches.delete(PAGES));
+	if (type === "tabz:forget")
+		event.waitUntil(Promise.all([caches.delete(PAGES), caches.delete(READS)]));
 	if (type === "tabz:check" && event.source) {
 		const pending = checks.get(event.source.id);
 		if (pending)

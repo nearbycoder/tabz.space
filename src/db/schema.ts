@@ -347,3 +347,93 @@ export const customWidgets = sqliteTable(
 	},
 	(table) => [index("custom_widgets_user_idx").on(table.userId)],
 );
+
+export type Highlight = {
+	id: string;
+	/** The highlighted passage, found again in the article text when shown. */
+	text: string;
+	note?: string;
+	at: number;
+};
+
+/**
+ * Reader-view copies of "Read later" links: the article's main text, cleaned
+ * and sanitized, so it reads without clutter and works offline. Never made
+ * for vault links.
+ */
+export const articles = sqliteTable(
+	"articles",
+	{
+		bookmarkId: text("bookmark_id")
+			.primaryKey()
+			.references(() => bookmarks.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		byline: text("byline"),
+		siteName: text("site_name"),
+		excerpt: text("excerpt"),
+		/** Sanitized HTML (an allowlist of tags; no scripts, styles or handlers). */
+		html: text("html").notNull(),
+		words: integer("words").default(0).notNull(),
+		/** How far you've read, 0–1000. */
+		progress: integer("progress").default(0).notNull(),
+		highlights: json<Highlight[]>("highlights", []),
+		...timestamps,
+	},
+	(table) => [index("articles_user_idx").on(table.userId)],
+);
+
+/** Custom widgets shared with everyone (the widget marketplace). */
+export const sharedWidgets = sqliteTable(
+	"shared_widgets",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		icon: text("icon").notNull(),
+		description: text("description").default("").notNull(),
+		widget: json<Widget>("widget", { type: "notes", text: "" }),
+		installs: integer("installs").default(0).notNull(),
+		...timestamps,
+	},
+	(table) => [
+		index("shared_widgets_installs_idx").on(table.installs),
+		index("shared_widgets_user_idx").on(table.userId),
+	],
+);
+
+/** Where a new browser bookmark goes: a known browser folder, or one made earlier in the same batch. */
+type BrowserParent = { parentId?: string; parentRef?: string };
+
+export type BrowserOp =
+	| { type: "update"; browserId: string; title?: string; url?: string }
+	| { type: "remove"; browserId: string; url?: string; tree?: boolean }
+	| ({ type: "move"; browserId: string } & BrowserParent)
+	| ({
+			type: "create";
+			title: string;
+			url: string;
+			bookmarkId: string;
+	  } & BrowserParent)
+	| ({ type: "folder"; title: string; bookmarkId: string } & BrowserParent);
+
+/**
+ * Two-way bookmark sync: edits made in tabz to the "Browser bookmarks" board,
+ * waiting for the extension to apply them to the browser's bookmarks.
+ */
+export const browserOps = sqliteTable(
+	"browser_ops",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		op: json<BrowserOp>("op", { type: "remove", browserId: "" }),
+		createdAt: timestamps.createdAt,
+	},
+	(table) => [index("browser_ops_user_idx").on(table.userId)],
+);
