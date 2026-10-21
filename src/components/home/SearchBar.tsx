@@ -44,10 +44,13 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 	const [focused, setFocused] = useState(false);
 	const input = useRef<HTMLInputElement>(null);
 
-	// Keep anything typed before the app finished loading.
+	// Keep anything typed before the app finished loading, and pick up the
+	// early focus (FOCUS_NOW runs before React listens, so onFocus never fired).
 	useLayoutEffect(() => {
 		const early = input.current?.value;
 		if (early) setQuery(early);
+		if (input.current && document.activeElement === input.current)
+			setFocused(true);
 	}, []);
 
 	// Client-side visits (no server render) focus here instead.
