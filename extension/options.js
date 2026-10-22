@@ -39,6 +39,31 @@ if (await chrome.extension.isAllowedIncognitoAccess()) {
 	}
 }
 
+// History is an optional permission: asking for it right in the click (no
+// await first) keeps the browser's user-gesture requirement happy.
+const HISTORY = { permissions: ["history"] };
+$("history").checked = await chrome.permissions.contains(HISTORY);
+$("history").addEventListener("change", (event) => {
+	const box = event.currentTarget;
+	const change = box.checked
+		? chrome.permissions.request(HISTORY)
+		: chrome.permissions.remove(HISTORY).then((removed) => !removed);
+	change.then(
+		(allowed) => {
+			box.checked = allowed;
+			flash(allowed ? "History search on" : "History search off");
+		},
+		() => {
+			box.checked = !box.checked;
+		},
+	);
+});
+// Sent here from tabz's settings: point at the switch.
+if (location.hash === "#history") {
+	$("historySection").classList.add("spotlight");
+	$("historySection").scrollIntoView({ block: "center" });
+}
+
 $("connection").textContent = (await getToken())
 	? "Connected to your tabz account."
 	: "Not connected yet. Open tabz.space while signed in.";

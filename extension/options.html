@@ -13,6 +13,7 @@
 			button { margin-top: 16px; margin-right: 8px; padding: 8px 14px; border: 0; border-radius: 8px; background: #6366f1; color: white; font-weight: 600; cursor: pointer; }
 			button.secondary { background: transparent; color: inherit; border: 1px solid #8886; }
 			.hint { opacity: .65; font-size: 12px; }
+			.spotlight { margin: 16px -10px 0; padding: 2px 10px 6px; border-radius: 10px; outline: 2px solid #6366f1; }
 		</style>
 	</head>
 	<body>
@@ -22,6 +23,10 @@
 		<label class="check"><input id="focusPage" type="checkbox" /> Put the cursor in tabz's search box (instead of the address bar)</label>
 		<p class="hint" id="incognito"></p>
 		<button type="button" id="incognitoSettings" hidden>Open extension settings</button>
+		<div id="historySection">
+			<label class="check"><input id="history" type="checkbox" /> Show my browsing history in tabz's search</label>
+			<p class="hint">As you type in tabz's search box, pages you've visited show up under your links, like in the address bar. History is searched here in your browser and never sent to tabz. Not in incognito windows.</p>
+		</div>
 		<label class="check"><input id="syncBookmarks" type="checkbox" /> Mirror my browser bookmarks into tabz</label>
 		<p class="hint">Creates a “Browser bookmarks” board that updates whenever your bookmarks change. Two-way: renaming, editing, adding, moving or deleting links and folders on that board in tabz changes your browser's bookmarks too. Order follows the browser, and groups you make on that board stay in tabz only. <span id="lastSync"></span></p>
 		<label for="autoArchive">Archive idle tabs automatically</label>

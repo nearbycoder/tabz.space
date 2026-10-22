@@ -1,7 +1,13 @@
-import { ArrowUpRight, Globe, Search } from "lucide-react";
+import { ArrowUpRight, Globe, History, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
+import {
+	getExtensionStatus,
+	type HistoryItem,
+	onExtensionStatus,
+	searchHistory,
+} from "#/lib/incognito";
 import { showLeaving } from "#/lib/leaving";
 import { SEARCH_ENGINES, type SearchEngine } from "#/lib/preferences";
 import { focusFirstTile } from "#/lib/tile-nav";
@@ -11,6 +17,7 @@ import type { LinkItem } from "./types";
 
 type Result =
 	| { kind: "bookmark"; bookmark: LinkItem; group: string }
+	| { kind: "history"; url: string; title: string }
 	| { kind: "url"; url: string }
 	| { kind: "search"; query: string };
 
@@ -30,6 +37,16 @@ const score = (bookmark: LinkItem, terms: string[]) => {
 	);
 };
 
+const MAX_HISTORY = 5;
+
+/** Same page for de-duplicating history against your links. */
+const pageKey = (url: string) =>
+	url
+		.replace(/#.*$/, "")
+		.replace(/^https?:\/\/(www\.)?/i, "")
+		.replace(/\/+$/, "")
+		.toLowerCase();
+
 /*
  * Runs as soon as the server-rendered input is parsed, before the app loads,
  * so you can type the moment a new tab appears. Only with a mouse/trackpad:
@@ -43,6 +60,16 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 	const [active, setActive] = useState(0);
 	const [focused, setFocused] = useState(false);
 	const input = useRef<HTMLInputElement>(null);
+	// Browser history, through the extension (when you've allowed it there).
+	const [historyOn, setHistoryOn] = useState(false);
+	const [history, setHistory] = useState<HistoryItem[]>([]);
+
+	// Highlight the first row again whenever the query changes.
+	const [activeFor, setActiveFor] = useState(query);
+	if (activeFor !== query) {
+		setActiveFor(query);
+		setActive(0);
+	}
 
 	// Keep anything typed before the app finished loading, and pick up the
 	// early focus (FOCUS_NOW runs before React listens, so onFocus never fired).
@@ -78,6 +105,33 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
+	useEffect(() => {
+		setHistoryOn(Boolean(getExtensionStatus().historyAllowed));
+		return onExtensionStatus((status) =>
+			setHistoryOn(Boolean(status.historyAllowed)),
+		);
+	}, []);
+
+	useEffect(() => {
+		const trimmed = query.trim();
+		if (!historyOn || !trimmed) return;
+		let stale = false;
+		const timer = setTimeout(() => {
+			void searchHistory(trimmed).then((items) => {
+				if (!stale) setHistory(items);
+			});
+		}, 60);
+		return () => {
+			stale = true;
+			clearTimeout(timer);
+		};
+	}, [query, historyOn]);
+
+	const saved = useMemo(
+		() => new Set(bookmarks.map((entry) => pageKey(entry.bookmark.url))),
+		[bookmarks],
+	);
+
 	const results = useMemo<Result[]>(() => {
 		const trimmed = query.trim();
 		if (!trimmed) return [];
@@ -88,21 +142,37 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 			.sort((a, b) => b.score - a.score)
 			.slice(0, 6)
 			.map(({ entry }): Result => ({ kind: "bookmark", ...entry }));
+		// The last answer may be for a shorter query while the next one is on
+		// its way: keep only rows that still match, so nothing flickers.
+		const seen = new Set<string>();
+		const visited = (historyOn ? history : [])
+			.filter((item) => {
+				const key = pageKey(item.url);
+				if (saved.has(key) || seen.has(key)) return false;
+				seen.add(key);
+				const haystack = `${item.title} ${item.url}`.toLowerCase();
+				return terms.every((term) => haystack.includes(term));
+			})
+			.slice(0, MAX_HISTORY)
+			.map(
+				(item): Result => ({
+					kind: "history",
+					url: item.url,
+					title: item.title,
+				}),
+			);
 		const url =
 			!/\s/.test(trimmed) && trimmed.includes(".")
 				? normalizeUrl(trimmed)
 				: null;
 		return [
 			...matches,
+			...visited,
 			...(url ? [{ kind: "url", url } as Result] : []),
 			{ kind: "search", query: trimmed },
 		];
-	}, [query, bookmarks]);
-
-	// Reset the highlighted row whenever the result set changes.
-	useEffect(() => {
-		if (results) setActive(0);
-	}, [results]);
+	}, [query, bookmarks, history, historyOn, saved]);
+	const current = Math.min(active, results.length - 1);
 
 	const open = (href: string, newTab: boolean) => {
 		if (newTab) window.open(href, "_blank", "noopener");
@@ -116,7 +186,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 		if (!result) return;
 		if (result.kind === "bookmark") {
 			openLink(result.bookmark);
-		} else if (result.kind === "url") {
+		} else if (result.kind === "url" || result.kind === "history") {
 			open(result.url, openInNewTab);
 		} else {
 			open(
@@ -157,7 +227,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 							event.preventDefault();
 							setActive((index) => Math.max(index - 1, 0));
 						} else if (event.key === "Enter") {
-							choose(results[active]);
+							choose(results[current]);
 						} else if (event.key === "Escape") {
 							setQuery("");
 							input.current?.blur();
@@ -182,7 +252,11 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 					{results.map((result, index) => (
 						<li
 							key={
-								result.kind === "bookmark" ? result.bookmark.id : result.kind
+								result.kind === "bookmark"
+									? result.bookmark.id
+									: result.kind === "history"
+										? `history:${result.url}`
+										: result.kind
 							}
 						>
 							<button
@@ -192,7 +266,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 								onClick={() => choose(result)}
 								className={cn(
 									"flex w-full items-center gap-3 px-4 py-2 text-left text-sm",
-									index === active &&
+									index === current &&
 										"bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]",
 								)}
 							>
@@ -211,6 +285,18 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 										</span>
 										<span className="ml-auto truncate text-xs text-muted">
 											{result.group} · {hostnameOf(result.bookmark.url)}
+										</span>
+									</>
+								) : result.kind === "history" ? (
+									<>
+										{/* No site icon: looking it up would tell the tabz server
+										    which sites you've visited. */}
+										<History className="size-5 shrink-0 text-muted" />
+										<span className="truncate font-medium">
+											{result.title || hostnameOf(result.url)}
+										</span>
+										<span className="ml-auto shrink-0 truncate text-xs text-muted">
+											History · {hostnameOf(result.url)}
 										</span>
 									</>
 								) : result.kind === "url" ? (

@@ -12,8 +12,13 @@ export type ExtensionStatus = {
 	incognitoAllowed: boolean;
 	/** The extension holds an API token for this site. */
 	connected: boolean;
+	/** Can search browser history (0.5.0+); undefined on older versions. */
+	historyAllowed?: boolean;
 	version?: string;
 };
+
+/** A page from the browser's history, found by the extension. */
+export type HistoryItem = { url: string; title: string; lastVisit: number };
 
 let status: ExtensionStatus = {
 	installed: false,
@@ -22,6 +27,7 @@ let status: ExtensionStatus = {
 };
 const listeners = new Set<(status: ExtensionStatus) => void>();
 const pending = new Map<string, (ok: boolean) => void>();
+const pendingHistory = new Map<string, (items: HistoryItem[]) => void>();
 
 if (typeof window !== "undefined") {
 	window.addEventListener("message", (event) => {
@@ -38,9 +44,20 @@ if (typeof window !== "undefined") {
 				connected:
 					Boolean(event.data.hasToken) &&
 					event.data.baseUrl === location.origin,
+				historyAllowed:
+					typeof event.data.historyAllowed === "boolean"
+						? event.data.historyAllowed
+						: undefined,
 				version: event.data.version,
 			};
 			for (const listener of listeners) listener(status);
+		}
+		if (event.data.type === "history") {
+			const items: unknown = event.data.items;
+			pendingHistory.get(event.data.id)?.(
+				Array.isArray(items) ? items.filter(isHistoryItem) : [],
+			);
+			pendingHistory.delete(event.data.id);
 		}
 		if (event.data.type === "opened") {
 			pending.get(event.data.id)?.(Boolean(event.data.ok));
@@ -86,7 +103,12 @@ export function connectExtension() {
 }
 
 function request(
-	type: "open-incognito" | "open-tabs" | "open-settings" | "focus-snooze",
+	type:
+		| "open-incognito"
+		| "open-tabs"
+		| "open-settings"
+		| "history-settings"
+		| "focus-snooze",
 	urls: string[] = [],
 ) {
 	const id = crypto.randomUUID();
@@ -120,6 +142,35 @@ export async function openTabs(urls: string[]) {
 		});
 	return false;
 }
+
+const isHistoryItem = (item: unknown): item is HistoryItem =>
+	typeof item === "object" &&
+	item !== null &&
+	typeof (item as HistoryItem).url === "string" &&
+	/^https?:\/\//i.test((item as HistoryItem).url) &&
+	typeof (item as HistoryItem).title === "string";
+
+/**
+ * Searches the browser's history through the extension. Stays in this
+ * browser: the extension answers the page directly, nothing goes to the server.
+ */
+export function searchHistory(text: string) {
+	if (!status.historyAllowed) return Promise.resolve<HistoryItem[]>([]);
+	const id = crypto.randomUUID();
+	return new Promise<HistoryItem[]>((resolve) => {
+		pendingHistory.set(id, resolve);
+		window.postMessage(
+			{ source: "tabz-page", type: "history-search", id, text },
+			location.origin,
+		);
+		setTimeout(() => {
+			if (pendingHistory.delete(id)) resolve([]);
+		}, 2000);
+	});
+}
+
+/** Opens the extension's options at the history switch. */
+export const openHistorySettings = () => request("history-settings");
 
 /** Where this browser keeps the extension's private-window switch. */
 function incognitoSwitch() {

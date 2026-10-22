@@ -8,6 +8,7 @@ Save pages, whole windows and your browser bookmarks to tabz.space, and (optiona
 - **Open all**: tabz's "open group/folder as tabs" buttons open every link at once (browsers otherwise allow one per click).
 - **Incognito links**: links or folders marked "always incognito" open in a private window. Enable **Allow in Incognito** on the extension's details page.
 - **New tab**: opens tabz.space. Turn it off on the options page.
+- **History in search**: turn on "Show my browsing history in tabz's search" in the options (it asks for the browser's history permission). As you type in tabz's search box, matching pages from your history show up under your links. The extension searches history locally and hands the results only to the tabz page you pointed it at, never to the server. Not in incognito windows.
 
 There's nothing to configure: open tabz.space while signed in and the page hands the extension its own API token (shown under Customize → Connect → API tokens as "Browser extension", where you can revoke it).
 

@@ -1,6 +1,6 @@
 // Runs on tabz.space only. Relays requests from the page to the background
-// worker (private windows, opening tabs) and receives the API token the
-// signed-in page mints for the extension.
+// worker (private windows, opening tabs, history search) and receives the API
+// token the signed-in page mints for the extension.
 const ORIGIN = location.origin;
 const post = (message) =>
 	window.postMessage({ source: "tabz-extension", ...message }, ORIGIN);
@@ -64,6 +64,14 @@ window.addEventListener("message", async (event) => {
 			})
 			.catch(() => {});
 	try {
+		if (type === "history-search") {
+			const result = await chrome.runtime.sendMessage({
+				type,
+				text: String(event.data.text ?? ""),
+			});
+			post({ type: "history", id, items: result?.items ?? [] });
+			return;
+		}
 		if (type === "set-token") {
 			await chrome.runtime.sendMessage({
 				type,
@@ -72,7 +80,7 @@ window.addEventListener("message", async (event) => {
 			});
 			return announce();
 		}
-		if (type === "open-settings") {
+		if (type === "open-settings" || type === "history-settings") {
 			const result = await chrome.runtime.sendMessage({ type });
 			post({ type: "opened", id, ok: result?.ok === true });
 			return;
@@ -89,8 +97,17 @@ window.addEventListener("message", async (event) => {
 			post({ type: "opened", id, ok: result?.ok === true });
 		}
 	} catch {
-		post({ type: "opened", id, ok: false });
+		post({
+			type: type === "history-search" ? "history" : "opened",
+			id,
+			ok: false,
+			items: [],
+		});
 	}
 });
 
 announce();
+// Coming back from the options page (e.g. after allowing history): refresh.
+document.addEventListener("visibilitychange", () => {
+	if (document.visibilityState === "visible") announce();
+});

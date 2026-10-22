@@ -150,6 +150,7 @@ Make tabz your new tab page and save any page in one click. Works in **Chrome, E
 - **Save:** use the toolbar button, the right-click menu, or save every open tab as a group. Add **Read later** with one click.
 - **Sessions:** name a window's tabs to save them to a Sessions board, and archive tabs you haven't looked at in days.
 - **Address bar:** type `t` and a space to search your tabz.
+- **History in search:** pages you've visited show up in tabz's search box, like in the address bar (optional; searched in your browser, never sent to tabz).
 - **Sync:** keep your browser's bookmarks and a tabz board in step, both ways (optional).
 - **Focus:** blocks the sites you choose while you focus.
 - **Incognito:** incognito links open in a private window.

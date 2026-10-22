@@ -580,6 +580,65 @@ chrome.omnibox?.onInputEntered.addListener(async (text, disposition) => {
 		});
 });
 
+/* ------------------------------ history search ----------------------------- */
+
+// Optional: asked for from the options page, so updating the extension never
+// shows a new permission warning or disables it.
+const HISTORY = { permissions: ["history"] };
+const hasHistory = () =>
+	chrome.permissions.contains(HISTORY).catch(() => false);
+
+/** Only tabz itself may read history: the bridge also runs on any localhost page. */
+async function fromTabz(sender) {
+	const url = sender.origin ?? sender.url ?? "";
+	let origin;
+	try {
+		origin = new URL(url).origin;
+	} catch {
+		return false;
+	}
+	return origin === (await getBaseUrl()) || OFFICIAL.has(origin);
+}
+
+/**
+ * Pages from your browser history matching `text`, best first: often and
+ * recently visited, and addresses you typed, rank higher. Results go straight
+ * to the tabz page in this browser; they're never sent to the server. Not in
+ * incognito windows, and never tabz's own pages.
+ */
+async function searchHistory(text, sender) {
+	const query = String(text ?? "")
+		.trim()
+		.slice(0, 200);
+	if (!query || sender.tab?.incognito) return [];
+	if (!(await fromTabz(sender)) || !(await hasHistory())) return [];
+	const [items, base] = await Promise.all([
+		chrome.history.search({ text: query, startTime: 0, maxResults: 100 }),
+		getBaseUrl(),
+	]);
+	const now = Date.now();
+	return items
+		.filter(
+			(item) =>
+				/^https?:\/\//i.test(item.url ?? "") &&
+				!item.url.startsWith(base) &&
+				![...OFFICIAL].some((origin) => item.url.startsWith(origin)),
+		)
+		.map((item) => {
+			const weeks = (now - (item.lastVisitTime ?? 0)) / 604_800_000;
+			const visits = Math.min(item.visitCount ?? 0, 100);
+			return {
+				url: item.url,
+				title: (item.title ?? "").slice(0, 300),
+				lastVisit: item.lastVisitTime ?? 0,
+				score: ((item.typedCount ?? 0) * 3 + visits + 1) / (1 + weeks),
+			};
+		})
+		.sort((a, b) => b.score - a.score)
+		.slice(0, 12)
+		.map(({ score, ...item }) => item);
+}
+
 /* -------------------------------- messaging -------------------------------- */
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -598,6 +657,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 					installed: true,
 					incognitoAllowed: await chrome.extension.isAllowedIncognitoAccess(),
 					hasToken: Boolean(await getToken()),
+					historyAllowed: await hasHistory(),
 					baseUrl: await getBaseUrl(),
 					version: chrome.runtime.getManifest().version,
 				}))(),
@@ -630,6 +690,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return reply(openTabs(message.urls).then((ok) => ({ ok })));
 		case "open-settings":
 			return reply(openExtensionSettings().then((ok) => ({ ok })));
+		case "history-search":
+			return reply(
+				searchHistory(message.text, sender).then((items) => ({
+					ok: true,
+					items,
+				})),
+			);
+		case "history-settings":
+			return reply(
+				chrome.tabs
+					.create({ url: chrome.runtime.getURL("options.html#history") })
+					.then(() => ({ ok: true })),
+			);
 		case "focus-settings":
 			return reply(
 				storeFocus(message.focus, message.timeZone).then(() => ({ ok: true })),

@@ -39,6 +39,7 @@ import {
 	type ExtensionStatus,
 	getExtensionStatus,
 	onExtensionStatus,
+	openHistorySettings,
 } from "#/lib/incognito";
 import { forgetOfflinePage } from "#/lib/offline";
 import {
@@ -144,6 +145,46 @@ function ExtensionStatusRow() {
 		<div className="flex items-start gap-2 rounded-xl border border-line p-3 text-xs">
 			<span className={cn("mt-1 size-2 shrink-0 rounded-full", tone)} />
 			<span className="text-muted">{text}</span>
+		</div>
+	);
+}
+
+/** Browser history in the search bar: needs the extension's permission. */
+function HistorySearchRow() {
+	const [status, setStatus] = useState<ExtensionStatus>(getExtensionStatus);
+	useEffect(() => onExtensionStatus(setStatus), []);
+	const [tone, text] = !status.installed
+		? [
+				"bg-amber-500",
+				"Install the tabz extension to search your browser history here too.",
+			]
+		: status.historyAllowed === undefined
+			? [
+					"bg-amber-500",
+					"Update the tabz extension (0.5.0 or later) to search your browser history here too.",
+				]
+			: status.historyAllowed
+				? [
+						"bg-emerald-500",
+						"Browser history shows in search. It's searched in your browser and never sent to tabz.",
+					]
+				: [
+						"bg-amber-500",
+						"Search your browser history here too: allow it in the extension. It's searched in your browser and never sent to tabz.",
+					];
+	return (
+		<div className="flex items-start gap-2 rounded-xl border border-line p-3 text-xs">
+			<span className={cn("mt-1 size-2 shrink-0 rounded-full", tone)} />
+			<span className="flex-1 text-muted">{text}</span>
+			{status.historyAllowed !== undefined && (
+				<button
+					type="button"
+					className="btn-outline -my-1 shrink-0 px-2.5 py-1 text-xs"
+					onClick={() => void openHistorySettings()}
+				>
+					{status.historyAllowed ? "Manage" : "Turn on"}
+				</button>
+			)}
 		</div>
 	);
 }
@@ -710,6 +751,7 @@ export function SettingsPanel({
 							checked={settings.showSearch}
 							onChange={(showSearch) => set({ showSearch })}
 						/>
+						<HistorySearchRow />
 					</Section>
 					<Section title="Widgets">
 						<Toggle
