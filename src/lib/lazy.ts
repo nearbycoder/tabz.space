@@ -33,10 +33,17 @@ export function lazyNamed<M, K extends keyof M>(
 	return Object.assign(Component, { preload: () => void fetchModule() });
 }
 
-/** Runs `task` once the browser has nothing better to do. */
+/**
+ * Runs `task` once the page has loaded and the browser has nothing better to
+ * do, so background downloads never compete with what's on screen.
+ */
 export function whenIdle(task: () => void, timeout = 3000) {
 	if (typeof window === "undefined") return;
-	if ("requestIdleCallback" in window)
-		window.requestIdleCallback(task, { timeout });
-	else setTimeout(task, 1500);
+	const idle = () => {
+		if ("requestIdleCallback" in window)
+			window.requestIdleCallback(task, { timeout });
+		else setTimeout(task, 1500);
+	};
+	if (document.readyState === "complete") idle();
+	else window.addEventListener("load", idle, { once: true });
 }

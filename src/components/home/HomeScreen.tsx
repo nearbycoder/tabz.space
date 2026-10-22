@@ -73,6 +73,7 @@ import {
 	type TreeItem,
 	targetUrl,
 } from "./types";
+import { preloadWidgetCode } from "./widgets/loaders";
 
 /** Thumb-reach actions for phones; the header holds these on larger screens. */
 // Dialogs load on first use (and are prefetched when the browser is idle),
@@ -234,6 +235,13 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		boards.find((b) => b.id === (picked ?? scheduledId)) ??
 		boards.find((b) => b.id === settings.activeBoardId) ??
 		boards[0];
+	// The board on screen: fetch its widgets' code now, all at once, rather
+	// than as the page reaches each one (no-op on the server and once loaded).
+	preloadWidgetCode(
+		board?.groups.flatMap((g) =>
+			g.options.widget ? [g.options.widget.type] : [],
+		) ?? [],
+	);
 	const [editingState, setEditing] = useState(false);
 	const readOnly = board?.role === "viewer";
 	const editing = editingState && !readOnly;
@@ -400,11 +408,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		.join(",");
 	useEffect(() => {
 		if (!widgetTypes) return;
-		whenIdle(() => {
-			void import("./widgets/WidgetBody").then((module) =>
-				module.preloadWidgets(widgetTypes.split(",")),
-			);
-		}, 5000);
+		whenIdle(() => preloadWidgetCode(widgetTypes.split(",")), 5000);
 	}, [widgetTypes]);
 
 	// Hands the extension an API token so it works without setup.

@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { CatalogType } from "#/lib/widget-catalog";
 import type { JsonValue, WidgetProps } from "./kit";
+import { CATALOG_LOADERS } from "./loaders";
 
 /*
  * How each catalog widget is built: its starting data, the settings form
@@ -59,7 +60,7 @@ const count = (label = "Show", max = 20): Field => ({
 export const REGISTRY: Record<CatalogType, WidgetDef> = {
 	// Productivity
 	habits: {
-		load: () => import("./catalog/habits"),
+		load: CATALOG_LOADERS.habits,
 		defaults: { habits: ["Exercise", "Read", "Meditate"], done: {} },
 		fields: [
 			{
@@ -72,15 +73,15 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	"top-three": {
-		load: () => import("./catalog/top-three"),
+		load: CATALOG_LOADERS["top-three"],
 		defaults: { day: "", items: [] },
 	},
 	kanban: {
-		load: () => import("./catalog/kanban"),
+		load: CATALOG_LOADERS.kanban,
 		defaults: { todo: [], doing: [], done: [] },
 	},
 	goal: {
-		load: () => import("./catalog/goal"),
+		load: CATALOG_LOADERS.goal,
 		defaults: {
 			label: "Books read",
 			current: 0,
@@ -101,7 +102,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	counter: {
-		load: () => import("./catalog/counter"),
+		load: CATALOG_LOADERS.counter,
 		defaults: { label: "", value: 0, step: 1, daily: false, day: "" },
 		fields: [
 			{ key: "label", label: "Counting", kind: "text", placeholder: "Coffees" },
@@ -110,15 +111,15 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	journal: {
-		load: () => import("./catalog/journal"),
+		load: CATALOG_LOADERS.journal,
 		defaults: { entries: {} },
 	},
 	mood: {
-		load: () => import("./catalog/mood"),
+		load: CATALOG_LOADERS.mood,
 		defaults: { log: {} },
 	},
 	expenses: {
-		load: () => import("./catalog/expenses"),
+		load: CATALOG_LOADERS.expenses,
 		defaults: { currency: "$", budget: 0, items: [] },
 		fields: [
 			{ key: "currency", label: "Currency symbol", kind: "text" },
@@ -132,7 +133,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	snippets: {
-		load: () => import("./catalog/snippets"),
+		load: CATALOG_LOADERS.snippets,
 		defaults: { items: ["hello@example.com", "Thanks so much!"] },
 		fields: [
 			{
@@ -144,7 +145,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	flashcards: {
-		load: () => import("./catalog/flashcards"),
+		load: CATALOG_LOADERS.flashcards,
 		defaults: {
 			cards: "Bonjour | Hello\nMerci | Thank you\nAu revoir | Goodbye",
 		},
@@ -158,7 +159,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	markdown: {
-		load: () => import("./catalog/markdown"),
+		load: CATALOG_LOADERS.markdown,
 		defaults: {
 			text: "## Hello\n\nWrite **markdown** here:\n\n- lists\n- [links](https://tabz.space)\n- `code`",
 		},
@@ -166,7 +167,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 	},
 	// Time & date
 	"analog-clock": {
-		load: () => import("./catalog/analog-clock"),
+		load: CATALOG_LOADERS["analog-clock"],
 		defaults: { zone: "", label: "", seconds: true },
 		fields: [
 			{ key: "zone", label: "Time zone", kind: "timezone" },
@@ -175,7 +176,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	"world-clocks": {
-		load: () => import("./catalog/world-clocks"),
+		load: CATALOG_LOADERS["world-clocks"],
 		defaults: {
 			zones: ["America/New_York", "Europe/London", "Asia/Tokyo"],
 			hour12: false,
@@ -186,7 +187,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	countdown: {
-		load: () => import("./catalog/countdown"),
+		load: CATALOG_LOADERS.countdown,
 		defaults: { label: "", target: "" },
 		fields: [
 			{ key: "label", label: "Event", kind: "text", placeholder: "Vacation" },
@@ -195,7 +196,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: has("target"),
 	},
 	"days-since": {
-		load: () => import("./catalog/days-since"),
+		load: CATALOG_LOADERS["days-since"],
 		defaults: { label: "", since: "" },
 		fields: [
 			{
@@ -209,29 +210,29 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: has("since"),
 	},
 	stopwatch: {
-		load: () => import("./catalog/stopwatch"),
+		load: CATALOG_LOADERS.stopwatch,
 		defaults: { startedAt: null, elapsed: 0, laps: [] },
 	},
 	timer: {
-		load: () => import("./catalog/timer"),
+		load: CATALOG_LOADERS.timer,
 		defaults: { minutes: 5, endsAt: null, presets: [1, 3, 5, 10, 15, 30] },
 	},
 	"year-progress": {
-		load: () => import("./catalog/year-progress"),
+		load: CATALOG_LOADERS["year-progress"],
 		defaults: {},
 	},
 	"moon-phase": {
-		load: () => import("./catalog/moon-phase"),
+		load: CATALOG_LOADERS["moon-phase"],
 		defaults: {},
 	},
 	"sun-times": {
-		load: () => import("./catalog/sun-times"),
+		load: CATALOG_LOADERS["sun-times"],
 		defaults: { place: "", lat: 0, lon: 0 },
 		fields: [place],
 		ready: has("place"),
 	},
 	birthdays: {
-		load: () => import("./catalog/birthdays"),
+		load: CATALOG_LOADERS.birthdays,
 		defaults: { people: ["Ada Lovelace | 12-10", "Alan Turing | 06-23"] },
 		fields: [
 			{
@@ -243,7 +244,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	"life-calendar": {
-		load: () => import("./catalog/life-calendar"),
+		load: CATALOG_LOADERS["life-calendar"],
 		defaults: { birthdate: "", years: 90 },
 		fields: [
 			{ key: "birthdate", label: "Birthday", kind: "date" },
@@ -252,15 +253,15 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: has("birthdate"),
 	},
 	// News & data
-	quote: { load: () => import("./catalog/quote"), defaults: {} },
-	word: { load: () => import("./catalog/word"), defaults: {} },
+	quote: { load: CATALOG_LOADERS.quote, defaults: {} },
+	word: { load: CATALOG_LOADERS.word, defaults: {} },
 	"on-this-day": {
-		load: () => import("./catalog/on-this-day"),
+		load: CATALOG_LOADERS["on-this-day"],
 		defaults: { count: 5 },
 		fields: [count("Events", 10)],
 	},
 	wikipedia: {
-		load: () => import("./catalog/wikipedia"),
+		load: CATALOG_LOADERS.wikipedia,
 		defaults: { mode: "featured" },
 		fields: [
 			{
@@ -275,7 +276,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	"hacker-news": {
-		load: () => import("./catalog/hacker-news"),
+		load: CATALOG_LOADERS["hacker-news"],
 		defaults: { list: "front_page", count: 8 },
 		fields: [
 			{
@@ -292,7 +293,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	reddit: {
-		load: () => import("./catalog/reddit"),
+		load: CATALOG_LOADERS.reddit,
 		defaults: { subreddit: "programming", sort: "top", count: 6 },
 		fields: [
 			{
@@ -316,7 +317,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: has("subreddit"),
 	},
 	"github-repo": {
-		load: () => import("./catalog/github-repo"),
+		load: CATALOG_LOADERS["github-repo"],
 		defaults: { repos: ["facebook/react", "vercel/next.js"] },
 		fields: [
 			{
@@ -328,7 +329,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	crypto: {
-		load: () => import("./catalog/crypto"),
+		load: CATALOG_LOADERS.crypto,
 		defaults: { coins: ["bitcoin", "ethereum", "solana"], currency: "usd" },
 		fields: [
 			{
@@ -353,7 +354,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	currency: {
-		load: () => import("./catalog/currency"),
+		load: CATALOG_LOADERS.currency,
 		defaults: { base: "USD", targets: ["EUR", "GBP", "JPY", "CAD"] },
 		fields: [
 			{ key: "base", label: "From", kind: "text", placeholder: "USD" },
@@ -366,13 +367,13 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	"air-quality": {
-		load: () => import("./catalog/air-quality"),
+		load: CATALOG_LOADERS["air-quality"],
 		defaults: { place: "", lat: 0, lon: 0 },
 		fields: [place],
 		ready: has("place"),
 	},
 	earthquakes: {
-		load: () => import("./catalog/earthquakes"),
+		load: CATALOG_LOADERS.earthquakes,
 		defaults: { feed: "significant_week", count: 6 },
 		fields: [
 			{
@@ -389,10 +390,10 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 			count("Quakes"),
 		],
 	},
-	joke: { load: () => import("./catalog/joke"), defaults: {} },
-	advice: { load: () => import("./catalog/advice"), defaults: {} },
+	joke: { load: CATALOG_LOADERS.joke, defaults: {} },
+	advice: { load: CATALOG_LOADERS.advice, defaults: {} },
 	pets: {
-		load: () => import("./catalog/pets"),
+		load: CATALOG_LOADERS.pets,
 		defaults: { kind: "dog" },
 		fields: [
 			{
@@ -406,67 +407,67 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 			},
 		],
 	},
-	trivia: { load: () => import("./catalog/trivia"), defaults: {} },
+	trivia: { load: CATALOG_LOADERS.trivia, defaults: {} },
 	// Tools
-	calculator: { load: () => import("./catalog/calculator"), defaults: {} },
+	calculator: { load: CATALOG_LOADERS.calculator, defaults: {} },
 	converter: {
-		load: () => import("./catalog/converter"),
+		load: CATALOG_LOADERS.converter,
 		defaults: { category: "length" },
 	},
 	"tip-split": {
-		load: () => import("./catalog/tip-split"),
+		load: CATALOG_LOADERS["tip-split"],
 		defaults: { tip: 18, people: 2 },
 	},
 	password: {
-		load: () => import("./catalog/password"),
+		load: CATALOG_LOADERS.password,
 		defaults: { length: 20, symbols: true, plain: false },
 	},
 	picker: {
-		load: () => import("./catalog/picker"),
+		load: CATALOG_LOADERS.picker,
 		defaults: { options: ["Pizza", "Sushi", "Tacos", "Curry", "Salad"] },
 		fields: [
 			{ key: "options", label: "Choices", kind: "list", hint: "One per line" },
 		],
 	},
 	dice: {
-		load: () => import("./catalog/dice"),
+		load: CATALOG_LOADERS.dice,
 		defaults: { count: 2, sides: 6 },
 	},
 	coin: {
-		load: () => import("./catalog/coin"),
+		load: CATALOG_LOADERS.coin,
 		defaults: { heads: 0, tails: 0 },
 	},
 	palette: {
-		load: () => import("./catalog/palette"),
+		load: CATALOG_LOADERS.palette,
 		defaults: { colors: [] },
 	},
 	"qr-code": {
-		load: () => import("./catalog/qr-code"),
+		load: CATALOG_LOADERS["qr-code"],
 		defaults: { text: "https://tabz.space" },
 	},
 	"dev-tools": {
-		load: () => import("./catalog/dev-tools"),
+		load: CATALOG_LOADERS["dev-tools"],
 		defaults: { tool: "uuid" },
 	},
 	"site-search": {
-		load: () => import("./catalog/site-search"),
+		load: CATALOG_LOADERS["site-search"],
 		defaults: { site: "youtube" },
 	},
 	metronome: {
-		load: () => import("./catalog/metronome"),
+		load: CATALOG_LOADERS.metronome,
 		defaults: { bpm: 100, beats: 4 },
 	},
 	// Wellness
 	breathing: {
-		load: () => import("./catalog/breathing"),
+		load: CATALOG_LOADERS.breathing,
 		defaults: { pattern: "box" },
 	},
 	ambient: {
-		load: () => import("./catalog/ambient"),
+		load: CATALOG_LOADERS.ambient,
 		defaults: { color: "brown", volume: 0.4 },
 	},
 	"break-reminder": {
-		load: () => import("./catalog/break-reminder"),
+		load: CATALOG_LOADERS["break-reminder"],
 		defaults: { every: 20 },
 		fields: [
 			{
@@ -479,7 +480,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		],
 	},
 	water: {
-		load: () => import("./catalog/water"),
+		load: CATALOG_LOADERS.water,
 		defaults: { goal: 8, glasses: 0, day: "" },
 		fields: [
 			{
@@ -493,7 +494,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 	},
 	// Media
 	youtube: {
-		load: () => import("./catalog/youtube"),
+		load: CATALOG_LOADERS.youtube,
 		defaults: { url: "" },
 		fields: [
 			{
@@ -506,7 +507,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: isUrl("url"),
 	},
 	music: {
-		load: () => import("./catalog/music"),
+		load: CATALOG_LOADERS.music,
 		defaults: { url: "" },
 		fields: [
 			{
@@ -519,7 +520,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: isUrl("url"),
 	},
 	photos: {
-		load: () => import("./catalog/photos"),
+		load: CATALOG_LOADERS.photos,
 		defaults: { urls: [], every: 1, fit: "cover" },
 		fields: [
 			{
@@ -548,7 +549,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: (data) => Array.isArray(data.urls) && data.urls.length > 0,
 	},
 	map: {
-		load: () => import("./catalog/map"),
+		load: CATALOG_LOADERS.map,
 		defaults: { place: "", lat: 0, lon: 0, zoom: 12 },
 		fields: [
 			place,
@@ -557,7 +558,7 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 		ready: has("place"),
 	},
 	embed: {
-		load: () => import("./catalog/embed"),
+		load: CATALOG_LOADERS.embed,
 		defaults: { url: "", height: 360 },
 		fields: [
 			{
@@ -578,36 +579,36 @@ export const REGISTRY: Record<CatalogType, WidgetDef> = {
 	},
 	// Your links
 	"random-link": {
-		load: () => import("./catalog/random-link"),
+		load: CATALOG_LOADERS["random-link"],
 		defaults: {},
 	},
 	"top-links": {
-		load: () => import("./catalog/top-links"),
+		load: CATALOG_LOADERS["top-links"],
 		defaults: { count: 8 },
 		fields: [count("Links")],
 	},
 	"recent-links": {
-		load: () => import("./catalog/recent-links"),
+		load: CATALOG_LOADERS["recent-links"],
 		defaults: { count: 8 },
 		fields: [count("Links")],
 	},
 	"library-stats": {
-		load: () => import("./catalog/library-stats"),
+		load: CATALOG_LOADERS["library-stats"],
 		defaults: {},
 	},
 	"reading-list": {
-		load: () => import("./catalog/reading-list"),
+		load: CATALOG_LOADERS["reading-list"],
 		defaults: { count: 6 },
 		fields: [count("Articles")],
 	},
 	// Custom
 	"custom-html": {
-		load: () => import("./catalog/custom-html"),
+		load: CATALOG_LOADERS["custom-html"],
 		defaults: { html: "", state: null },
 		ready: has("html"),
 	},
 	"json-api": {
-		load: () => import("./catalog/json-api"),
+		load: CATALOG_LOADERS["json-api"],
 		defaults: {
 			url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
 			path: "bitcoin.usd",

@@ -9,6 +9,10 @@
  * - Built files under /assets/ are content-hashed, so they're kept and served
  *   from here; an old saved page can always find the code it was built with.
  *
+ * - Each saved copy brings its code along: after a deploy renames every built
+ *   file, the worker fetches the new versions of the ones you use before the
+ *   next new tab needs them, so the first tab after a deploy is instant too.
+ *
  * The server says what may be saved (x-tabz-offline): "1" save, "keep" leave
  * the current copy alone (the vault is unlocked, so this render shows it),
  * "clear" forget it (signed out). x-tabz-viewer identifies the account, so a
@@ -39,8 +43,11 @@ self.addEventListener("activate", (event) => {
 	);
 });
 
-/** Saves a fresh render of the home page; returns true if the account changed. */
-async function remember(response, previous) {
+/**
+ * Saves a fresh render of the home page; returns true if the account changed.
+ * `extend` keeps the worker alive while the copy's code downloads.
+ */
+async function remember(response, previous, extend) {
 	const mode = response.headers.get("x-tabz-offline");
 	const cache = await caches.open(PAGES);
 	if (mode === "clear") {
@@ -52,10 +59,56 @@ async function remember(response, previous) {
 		previous.headers.get("x-tabz-viewer") !==
 			response.headers.get("x-tabz-viewer");
 	const html = (response.headers.get("content-type") || "").includes("text/html");
-	if (mode === "1" && response.ok && !response.redirected && html)
+	if (mode === "1" && response.ok && !response.redirected && html) {
+		const page = await response.clone().text();
 		await cache.put(HOME, response);
-	else if (changed) await cache.delete(HOME);
+		extend(warm(page));
+	} else if (changed) await cache.delete(HOME);
 	return changed;
+}
+
+/** "/assets/hacker-news-DYkgA_ia.js" → "hacker-news.js": stays put across deploys. */
+const baseName = (path) =>
+	path.replace(/^.*\//, "").replace(/-[\w-]{8}(\.\w+)$/, "$1");
+const IN_PAGE = /\/assets\/[\w.-]+\.(?:js|css|woff2)/g;
+// Chunks name the others they load: "assets/x-hash.js" (on demand) and
+// "./x-hash.js" (imported directly).
+const IN_CODE = /(?:assets\/|\.\/)[\w.-]+\.(?:js|css)/g;
+
+/**
+ * Caches the code a saved page needs: everything it names, plus the chunks it
+ * loads later (widgets, dialogs, …) that you've used before. Those are found
+ * by following each chunk's references, matched by name without the hash.
+ */
+async function warm(page) {
+	const cache = await caches.open(ASSETS);
+	const used = new Set(
+		(await cache.keys()).map((request) => baseName(new URL(request.url).pathname)),
+	);
+	const seen = new Set();
+	const queue = [...new Set(page.match(IN_PAGE) ?? [])];
+	while (queue.length) {
+		await Promise.all(
+			queue.splice(0, 8).map(async (path) => {
+				if (seen.has(path)) return;
+				seen.add(path);
+				let response = await cache.match(path);
+				if (!response) {
+					response = await fetch(path).catch(() => null);
+					if (!response?.ok) return;
+					await cache.put(path, response.clone());
+				}
+				if (!path.endsWith(".js")) return;
+				for (const found of (await response.text()).match(IN_CODE) ?? []) {
+					const next = `/assets/${found.replace(/^(assets\/|\.\/)/, "")}`;
+					if (!seen.has(next) && used.has(baseName(next))) queue.push(next);
+				}
+			}),
+		);
+	}
+	const keys = await cache.keys();
+	for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS)))
+		await cache.delete(key);
 }
 
 /*
@@ -72,7 +125,9 @@ async function home(event) {
 	const launch = url.searchParams.has("launch");
 	const network = fetch(event.request);
 	const update = network
-		.then((response) => remember(response.clone(), cached))
+		.then((response) =>
+			remember(response.clone(), cached, (work) => event.waitUntil(work)),
+		)
 		.catch(() => false);
 	event.waitUntil(update);
 	if (cached && launch) {
@@ -172,7 +227,11 @@ async function refresh() {
 			credentials: "same-origin",
 			headers: { accept: "text/html" },
 		});
-		await remember(response, previous);
+		let warming;
+		await remember(response, previous, (work) => {
+			warming = work;
+		});
+		await warming;
 	} catch {
 		// Offline: keep the copy we have.
 	}

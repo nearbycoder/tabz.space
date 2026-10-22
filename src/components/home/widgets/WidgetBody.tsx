@@ -63,12 +63,6 @@ const componentFor = (type: CatalogType) => {
 	return found;
 };
 
-/** Starts downloading widgets' code early (e.g. when the browser is idle). */
-export const preloadWidgets = (types: string[]) => {
-	for (const type of new Set(types))
-		if (isCatalogType(type)) void loadWidget(type);
-};
-
 /** One broken widget shouldn't take the whole page down. */
 class WidgetBoundary extends Component<
 	{ children: ReactNode },
