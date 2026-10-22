@@ -27,7 +27,7 @@ export function ProfileIcon({
 	);
 }
 
-/** Header menu for switching profiles (or press P); shown once there are two. */
+/** Header menu for switching profiles (or ⌥⇧P); shown once there are two. */
 export function ProfileSwitcher() {
 	const { profiles, profile, switchProfile } = useHomeContext();
 	const { create } = useProfileActions();
@@ -64,7 +64,7 @@ export function ProfileSwitcher() {
 				type="button"
 				aria-haspopup="menu"
 				aria-expanded={open}
-				title="Switch profile (P)"
+				title="Switch profile (Alt+Shift+P)"
 				onClick={() => (open ? close() : setOpen(true))}
 				className="glass focus-ring flex h-10 items-center gap-1.5 rounded-2xl px-3 text-sm font-medium"
 			>
@@ -132,7 +132,7 @@ export function ProfileSwitcher() {
 						</button>
 					)}
 					<p className="px-2.5 pt-1 pb-0.5 text-[11px] text-muted">
-						Press P for the next profile.
+						Next profile: ⌥⇧P (Alt+Shift+P), or P when you're not typing.
 					</p>
 				</div>
 			)}

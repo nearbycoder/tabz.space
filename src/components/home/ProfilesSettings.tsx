@@ -15,7 +15,8 @@ export function ProfilesSettings() {
 		<div className="space-y-3">
 			<p className="text-xs text-muted">
 				Separate sets of boards for different parts of your life, like Personal
-				and Work. Switch with the menu next to your boards or press P.
+				and Work. Switch with the menu next to your boards or press ⌥⇧P
+				(Alt+Shift+P).
 				{!real && " Your current boards become your Personal profile."}
 			</p>
 			{real && (

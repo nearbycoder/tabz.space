@@ -543,7 +543,7 @@ export function CommandPalette({
 								>
 									<Row
 										icon={<ProfileIcon profile={p} />}
-										hint={profiles.length === 2 ? "P" : undefined}
+										hint={profiles.length === 2 ? "⌥⇧P" : undefined}
 									>
 										Switch to {p.name}
 									</Row>

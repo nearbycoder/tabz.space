@@ -19,6 +19,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { toast } from "sonner";
 import { Logo } from "#/components/Logo";
 import { call, run } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
@@ -523,6 +524,30 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[profile.id, home.boards, profiles, settings.profileBoards, saveSettings],
 	);
 
+	/** The keyboard shortcuts: on to the next profile, with a note saying which. */
+	const cycleProfile = useCallback(() => {
+		const next = nextProfile(profiles, profile.id);
+		switchProfile(next.id);
+		toast(`${next.icon ? `${next.icon} ` : ""}${next.name}`, {
+			id: "profile-switch",
+			duration: 1200,
+		});
+	}, [profiles, profile.id, switchProfile]);
+
+	// ⌥⇧P (Alt+Shift+P) cycles profiles from anywhere on the page, even while
+	// typing in the search box; plain P works when you're not typing.
+	useEffect(() => {
+		if (profiles.length < 2) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (!event.altKey || !event.shiftKey || event.code !== "KeyP") return;
+			if (event.metaKey || event.ctrlKey) return;
+			event.preventDefault();
+			cycleProfile();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [profiles.length, cycleProfile]);
+
 	// Re-check schedules every half minute, only if any board has one.
 	const hasSchedules =
 		boards.some((b) => b.layout.schedule) ||
@@ -671,7 +696,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			if (event.key === "g") goPressed.current = Date.now();
 			else if (event.key === "p" && profiles.length > 1) {
 				event.preventDefault();
-				switchProfile(nextProfile(profiles, profile.id).id);
+				cycleProfile();
 			} else if (event.key === "e" && tile) {
 				event.preventDefault();
 				tile
@@ -713,8 +738,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		vault.configured,
 		openVault,
 		profiles,
-		profile.id,
-		switchProfile,
+		cycleProfile,
 	]);
 
 	// Auto-lock: the cookie expires server-side; drop the boards client-side at the same moment.

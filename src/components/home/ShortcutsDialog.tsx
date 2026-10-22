@@ -57,7 +57,8 @@ export function ShortcutsDialog({
 				["Go to board 1–9", ["G", "1…9"]],
 				["Go to a board by its first letter", ["G", "A…Z"]],
 				["Previous / next board", ["[", "]"]],
-				["Next profile (once you have two)", ["P"]],
+				["Next profile (works while typing too)", ["⌥", "⇧", "P"]],
+				["Next profile, when you're not typing", ["P"]],
 			],
 		},
 		{
