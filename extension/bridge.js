@@ -2,6 +2,15 @@
 // worker (private windows, opening tabs, history search) and receives the API
 // token the signed-in page mints for the extension.
 const ORIGIN = location.origin;
+
+// A new tab the extension is loading out of sight (newtab.js): say as soon as
+// the page is parsed, so it can be shown without waiting for every image.
+if (new URLSearchParams(location.search).has("launch"))
+	document.addEventListener(
+		"DOMContentLoaded",
+		() => chrome.runtime.sendMessage({ type: "page-ready" }).catch(() => {}),
+		{ once: true },
+	);
 const post = (message) =>
 	window.postMessage({ source: "tabz-extension", ...message }, ORIGIN);
 

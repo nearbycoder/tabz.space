@@ -7,23 +7,31 @@ const [{ newTab = true, focusPage = true }, { look }] = await Promise.all([
 // Keep a synchronous copy for look.js, which paints before this module runs.
 if (look) localStorage.setItem("tabz-look", JSON.stringify(look));
 
-/** Resolves when the tab has finished loading, or after `ms` regardless. */
-function loaded(tabId, ms) {
+/*
+ * The tabz tab opened out of sight says when it can be shown: the bridge
+ * (bridge.js) reports once its page is parsed, which from the saved copy
+ * takes a few dozen milliseconds. Waiting for the tab to finish loading
+ * instead also waits for images and other slow extras, and in Chrome a tab
+ * in the background can take over a second to get there.
+ */
+const readyTabs = new Set();
+let checkReady = () => {};
+chrome.runtime.onMessage.addListener((message, sender) => {
+	if (message?.type !== "page-ready" || sender.tab?.id === undefined) return;
+	readyTabs.add(sender.tab.id);
+	checkReady();
+});
+
+/** Resolves when the tab's page can be shown, or after `ms` regardless. */
+function shown(tabId, ms) {
 	return new Promise((resolve) => {
-		const done = () => {
-			chrome.tabs.onUpdated.removeListener(listener);
+		const timer = setTimeout(resolve, ms);
+		checkReady = () => {
+			if (!readyTabs.has(tabId)) return;
 			clearTimeout(timer);
 			resolve();
 		};
-		const listener = (id, info) => {
-			if (id === tabId && info.status === "complete") done();
-		};
-		const timer = setTimeout(done, ms);
-		chrome.tabs.onUpdated.addListener(listener);
-		chrome.tabs
-			.get(tabId)
-			.then((tab) => tab.status === "complete" && done())
-			.catch(done);
+		checkReady();
 	});
 }
 
@@ -54,7 +62,7 @@ if (!newTab) {
 			await chrome.tabs
 				.group({ groupId: tab.groupId, tabIds: opened.id })
 				.catch(() => {});
-		await loaded(opened.id, 1200);
+		await shown(opened.id, 1000);
 		await chrome.tabs.update(opened.id, { active: true });
 		await chrome.tabs.remove(tab.id);
 	} else {
