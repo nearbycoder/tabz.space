@@ -4,6 +4,7 @@ import { SandboxFrame } from "../SandboxFrame";
 type Data = { html: string; state: JsonValue };
 
 export default function CustomHtml({
+	group,
 	data,
 	save,
 	readOnly,
@@ -14,6 +15,7 @@ export default function CustomHtml({
 		<SandboxFrame
 			html={data.html}
 			state={data.state}
+			sizeKey={group.id}
 			onState={readOnly ? undefined : (state) => save({ ...data, state })}
 		/>
 	);

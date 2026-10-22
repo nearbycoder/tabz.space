@@ -30,7 +30,7 @@ export function lazyNamed<M, K extends keyof M>(
 		const [Ready] = useState(() => loaded);
 		return createElement((Ready ?? Lazy) as ComponentType, props);
 	}
-	return Object.assign(Component, { preload: () => void fetchModule() });
+	return Object.assign(Component, { preload: () => fetchModule() });
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -56,6 +56,9 @@ export function useJson<T>(
 		// can be put in place on the next page load.
 		queryFn: () => run(call(getJsonData, input)),
 		select: (result) => result.value as T,
+		// "Another one", a new date or new settings: keep showing the current
+		// answer until the next one is in, instead of a spinner.
+		placeholderData: keepPreviousData,
 		enabled: Boolean(url),
 		staleTime: (options.refresh ?? 10) * 60_000,
 		refetchInterval: options.refresh ? options.refresh * 60_000 : false,

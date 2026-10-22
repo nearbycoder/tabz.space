@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { call, run } from "#/lib/api";
 import { widgetKey } from "#/lib/widget-key";
 import { getFeed } from "#/server/home";
@@ -14,6 +14,7 @@ export default function Reddit({ data }: WidgetProps<Data>) {
 	const count = Math.min(20, Math.max(1, data.count || 6));
 	const query = useQuery({
 		queryKey: widgetKey("feed", { url, count }),
+		placeholderData: keepPreviousData,
 		queryFn: () => run(call(getFeed, { url, count })),
 		enabled: Boolean(subreddit),
 		staleTime: 10 * 60_000,

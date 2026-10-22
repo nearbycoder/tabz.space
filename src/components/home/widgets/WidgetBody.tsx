@@ -37,6 +37,16 @@ const CalendarWidget = lazyNamed(
 const StocksWidget = lazyNamed(() => import("./DataWidgets"), "StocksWidget");
 const FeedWidget = lazyNamed(() => import("./DataWidgets"), "FeedWidget");
 
+const BUILT_IN: Record<string, { preload: () => Promise<unknown> }> = {
+	notes: NotesWidget,
+	todo: TodoWidget,
+	pomodoro: PomodoroWidget,
+	weather: WeatherWidget,
+	calendar: CalendarWidget,
+	stocks: StocksWidget,
+	feed: FeedWidget,
+};
+
 type Data = Record<string, JsonValue>;
 type Lazy = LazyExoticComponent<ComponentType<WidgetProps<Data>>>;
 const components = new Map<CatalogType, Lazy>();
@@ -62,6 +72,17 @@ const componentFor = (type: CatalogType) => {
 	}
 	return found;
 };
+
+/**
+ * Loads these widgets' code so they render at once, without suspending (see
+ * widgets/loaders.ts). Resolves when all of it is here.
+ */
+export const preloadWidgets = (types: string[]) =>
+	Promise.all(
+		[...new Set(types)].map((type) =>
+			isCatalogType(type) ? loadWidget(type) : BUILT_IN[type]?.preload(),
+		),
+	);
 
 /** One broken widget shouldn't take the whole page down. */
 class WidgetBoundary extends Component<

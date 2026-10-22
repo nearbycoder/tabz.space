@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { call, run } from "#/lib/api";
+import { widgetKey } from "#/lib/widget-key";
 import { getJsonData } from "#/server/home";
 import type { JsonValue } from "./kit";
 
@@ -14,11 +16,16 @@ import type { JsonValue } from "./kit";
  *   tabz.open(url)            → open a link in a new tab
  *   tabz.theme                → { dark, accent, ink, muted }
  *
- * The frame resizes itself to its content.
+ * The frame resizes itself to its content, starting at its last known height.
+ * Fetches answer from what this page already has (including the server's
+ * copy of your latest widget data) when it's under half an hour old, so a
+ * reload shows the widget at once; older answers refresh in the background.
  */
 
 const MAX_STATE = 50_000;
 const FETCHES_PER_MINUTE = 30;
+const REFRESH_AFTER = 60_000;
+const SHOW_UP_TO = 30 * 60_000;
 
 type Message = {
 	source: "tabz-widget";
@@ -76,23 +83,36 @@ export function SandboxFrame({
 	state,
 	onState,
 	maxHeight = 800,
+	sizeKey,
 }: {
 	html: string;
 	state?: JsonValue;
 	/** Omit for read-only (tabz.save will fail). */
 	onState?: (state: JsonValue) => void;
 	maxHeight?: number;
+	/** Remembers the frame's height under this key, so it opens at full size. */
+	sizeKey?: string;
 }) {
 	const frame = useRef<HTMLIFrameElement>(null);
+	const queryClient = useQueryClient();
 	const [height, setHeight] = useState(80);
+	const sizeStore = sizeKey ? `tabz-frame-height:${sizeKey}` : null;
+	useLayoutEffect(() => {
+		const known = sizeStore && Number(localStorage.getItem(sizeStore));
+		if (known) setHeight(Math.min(maxHeight, known));
+	}, [sizeStore, maxHeight]);
 	const latest = useRef({ state, onState });
 	latest.current = { state, onState };
 	const fetches = useRef<number[]>([]);
 
-	// Built after mount (it reads the page's theme) and only when the code
-	// changes, not on every save.
+	// Built once the page is up (it reads the page's theme), before it paints,
+	// and only when the code changes, not on every save.
 	const [srcDoc, setSrcDoc] = useState<string | null>(null);
-	useEffect(() => setSrcDoc(documentFor(html, latest.current.state)), [html]);
+	const startedAt = useRef(0);
+	useLayoutEffect(() => {
+		startedAt.current = Date.now();
+		setSrcDoc(documentFor(html, latest.current.state));
+	}, [html]);
 
 	useEffect(() => {
 		const reply = (
@@ -109,9 +129,18 @@ export function SandboxFrame({
 			if (message?.source !== "tabz-widget") return;
 			const payload = message.payload ?? {};
 			if (message.type === "height") {
-				setHeight(
-					Math.min(maxHeight, Math.max(24, Math.ceil(payload.height ?? 0))),
+				const next = Math.min(
+					maxHeight,
+					Math.max(24, Math.ceil(payload.height ?? 0)),
 				);
+				// While it starts up (showing "Loading…" and the like), only grow:
+				// shrinking first and growing back once its data is in is a jump.
+				setHeight((current) =>
+					next < current && Date.now() - startedAt.current < 1500
+						? current
+						: next,
+				);
+				if (sizeStore) localStorage.setItem(sizeStore, String(next));
 				return;
 			}
 			if (message.type === "open") {
@@ -142,14 +171,27 @@ export function SandboxFrame({
 						error: "Only http(s) addresses can be fetched",
 					});
 				try {
-					const result = await run(
-						call(getJsonData, {
-							url: payload.url as string,
-							pick: Array.isArray(payload.pick)
-								? payload.pick.slice(0, 30).map(String)
-								: undefined,
-						}),
+					const input = {
+						url: payload.url as string,
+						pick: Array.isArray(payload.pick)
+							? payload.pick.slice(0, 30).map(String)
+							: undefined,
+					};
+					const load = () =>
+						queryClient.fetchQuery({
+							queryKey: widgetKey("json", input),
+							queryFn: () => run(call(getJsonData, input)),
+							staleTime: REFRESH_AFTER,
+						});
+					const known = queryClient.getQueryState<{ value: unknown }>(
+						widgetKey("json", input),
 					);
+					const age = Date.now() - (known?.dataUpdatedAt ?? 0);
+					let result: { value: unknown };
+					if (known?.data && age < SHOW_UP_TO) {
+						result = known.data;
+						if (age > REFRESH_AFTER) void load().catch(() => {});
+					} else result = await load();
 					reply(message.id, { value: result.value });
 				} catch (error) {
 					reply(message.id, {
@@ -160,7 +202,7 @@ export function SandboxFrame({
 		};
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
-	}, [maxHeight]);
+	}, [maxHeight, queryClient, sizeStore]);
 
 	return (
 		<iframe

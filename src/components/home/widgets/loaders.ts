@@ -1,3 +1,4 @@
+import { lazyNamed } from "#/lib/lazy";
 import type { CatalogType } from "#/lib/widget-catalog";
 
 /*
@@ -85,20 +86,33 @@ const BUILT_IN: Record<string, () => Promise<unknown>> = {
 	feed: () => import("./DataWidgets"),
 };
 
-const requested = new Set<string>();
+/** The widget frame (WidgetBody), shared so preloading fills the same cache. */
+export const WidgetFrame = lazyNamed(
+	() => import("./WidgetBody"),
+	"WidgetBody",
+);
 
-/** Starts downloading the code for these widget types, and the widget frame. */
-export function preloadWidgetCode(types: string[]) {
-	if (typeof window === "undefined" || types.length === 0) return;
+const started = new Set<string>();
+
+/**
+ * Loads the code for these widget types and the widget frame, all at once.
+ * Resolves once it's all here and the widgets can render without suspending.
+ */
+export function preloadWidgetCode(types: string[]): Promise<unknown> {
+	if (typeof window === "undefined" || types.length === 0)
+		return Promise.resolve();
 	const loaders: Record<string, (() => Promise<unknown>) | undefined> = {
 		...BUILT_IN,
 		...CATALOG_LOADERS,
 	};
-	for (const type of ["frame", ...types]) {
-		if (requested.has(type)) continue;
-		requested.add(type);
-		const load =
-			type === "frame" ? () => import("./WidgetBody") : loaders[type];
-		void load?.().catch(() => requested.delete(type));
+	// Start every download now rather than after the frame has run.
+	for (const type of types) {
+		if (started.has(type)) continue;
+		started.add(type);
+		void loaders[type]?.().catch(() => started.delete(type));
 	}
+	return Promise.all([
+		WidgetFrame.preload(),
+		import("./WidgetBody").then((module) => module.preloadWidgets(types)),
+	]).catch(() => {});
 }

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, MapPin, RefreshCw } from "lucide-react";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
@@ -63,6 +63,7 @@ export function WeatherWidget({ widget }: { widget: Of<"weather"> }) {
 	const input = { lat: widget.lat, lon: widget.lon, unit: widget.unit };
 	const query = useQuery({
 		queryKey: widgetKey("weather", input),
+		placeholderData: keepPreviousData,
 		queryFn: () => run(call(getWeather, input)),
 		staleTime: 10 * 60_000,
 		refetchInterval: 15 * 60_000,
@@ -134,6 +135,7 @@ export function CalendarWidget({ widget }: { widget: Of<"calendar"> }) {
 	const input = { url: widget.url, days: widget.days, zone };
 	const query = useQuery({
 		queryKey: widgetKey("calendar", input),
+		placeholderData: keepPreviousData,
 		queryFn: () => run(call(getCalendar, input)),
 		staleTime: 5 * 60_000,
 		refetchInterval: 10 * 60_000,
@@ -234,6 +236,7 @@ export function StocksWidget({ widget }: { widget: Of<"stocks"> }) {
 	const input = { symbols: widget.symbols };
 	const query = useQuery({
 		queryKey: widgetKey("quotes", input),
+		placeholderData: keepPreviousData,
 		queryFn: () => run(call(getQuotes, input)),
 		staleTime: 3 * 60_000,
 		refetchInterval: 5 * 60_000,
@@ -295,6 +298,7 @@ export function FeedWidget({ widget }: { widget: Of<"feed"> }) {
 	const input = { url: widget.url, count: widget.count };
 	const query = useQuery({
 		queryKey: widgetKey("feed", input),
+		placeholderData: keepPreviousData,
 		queryFn: () => run(call(getFeed, input)),
 		staleTime: 10 * 60_000,
 		refetchInterval: 15 * 60_000,

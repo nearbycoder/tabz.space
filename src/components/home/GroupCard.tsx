@@ -18,7 +18,6 @@ import {
 import { Suspense, useMemo, useRef, useState } from "react";
 import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
-import { lazyNamed } from "#/lib/lazy";
 import {
 	type BoardLayout,
 	type GroupWidth,
@@ -33,12 +32,7 @@ import { updateGroup } from "#/server/home";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
 import { type HomeGroup, linksIn } from "./types";
-
-// Widget code only loads on boards that have widgets.
-const WidgetBody = lazyNamed(
-	() => import("./widgets/WidgetBody"),
-	"WidgetBody",
-);
+import { WidgetFrame } from "./widgets/loaders";
 
 type Props = {
 	group: HomeGroup;
@@ -313,9 +307,13 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 				</div>
 			)}
 			{!group.collapsed && widget && (
-				<Suspense fallback={<div className="min-h-24" />}>
-					<WidgetBody group={group} />
-				</Suspense>
+				// The type tells client.tsx which widget code to load before the
+				// page comes alive.
+				<div className="contents" data-widget-type={widget.type}>
+					<Suspense fallback={<div className="min-h-24" />}>
+						<WidgetFrame group={group} />
+					</Suspense>
+				</div>
 			)}
 			{!group.collapsed && !smart && !widget && (
 				<div
