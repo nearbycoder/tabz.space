@@ -113,7 +113,7 @@ function DemoVideo() {
 			loop
 			playsInline
 			preload="none"
-			aria-label="tabz demo: searching, the command palette, switching boards and adding a widget"
+			aria-label="tabz demo: searching, the command palette, switching boards, adding a widget and switching profiles"
 			className="block h-auto w-full"
 		/>
 	);
@@ -288,6 +288,36 @@ export function Landing() {
 
 					<Feature
 						flip
+						eyebrow="Profiles"
+						title="Personal and work, one account"
+						body="Keep separate sets of boards for different parts of your life and switch in a keystroke. Work stays out of your weekend, and your weekend stays out of standup."
+						points={[
+							"Switch with ⌥⇧P, the profile menu or ⌘K, even mid-search",
+							"Search, ⌘K and top sites only show the profile you're in",
+							"Move any board between profiles, shared boards included",
+						]}
+					>
+						<div className="relative pb-10 sm:pb-16">
+							<Frame>
+								<Shot
+									src="profiles.webp"
+									alt="The profile menu open over a personal board, with Personal and Work profiles"
+									width={1280}
+									height={800}
+								/>
+							</Frame>
+							<Frame className="absolute right-0 bottom-0 w-3/5 sm:w-1/2">
+								<Shot
+									src="profiles-work.webp"
+									alt="The Work profile: a sprint board, Hacker News, a focus timer and team links"
+									width={1280}
+									height={800}
+								/>
+							</Frame>
+						</div>
+					</Feature>
+
+					<Feature
 						eyebrow="Widgets"
 						title="71 widgets, right next to your links"
 						body="Weather, calendar, habits, a kanban board, Hacker News, GitHub repos, crypto, world clocks, a focus timer, ambient sound and dozens more."
@@ -328,6 +358,7 @@ export function Landing() {
 					</Feature>
 
 					<Feature
+						flip
 						eyebrow="Make it yours"
 						title="Light, dark and everything in between"
 						body="Photo wallpapers, gradients and patterns, theme presets, fonts, corner styles, glass or solid panels, community themes and custom CSS."
@@ -348,7 +379,6 @@ export function Landing() {
 					</Feature>
 
 					<Feature
-						flip
 						eyebrow="Everywhere"
 						title="Made for your phone too"
 						body="Add tabz to your Home Screen for an app that opens instantly: swipe between boards, save links from any app's share sheet, and reach everything with your thumb."
@@ -392,8 +422,8 @@ export function Landing() {
 							See it in action
 						</h2>
 						<p className="mt-3 text-lg text-muted">
-							Search, jump around with ⌘K, switch boards and add a widget, in
-							about 30 seconds.
+							Search, jump around with ⌘K, switch boards, add a widget and flip
+							between profiles, in about 35 seconds.
 						</p>
 					</div>
 					<Frame className="mx-auto mt-10 max-w-5xl">

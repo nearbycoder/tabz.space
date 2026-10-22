@@ -49,6 +49,10 @@ export function Clock({
 	}, []);
 	// After mount, the browser's own zone is the source of truth.
 	const zone = local ? undefined : timeZone;
+	// The server's text is kept as-is while the page comes alive (it may be
+	// from the saved copy, hours old), and React assumes it matches; a new key
+	// once mounted redraws it with the real time right away.
+	const pass = local ? "local" : "server";
 
 	if (!showClock && !showGreeting) return null;
 	const firstName = name.split(" ")[0];
@@ -57,6 +61,7 @@ export function Clock({
 		<div className="flex min-h-[7.5rem] flex-col items-center justify-end text-center">
 			{now && showClock && (
 				<div
+					key={`time-${pass}`}
 					suppressHydrationWarning
 					className="text-6xl font-semibold tracking-tight tabular-nums sm:text-7xl"
 				>
@@ -69,7 +74,11 @@ export function Clock({
 				</div>
 			)}
 			{now && showGreeting && (
-				<p suppressHydrationWarning className="mt-2 text-muted">
+				<p
+					key={`greeting-${pass}`}
+					suppressHydrationWarning
+					className="mt-2 text-muted"
+				>
 					{greetingFor(hourIn(now, zone))}
 					{firstName ? `, ${firstName}` : ""} ·{" "}
 					{now.toLocaleDateString([], {
