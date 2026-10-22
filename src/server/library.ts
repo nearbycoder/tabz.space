@@ -813,7 +813,31 @@ export const loadHome = (userId: string) =>
 		return home;
 	});
 
-export const settingsInput = userSettingsSchema.partial();
+const partialSettings = userSettingsSchema.partial();
+
+/**
+ * A partial settings update: only the keys the caller sent. Zod 4 fills in
+ * defaults even for keys missing from a partial object, so parsing alone
+ * would reset every defaulted setting (focus mode, custom CSS, tilt, the
+ * active profile, …) whenever anything else was saved, like switching boards.
+ */
+export const settingsInput = z
+	.record(z.string(), z.unknown())
+	.transform((input, ctx) => {
+		const result = partialSettings.safeParse(input);
+		if (!result.success) {
+			for (const issue of result.error.issues)
+				ctx.addIssue({
+					code: "custom",
+					message: issue.message,
+					path: issue.path,
+				});
+			return z.NEVER;
+		}
+		return Object.fromEntries(
+			Object.entries(result.data).filter(([key]) => key in input),
+		) as z.infer<typeof partialSettings>;
+	});
 
 /** Just the user's settings (with defaults), without loading the library. */
 export const loadSettings = (userId: string) =>
