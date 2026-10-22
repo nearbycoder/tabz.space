@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
+import { widgetKey } from "#/lib/widget-key";
 import { getJsonData } from "#/server/home";
 import type { HomeGroup } from "../types";
 
@@ -48,32 +49,36 @@ export function useJson<T>(
 		refresh?: number;
 	} = {},
 ) {
+	const input = { url: url as string, pick: options.pick, ttl: options.ttl };
 	return useQuery({
-		queryKey: ["widget-json", url, options.pick],
-		queryFn: async () =>
-			(
-				await run(
-					call(getJsonData, {
-						url: url as string,
-						pick: options.pick,
-						ttl: options.ttl,
-					}),
-				)
-			).value as T,
+		queryKey: widgetKey("json", input),
+		// Cached as the server returns it, so the server's copy (widget-memory)
+		// can be put in place on the next page load.
+		queryFn: () => run(call(getJsonData, input)),
+		select: (result) => result.value as T,
 		enabled: Boolean(url),
 		staleTime: (options.refresh ?? 10) * 60_000,
 		refetchInterval: options.refresh ? options.refresh * 60_000 : false,
 	});
 }
 
-/** Loading spinner / error with retry around network-backed content. */
+/**
+ * Loading spinner / error with retry around network-backed content. Data
+ * already on screen stays put while a background refresh runs or fails.
+ */
 export function Status({
 	query,
 	children,
 }: {
-	query: { isPending: boolean; error: Error | null; refetch: () => unknown };
+	query: {
+		isPending: boolean;
+		isSuccess: boolean;
+		error: Error | null;
+		refetch: () => unknown;
+	};
 	children: ReactNode;
 }) {
+	if (query.isSuccess) return <>{children}</>;
 	if (query.isPending)
 		return (
 			<div className="flex justify-center py-6 text-muted">

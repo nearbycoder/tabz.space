@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { call, run } from "#/lib/api";
+import { widgetKey } from "#/lib/widget-key";
 import { getFeed } from "#/server/home";
 import { ago, Hint, Row, Status, type WidgetProps } from "../kit";
 
@@ -12,7 +13,7 @@ export default function Reddit({ data }: WidgetProps<Data>) {
 	const url = `https://www.reddit.com/r/${subreddit}/${data.sort === "top" ? "top/.rss?t=day" : `${data.sort}/.rss`}`;
 	const count = Math.min(20, Math.max(1, data.count || 6));
 	const query = useQuery({
-		queryKey: ["feed", url, count],
+		queryKey: widgetKey("feed", { url, count }),
 		queryFn: () => run(call(getFeed, { url, count })),
 		enabled: Boolean(subreddit),
 		staleTime: 10 * 60_000,

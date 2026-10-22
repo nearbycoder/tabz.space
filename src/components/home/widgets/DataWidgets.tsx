@@ -3,6 +3,7 @@ import { Loader2, MapPin, RefreshCw } from "lucide-react";
 import { call, run } from "#/lib/api";
 import { cn } from "#/lib/cn";
 import type { Widget } from "#/lib/preferences";
+import { widgetKey } from "#/lib/widget-key";
 import { getCalendar, getFeed, getQuotes, getWeather } from "#/server/home";
 
 type Of<T extends Widget["type"]> = Extract<Widget, { type: T }>;
@@ -59,16 +60,10 @@ const describe = (code: number, isDay = true) => {
 };
 
 export function WeatherWidget({ widget }: { widget: Of<"weather"> }) {
+	const input = { lat: widget.lat, lon: widget.lon, unit: widget.unit };
 	const query = useQuery({
-		queryKey: ["weather", widget.lat, widget.lon, widget.unit],
-		queryFn: () =>
-			run(
-				call(getWeather, {
-					lat: widget.lat,
-					lon: widget.lon,
-					unit: widget.unit,
-				}),
-			),
+		queryKey: widgetKey("weather", input),
+		queryFn: () => run(call(getWeather, input)),
 		staleTime: 10 * 60_000,
 		refetchInterval: 15 * 60_000,
 	});
@@ -136,10 +131,10 @@ const dayLabel = (ms: number) => {
 
 export function CalendarWidget({ widget }: { widget: Of<"calendar"> }) {
 	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	const input = { url: widget.url, days: widget.days, zone };
 	const query = useQuery({
-		queryKey: ["calendar", widget.url, widget.days, zone],
-		queryFn: () =>
-			run(call(getCalendar, { url: widget.url, days: widget.days, zone })),
+		queryKey: widgetKey("calendar", input),
+		queryFn: () => run(call(getCalendar, input)),
 		staleTime: 5 * 60_000,
 		refetchInterval: 10 * 60_000,
 	});
@@ -236,9 +231,10 @@ function Sparkline({ values, up }: { values: number[]; up: boolean }) {
 }
 
 export function StocksWidget({ widget }: { widget: Of<"stocks"> }) {
+	const input = { symbols: widget.symbols };
 	const query = useQuery({
-		queryKey: ["quotes", widget.symbols.join(",")],
-		queryFn: () => run(call(getQuotes, { symbols: widget.symbols })),
+		queryKey: widgetKey("quotes", input),
+		queryFn: () => run(call(getQuotes, input)),
 		staleTime: 3 * 60_000,
 		refetchInterval: 5 * 60_000,
 	});
@@ -296,9 +292,10 @@ const ago = (ms: number) => {
 };
 
 export function FeedWidget({ widget }: { widget: Of<"feed"> }) {
+	const input = { url: widget.url, count: widget.count };
 	const query = useQuery({
-		queryKey: ["feed", widget.url, widget.count],
-		queryFn: () => run(call(getFeed, { url: widget.url, count: widget.count })),
+		queryKey: widgetKey("feed", input),
+		queryFn: () => run(call(getFeed, input)),
 		staleTime: 10 * 60_000,
 		refetchInterval: 15 * 60_000,
 	});

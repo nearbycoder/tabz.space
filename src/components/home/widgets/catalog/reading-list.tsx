@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Favicon } from "#/components/ui/Favicon";
 import { call, run } from "#/lib/api";
+import { widgetKey } from "#/lib/widget-key";
 import { getReadingList } from "#/server/home";
 import { Hint, type WidgetProps } from "../kit";
 
@@ -9,7 +10,7 @@ type Data = { count: number };
 /** Read later: saved articles with read times; opens them in the reader. */
 export default function ReadingList({ data }: WidgetProps<Data>) {
 	const list = useQuery({
-		queryKey: ["reading-list"],
+		queryKey: widgetKey("reading-list"),
 		queryFn: () => run(call(getReadingList)),
 		staleTime: 60_000,
 	});

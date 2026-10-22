@@ -11,6 +11,7 @@ import * as report from "./report";
 import { runAuthed, runServer } from "./runtime";
 import * as sharing from "./sharing";
 import * as themes from "./themes";
+import * as widgetMemory from "./widget-memory";
 import * as widgets from "./widgets";
 
 /* RPC surface for the web app. All logic lives in ./library (shared with MCP). */
@@ -206,25 +207,53 @@ export const geocodePlace = createServerFn()
 	.validator(widgets.geocodeInput)
 	.handler(({ data }) => runAuthed(() => widgets.geocode(data)));
 
+// Each result is also remembered for the next home page render (widget-memory).
+const { remembering } = widgetMemory;
+
 export const getWeather = createServerFn()
 	.validator(widgets.weatherInput)
-	.handler(({ data }) => runAuthed(() => widgets.weather(data)));
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			widgets.weather(data).pipe(remembering(user.id, "weather", data)),
+		),
+	);
 
 export const getQuotes = createServerFn()
 	.validator(widgets.quotesInput)
-	.handler(({ data }) => runAuthed(() => widgets.quotes(data)));
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			widgets.quotes(data).pipe(remembering(user.id, "quotes", data)),
+		),
+	);
 
 export const getCalendar = createServerFn()
 	.validator(widgets.calendarInput)
-	.handler(({ data }) => runAuthed(() => widgets.calendar(data)));
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			widgets.calendar(data).pipe(remembering(user.id, "calendar", data)),
+		),
+	);
 
 export const getFeed = createServerFn()
 	.validator(widgets.feedInput)
-	.handler(({ data }) => runAuthed(() => widgets.feed(data)));
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			widgets.feed(data).pipe(remembering(user.id, "feed", data)),
+		),
+	);
 
 export const getJsonData = createServerFn()
 	.validator(widgets.jsonInput)
-	.handler(({ data }) => runAuthed((user) => widgets.json(user.id, data)));
+	.handler(({ data }) =>
+		runAuthed((user) =>
+			widgets.json(user.id, data).pipe(remembering(user.id, "json", data)),
+		),
+	);
+
+/** The latest widget results, for the home page's server render. */
+export const getWidgetSnapshot = createServerFn().handler(() =>
+	runAuthed((user) => widgetMemory.recall(user.id)),
+);
 
 export const listCustomWidgets = createServerFn().handler(() =>
 	runAuthed((user) => customWidgets.listCustomWidgets(user.id)),
@@ -318,7 +347,9 @@ export const getArticle = createServerFn()
 	.handler(({ data }) => runAuthed((user) => reader.getArticle(user.id, data)));
 
 export const getReadingList = createServerFn().handler(() =>
-	runAuthed((user) => reader.readingList(user.id)),
+	runAuthed((user) =>
+		reader.readingList(user.id).pipe(remembering(user.id, "reading-list")),
+	),
 );
 
 export const saveForLater = createServerFn({ method: "POST" })

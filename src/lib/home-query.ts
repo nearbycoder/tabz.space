@@ -1,4 +1,5 @@
 import {
+	type QueryClient,
 	queryOptions,
 	useMutation,
 	useQueryClient,
@@ -8,7 +9,13 @@ import { toast } from "sonner";
 import { call, run } from "#/lib/api";
 import type { UserSettings } from "#/lib/preferences";
 import { shareStructure } from "#/lib/share-structure";
-import { getHome, type HomeData, saveSettings, undo } from "#/server/home";
+import {
+	getHome,
+	getWidgetSnapshot,
+	type HomeData,
+	saveSettings,
+	undo,
+} from "#/server/home";
 
 export const homeKey = ["home"] as const;
 
@@ -19,6 +26,20 @@ export const homeQuery = queryOptions({
 });
 
 export const useHome = () => useSuspenseQuery(homeQuery).data;
+
+/**
+ * Puts your latest widget results in place before the home page renders, so
+ * widgets show them at once instead of a spinner. Each keeps the time it was
+ * fetched, so anything stale refreshes in the background as usual.
+ */
+export async function seedWidgets(queryClient: QueryClient) {
+	const entries = await run(call(getWidgetSnapshot)).catch(() => []);
+	for (const entry of entries) {
+		const known = queryClient.getQueryState(entry.key)?.dataUpdatedAt ?? 0;
+		if (known < entry.at)
+			queryClient.setQueryData(entry.key, entry.data, { updatedAt: entry.at });
+	}
+}
 
 type Options<I, O> = {
 	/** Applied to the cache immediately; rolled back if the server rejects. */
