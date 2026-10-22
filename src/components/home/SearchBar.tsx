@@ -191,7 +191,7 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 		} else {
 			open(
 				SEARCH_ENGINES[engine].url + encodeURIComponent(result.query),
-				false,
+				openInNewTab,
 			);
 		}
 		setQuery("");

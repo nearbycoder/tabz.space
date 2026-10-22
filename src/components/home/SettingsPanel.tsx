@@ -730,6 +730,17 @@ export function SettingsPanel({
 
 			{tab === "home" && (
 				<div className="space-y-6">
+					<Section title="Opening links">
+						<Toggle
+							label="Open everything in a new tab"
+							checked={settings.openInNewTab}
+							onChange={(openInNewTab) => set({ openInNewTab })}
+						/>
+						<p className="text-xs text-muted">
+							Keeps tabz open as a launch pad: links, top sites, search results
+							and web searches open in a new tab instead of replacing this one.
+						</p>
+					</Section>
 					<Section title="Search">
 						<Field label="Search engine">
 							<select
@@ -818,11 +829,6 @@ export function SettingsPanel({
 							label="Confetti when saving"
 							checked={settings.celebrate}
 							onChange={(celebrate) => set({ celebrate })}
-						/>
-						<Toggle
-							label="Open links in a new tab"
-							checked={settings.openInNewTab}
-							onChange={(openInNewTab) => set({ openInNewTab })}
 						/>
 					</Section>
 					<Section title="Focus mode">
