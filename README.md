@@ -14,7 +14,7 @@
   <img src="docs/media/demo.webp" alt="tabz demo: search, the command palette, switching boards, adding a widget and switching profiles" width="880" />
 </a>
 
-<sub>▶ <a href="docs/media/demo.mp4">Watch the full demo in HD</a></sub>
+<sub>▶ <a href="docs/media/demo.mp4">Watch the full demo in HD, with sound</a></sub>
 
 </div>
 

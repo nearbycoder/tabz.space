@@ -10,6 +10,8 @@ import {
 	Puzzle,
 	Share2,
 	Sparkles,
+	Volume2,
+	VolumeX,
 	WifiOff,
 	Zap,
 } from "lucide-react";
@@ -85,6 +87,22 @@ function Frame({
 function DemoVideo() {
 	const ref = useRef<HTMLVideoElement>(null);
 	const [load, setLoad] = useState(false);
+	// Browsers only autoplay muted video; the narration starts from the top
+	// when you turn the sound on.
+	const [sound, setSound] = useState(false);
+	const toggleSound = () => {
+		const video = ref.current;
+		if (!video) return;
+		if (sound) {
+			video.muted = true;
+			setSound(false);
+			return;
+		}
+		video.muted = false;
+		video.currentTime = 0;
+		void video.play();
+		setSound(true);
+	};
 	useEffect(() => {
 		const node = ref.current;
 		if (!node) return;
@@ -101,21 +119,40 @@ function DemoVideo() {
 		return () => observer.disconnect();
 	}, []);
 	return (
-		<video
-			ref={ref}
-			// Served with byte ranges (src/routes/media/demo.ts) so Safari plays it.
-			src={load ? "/media/demo" : undefined}
-			poster={`${MEDIA}/hero.webp`}
-			width={1280}
-			height={800}
-			autoPlay
-			muted
-			loop
-			playsInline
-			preload="none"
-			aria-label="tabz demo: searching, the command palette, switching boards, adding a widget and switching profiles"
-			className="block h-auto w-full"
-		/>
+		<div className="relative">
+			<video
+				ref={ref}
+				// Served with byte ranges (src/routes/media/demo.ts) so Safari plays it.
+				// Bump v when the video changes: browsers keep it for a day.
+				src={load ? "/media/demo?v=2" : undefined}
+				poster={`${MEDIA}/hero.webp`}
+				width={1280}
+				height={800}
+				autoPlay
+				muted
+				loop
+				playsInline
+				preload="none"
+				aria-label="tabz demo: searching, the command palette, switching boards, adding a widget and switching profiles"
+				className="block h-auto w-full"
+			/>
+			<button
+				type="button"
+				onClick={toggleSound}
+				aria-pressed={sound}
+				className="absolute right-4 bottom-4 flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-md transition hover:bg-black/70"
+			>
+				{sound ? (
+					<>
+						<VolumeX className="size-4" /> Mute
+					</>
+				) : (
+					<>
+						<Volume2 className="size-4" /> Play with sound
+					</>
+				)}
+			</button>
+		</div>
 	);
 }
 
@@ -423,7 +460,7 @@ export function Landing() {
 						</h2>
 						<p className="mt-3 text-lg text-muted">
 							Search, jump around with ⌘K, switch boards, add a widget and flip
-							between profiles, in about 35 seconds.
+							between profiles, in about 35 seconds. Turn the sound on.
 						</p>
 					</div>
 					<Frame className="mx-auto mt-10 max-w-5xl">
