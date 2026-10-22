@@ -36,6 +36,7 @@ import {
 	bookmarks,
 	type Group,
 	groups,
+	profiles,
 	type Snapshot,
 	userSettings,
 	vaults,
@@ -132,7 +133,11 @@ export type Role = "owner" | "editor" | "viewer";
 const memberships = (userId: string) =>
 	query((db) =>
 		db
-			.select({ boardId: boardMembers.boardId, role: boardMembers.role })
+			.select({
+				boardId: boardMembers.boardId,
+				role: boardMembers.role,
+				profileId: boardMembers.profileId,
+			})
 			.from(boardMembers)
 			.where(eq(boardMembers.userId, userId)),
 	);
@@ -645,38 +650,43 @@ const loadHomeFresh = (userId: string) =>
 				!board.vault || (board.userId === userId && opensWith(board, access)),
 		);
 		const boardIds = boardRows.map((board) => board.id);
-		const [groupRows, bookmarkRows, settingsRow, vault] = yield* query((db) =>
-			Promise.all([
-				boardIds.length
-					? db.query.groups.findMany({
-							where: and(
-								inArray(groups.boardId, boardIds),
-								isNull(groups.deletedAt),
-							),
-							orderBy: [asc(groups.position), asc(groups.createdAt)],
-						})
-					: Promise.resolve([] as Group[]),
-				boardIds.length
-					? db
-							.select({ bookmark: bookmarks })
-							.from(bookmarks)
-							.innerJoin(groups, eq(groups.id, bookmarks.groupId))
-							.where(
-								and(
+		const [groupRows, bookmarkRows, settingsRow, vault, profileRows] =
+			yield* query((db) =>
+				Promise.all([
+					boardIds.length
+						? db.query.groups.findMany({
+								where: and(
 									inArray(groups.boardId, boardIds),
 									isNull(groups.deletedAt),
-									isNull(bookmarks.deletedAt),
 								),
-							)
-							.orderBy(asc(bookmarks.position), asc(bookmarks.createdAt))
-							.then((rows) => rows.map((row) => row.bookmark))
-					: Promise.resolve([] as Bookmark[]),
-				db.query.userSettings.findFirst({
-					where: eq(userSettings.userId, userId),
-				}),
-				db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
-			]),
-		);
+								orderBy: [asc(groups.position), asc(groups.createdAt)],
+							})
+						: Promise.resolve([] as Group[]),
+					boardIds.length
+						? db
+								.select({ bookmark: bookmarks })
+								.from(bookmarks)
+								.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+								.where(
+									and(
+										inArray(groups.boardId, boardIds),
+										isNull(groups.deletedAt),
+										isNull(bookmarks.deletedAt),
+									),
+								)
+								.orderBy(asc(bookmarks.position), asc(bookmarks.createdAt))
+								.then((rows) => rows.map((row) => row.bookmark))
+						: Promise.resolve([] as Bookmark[]),
+					db.query.userSettings.findFirst({
+						where: eq(userSettings.userId, userId),
+					}),
+					db.query.vaults.findFirst({ where: eq(vaults.userId, userId) }),
+					db.query.profiles.findMany({
+						where: eq(profiles.userId, userId),
+						orderBy: [asc(profiles.position), asc(profiles.createdAt)],
+					}),
+				]),
+			);
 		// Top-level items per group; folders carry their contents, any depth deep.
 		// Items whose folder was deleted stay hidden with it.
 		const children = new Map<string, Bookmark[]>();
@@ -708,6 +718,7 @@ const loadHomeFresh = (userId: string) =>
 			else byGroup.set(row.groupId, [item]);
 		}
 		const roles = new Map(shared.map((m) => [m.boardId, m.role as Role]));
+		const placed = new Map(shared.map((m) => [m.boardId, m.profileId]));
 		// Who shared each board with you.
 		const ownerIds = [
 			...new Set(
@@ -740,12 +751,19 @@ const loadHomeFresh = (userId: string) =>
 				autoLockMinutes: vault?.autoLockMinutes ?? 15,
 			},
 			settings: resolveSettings(settingsRow?.settings),
+			/** Empty until a second profile is made (see profiles in db/schema). */
+			profiles: profileRows.map(({ id, name, icon }) => ({ id, name, icon })),
 			/** Server capabilities the UI can offer. */
 			features: { ai: aiEnabled() },
 			boards: boardRows.map((board) => ({
 				...board,
 				// Only the owner manages (and sees) a board's public link.
 				shareSlug: board.userId === userId ? board.shareSlug : null,
+				// Your own placement: the owner's for their boards, yours for shared ones.
+				profileId:
+					board.userId === userId
+						? board.profileId
+						: (placed.get(board.id) ?? null),
 				role:
 					board.userId === userId
 						? ("owner" as Role)
@@ -833,9 +851,38 @@ export const saveSettings = (
 export const createBoardInput = z.object({
 	name: z.string().trim().min(1).max(60),
 	icon: z.string().max(16).nullish(),
+	/** Which profile it goes in; the one on screen when omitted. */
+	profileId: idSchema.nullish(),
 	/** Create it inside the vault (requires an unlocked vault). */
 	vault: z.boolean().optional(),
 });
+
+/**
+ * The profile new boards go into: `wanted` if it's one of yours, else the one
+ * on screen, else the first. Null while you have just the one implicit profile.
+ */
+export const profileFor = (userId: string, wanted?: string | null) =>
+	Effect.gen(function* () {
+		const [rows, settingsRow] = yield* query((db) =>
+			Promise.all([
+				db
+					.select({ id: profiles.id })
+					.from(profiles)
+					.where(eq(profiles.userId, userId))
+					.orderBy(asc(profiles.position), asc(profiles.createdAt)),
+				db.query.userSettings.findFirst({
+					where: eq(userSettings.userId, userId),
+				}),
+			]),
+		);
+		if (!rows.length) return null;
+		const active = resolveSettings(settingsRow?.settings).activeProfileId;
+		return (
+			rows.find((row) => row.id === wanted)?.id ??
+			rows.find((row) => row.id === active)?.id ??
+			rows[0].id
+		);
+	});
 
 const requireUnlocked = Effect.gen(function* () {
 	if (!(yield* vaultUnlocked))
@@ -850,11 +897,16 @@ export const createBoard = (
 		if (data.vault) yield* requireUnlocked;
 		const access = yield* VaultAccess;
 		const position = yield* nextPosition(boards, eq(boards.userId, userId));
+		// Vault boards show in every profile.
+		const profileId = data.vault
+			? null
+			: yield* profileFor(userId, data.profileId);
 		const [board] = yield* query((db) =>
 			db
 				.insert(boards)
 				.values({
 					userId,
+					profileId,
 					name: data.name,
 					icon: data.icon ?? null,
 					vault: data.vault ?? false,

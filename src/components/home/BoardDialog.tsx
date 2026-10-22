@@ -7,6 +7,7 @@ import { Modal } from "#/components/ui/Modal";
 import { cn } from "#/lib/cn";
 import { homeKey, useHomeAction, useSaveSettings } from "#/lib/home-query";
 import type { BoardSchedule } from "#/lib/preferences";
+import { profileOfBoard } from "#/lib/profiles";
 import { DAY_LETTERS, describeSchedule } from "#/lib/schedule";
 import { contentsOf } from "#/lib/vault-actions";
 import { sealContents } from "#/lib/vault-session";
@@ -16,6 +17,8 @@ import {
 	type HomeData,
 	updateBoard,
 } from "#/server/home";
+import { useHomeContext } from "./context";
+import { useProfileActions } from "./profile-actions";
 import { ShareBoard } from "./ShareBoard";
 import { flattenTree, type HomeBoard } from "./types";
 
@@ -56,9 +59,20 @@ export function BoardDialog({
 	);
 	const saveSettings = useSaveSettings();
 	const queryClient = useQueryClient();
+	const { profiles, profile: active } = useHomeContext();
+	const placedIn = board ? profileOfBoard(board, profiles) : active.id;
+	const [profileId, setProfileId] = useState(placedIn);
+	const { place } = useProfileActions();
 	const create = useHomeAction(createBoard, {
 		onSuccess: (result) => {
-			saveSettings.mutate({ activeBoardId: result.board.id });
+			saveSettings.mutate({
+				activeBoardId: result.board.id,
+				// Made in another profile: go there to see it.
+				...(result.board.profileId &&
+					result.board.profileId !== active.id && {
+						activeProfileId: result.board.profileId,
+					}),
+			});
 			onClose();
 		},
 	});
@@ -113,6 +127,8 @@ export function BoardDialog({
 									return;
 								}
 							}
+							if (profileId !== placedIn && !vault)
+								place.mutate({ boardId: board.id, profileId });
 							update.mutate({
 								id: board.id,
 								name,
@@ -122,7 +138,13 @@ export function BoardDialog({
 								layout: { schedule: inVault ? null : schedule },
 							});
 						})();
-					else create.mutate({ name, icon, vault });
+					else
+						create.mutate({
+							name,
+							icon,
+							vault,
+							profileId: profiles.length > 1 && !vault ? profileId : undefined,
+						});
 				}}
 			>
 				<Field label="Name">
@@ -161,6 +183,22 @@ export function BoardDialog({
 						/>
 					</div>
 				</Field>
+				{profiles.length > 1 && !inVault && (
+					<Field label="Profile">
+						<select
+							className="field"
+							value={profileId}
+							onChange={(event) => setProfileId(event.target.value)}
+						>
+							{profiles.map((option) => (
+								<option key={option.id} value={option.id}>
+									{option.icon ? `${option.icon} ` : ""}
+									{option.name}
+								</option>
+							))}
+						</select>
+					</Field>
+				)}
 				{vaultUnlocked && (!board || board.role === "owner") && (
 					<Toggle
 						label="🔒 Keep in vault"

@@ -64,6 +64,7 @@ import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
 import { ApiTokens, Channels, Webhooks } from "./Developer";
 import { FocusSettings } from "./FocusSettings";
+import { ProfilesSettings } from "./ProfilesSettings";
 import type { HomeBoard } from "./types";
 import { VaultSettings, type VaultState } from "./Vault";
 
@@ -730,6 +731,9 @@ export function SettingsPanel({
 
 			{tab === "home" && (
 				<div className="space-y-6">
+					<Section title="Profiles">
+						<ProfilesSettings />
+					</Section>
 					<Section title="Opening links">
 						<Toggle
 							label="Open everything in a new tab"

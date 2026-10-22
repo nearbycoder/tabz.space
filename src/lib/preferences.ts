@@ -151,6 +151,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
 	celebrate: true,
 	tilt: true,
 	activeBoardId: null,
+	activeProfileId: null,
+	profileBoards: {},
 	focus: {
 		enabled: false,
 		days: [1, 2, 3, 4, 5],

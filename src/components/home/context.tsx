@@ -1,10 +1,16 @@
 import { createContext, useContext } from "react";
 import type { UserSettings } from "#/lib/preferences";
+import type { ProfileInfo } from "#/lib/profiles";
 import type { DialogState, HomeBoard, LinkItem } from "./types";
 
 type HomeContextValue = {
 	settings: UserSettings;
+	/** The active profile's boards (plus open vault boards). */
 	boards: HomeBoard[];
+	/** Every profile, in order; one implicit profile until a second is made. */
+	profiles: ProfileInfo[];
+	profile: ProfileInfo;
+	switchProfile: (id: string) => void;
 	editing: boolean;
 	openDialog: (dialog: DialogState) => void;
 	/** Records a visit; `leaving` = this tab is navigating away (skip UI updates). */

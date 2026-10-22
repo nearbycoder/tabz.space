@@ -23,7 +23,13 @@ import { Logo } from "#/components/Logo";
 import { call, run } from "#/lib/api";
 import { applyAppearance } from "#/lib/appearance";
 import { cn } from "#/lib/cn";
-import { homeKey, useHome, useSaveSettings, useUndo } from "#/lib/home-query";
+import {
+	homeKey,
+	useHome,
+	useHomeAction,
+	useSaveSettings,
+	useUndo,
+} from "#/lib/home-query";
 import {
 	connectExtension,
 	openIncognito,
@@ -34,6 +40,12 @@ import {
 import { lazyNamed, whenIdle } from "#/lib/lazy";
 import { showLeaving } from "#/lib/leaving";
 import { BACKGROUNDS, type GradientKey } from "#/lib/preferences";
+import {
+	activeProfileOf,
+	inProfile,
+	nextProfile,
+	profileList,
+} from "#/lib/profiles";
 import { focusActive, focusEndsAt, scheduledBoardId } from "#/lib/schedule";
 import { applyTheme } from "#/lib/theme";
 import {
@@ -53,13 +65,14 @@ import {
 	useVaultKeyReady,
 } from "#/lib/vault-session";
 import type { HomeData } from "#/server/home";
-import { recordVisit } from "#/server/home";
+import { createBoard, recordVisit } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
 import { Backdrop } from "./Backdrop";
 import { BoardGrid } from "./BoardGrid";
 import { Clock } from "./Clock";
 import { HomeContext, TileContext } from "./context";
 import { ReportBanner } from "./MonthlyReport";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 import { Rediscover } from "./Rediscover";
 import { SearchBar } from "./SearchBar";
 import { TopSites } from "./TopSites";
@@ -221,7 +234,18 @@ const widths = {
 } as const;
 
 export function HomeScreen({ session }: { session: SessionInfo }) {
-	const data = useDecryptedHome(useHome());
+	const home = useDecryptedHome(useHome());
+	// Profiles: the page shows the active one's boards, and everything below
+	// (tabs, search, ⌘K, top sites, widgets) works on those.
+	const profiles = useMemo(() => profileList(home.profiles), [home.profiles]);
+	const profile = activeProfileOf(profiles, home.settings.activeProfileId);
+	const data = useMemo(
+		() => ({
+			...home,
+			boards: home.boards.filter((b) => inProfile(b, profile.id, profiles)),
+		}),
+		[home, profile.id, profiles],
+	);
 	const queryClient = useQueryClient();
 	const vaultKeyReady = useVaultKeyReady();
 	const { settings, boards, vault } = data;
@@ -234,6 +258,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	const board =
 		boards.find((b) => b.id === (picked ?? scheduledId)) ??
 		boards.find((b) => b.id === settings.activeBoardId) ??
+		boards.find((b) => b.id === settings.profileBoards[profile.id]) ??
+		boards.find((b) => !b.vault) ??
 		boards[0];
 	// The board on screen: fetch its widgets' code now, all at once, rather
 	// than as the page reaches each one (no-op on the server and once loaded).
@@ -397,7 +423,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	// Widgets used on any board load in the background, so switching boards is instant.
 	const widgetTypes = [
 		...new Set(
-			data.boards.flatMap((b) =>
+			home.boards.flatMap((b) =>
 				b.groups.flatMap((g) =>
 					g.options.widget ? [g.options.widget.type] : [],
 				),
@@ -464,9 +490,37 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		(id: string) => {
 			if (scheduledId) setPicked(id);
 			if (id !== settings.activeBoardId)
-				saveSettings.mutate({ activeBoardId: id });
+				saveSettings.mutate({
+					activeBoardId: id,
+					// Remembered per profile, to come back to after switching.
+					profileBoards: { ...settings.profileBoards, [profile.id]: id },
+				});
 		},
-		[scheduledId, settings.activeBoardId, saveSettings],
+		[
+			scheduledId,
+			settings.activeBoardId,
+			settings.profileBoards,
+			profile.id,
+			saveSettings,
+		],
+	);
+
+	/** Shows another profile, on the board you last had open there. */
+	const switchProfile = useCallback(
+		(id: string) => {
+			if (id === profile.id) return;
+			const own = home.boards.filter(
+				(b) => !b.vault && inProfile(b, id, profiles),
+			);
+			const last = settings.profileBoards[id];
+			const target = own.find((b) => b.id === last) ?? own[0];
+			setPicked(null);
+			saveSettings.mutate({
+				activeProfileId: id,
+				activeBoardId: target?.id ?? null,
+			});
+		},
+		[profile.id, home.boards, profiles, settings.profileBoards, saveSettings],
 	);
 
 	// Re-check schedules every half minute, only if any board has one.
@@ -615,7 +669,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 				return;
 			}
 			if (event.key === "g") goPressed.current = Date.now();
-			else if (event.key === "e" && tile) {
+			else if (event.key === "p" && profiles.length > 1) {
+				event.preventDefault();
+				switchProfile(nextProfile(profiles, profile.id).id);
+			} else if (event.key === "e" && tile) {
 				event.preventDefault();
 				tile
 					.closest("[data-tile]")
@@ -655,6 +712,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		settings.vaultCode,
 		vault.configured,
 		openVault,
+		profiles,
+		profile.id,
+		switchProfile,
 	]);
 
 	// Auto-lock: the cookie expires server-side; drop the boards client-side at the same moment.
@@ -792,6 +852,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		() => ({
 			settings,
 			boards,
+			profiles,
+			profile,
+			switchProfile,
 			editing,
 			openDialog: setDialog,
 			onVisit,
@@ -803,6 +866,9 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[
 			settings,
 			boards,
+			profiles,
+			profile,
+			switchProfile,
 			editing,
 			onVisit,
 			isIncognito,
@@ -811,6 +877,8 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			readOnly,
 		],
 	);
+
+	const starterBoard = useHomeAction(createBoard);
 
 	const tileContext = useMemo(
 		() => ({
@@ -825,7 +893,33 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		[settings, editing, onVisit, isIncognito, openLink, readOnly],
 	);
 
-	if (!board) return null;
+	// A profile whose boards all moved elsewhere.
+	if (!board)
+		return (
+			<HomeContext.Provider value={context}>
+				<Backdrop background={settings.background} />
+				<div className="relative grid min-h-dvh place-items-center p-6">
+					<div className="glass w-full max-w-sm space-y-4 rounded-3xl p-6 text-center">
+						<p className="text-sm text-muted">
+							{profile.icon} {profile.name} has no boards yet.
+						</p>
+						<div className="flex justify-center gap-2">
+							<button
+								type="button"
+								className="btn-primary"
+								disabled={starterBoard.isPending}
+								onClick={() =>
+									starterBoard.mutate({ name: "Home", profileId: profile.id })
+								}
+							>
+								<Plus className="size-4" /> Make a board
+							</button>
+							{profiles.length > 1 && <ProfileSwitcher />}
+						</div>
+					</div>
+				</div>
+			</HomeContext.Provider>
+		);
 	const close = () => setDialog(null);
 	const isDark =
 		settings.theme === "dark" ||
@@ -851,6 +945,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							)}
 						>
 							<Logo className="mr-2 hidden text-base sm:inline-flex" />
+							{profiles.length > 1 && <ProfileSwitcher />}
 							<nav className="glass flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]">
 								{[
 									...boards.filter((b) => !b.vault),

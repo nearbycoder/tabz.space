@@ -92,6 +92,10 @@ export const userSettingsSchema = z.object({
 	celebrate: z.boolean().default(true),
 	tilt: z.boolean().default(true),
 	activeBoardId: z.string().nullable(),
+	/** The profile on screen (null: the first). */
+	activeProfileId: z.string().nullable().default(null),
+	/** The board last open in each profile, to come back to when switching. */
+	profileBoards: z.record(z.string(), z.string()).default({}),
 	focus: focusSettingsSchema.default({
 		enabled: false,
 		days: [1, 2, 3, 4, 5],

@@ -111,6 +111,7 @@ Install tabz to your home screen for an app-like experience: swipe between board
 - Boards that switch automatically by **time of day**
 - Import from your browser, **Raindrop.io, Pocket, Toby, start.me and Momentum**, and export any time
 - **Read later** with a clean reader view, read times, highlights and offline copies
+- **Profiles**: separate sets of boards (say Personal and Work) under one account; switch from the menu next to your boards or press `P`
 - **Focus mode**: hide distracting groups on a schedule; the extension blocks sites (with a "5 more minutes" way out)
 - Undo history and a 30-day trash
 

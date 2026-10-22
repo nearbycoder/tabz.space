@@ -6,6 +6,7 @@ import * as agent from "./agent";
 import * as customWidgets from "./custom-widgets";
 import * as library from "./library";
 import * as marketplace from "./marketplace";
+import * as profiles from "./profiles";
 import * as reader from "./reader";
 import * as report from "./report";
 import { runAuthed, runServer } from "./runtime";
@@ -49,6 +50,30 @@ export const deleteBoard = createServerFn({ method: "POST" })
 	.validator(library.idInput)
 	.handler(({ data }) =>
 		runAuthed((user) => library.deleteBoard(user.id, data)),
+	);
+
+export const createProfile = createServerFn({ method: "POST" })
+	.validator(profiles.profileInput)
+	.handler(({ data }) =>
+		runAuthed((user) => profiles.createProfile(user.id, data)),
+	);
+
+export const updateProfile = createServerFn({ method: "POST" })
+	.validator(profiles.updateProfileInput)
+	.handler(({ data }) =>
+		runAuthed((user) => profiles.updateProfile(user.id, data)),
+	);
+
+export const deleteProfile = createServerFn({ method: "POST" })
+	.validator(profiles.deleteProfileInput)
+	.handler(({ data }) =>
+		runAuthed((user) => profiles.deleteProfile(user.id, data)),
+	);
+
+export const placeBoard = createServerFn({ method: "POST" })
+	.validator(profiles.placeBoardInput)
+	.handler(({ data }) =>
+		runAuthed((user) => profiles.placeBoard(user.id, data)),
 	);
 
 export const reorderBoards = createServerFn({ method: "POST" })

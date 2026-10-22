@@ -56,6 +56,27 @@ export const userSettings = sqliteTable("user_settings", {
 	...timestamps,
 });
 
+/**
+ * Separate sets of boards under one account, e.g. Personal and Work. Users
+ * start with none (everything is one implicit profile); the first extra one
+ * creates a row for the original too. A board without one belongs to the
+ * first profile.
+ */
+export const profiles = sqliteTable(
+	"profiles",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		icon: text("icon"),
+		position: integer("position").default(0).notNull(),
+		...timestamps,
+	},
+	(table) => [index("profiles_user_idx").on(table.userId, table.position)],
+);
+
 export const boards = sqliteTable(
 	"boards",
 	{
@@ -63,6 +84,10 @@ export const boards = sqliteTable(
 		userId: text("user_id")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
+		/** The owner's profile it sits in (null: the first one). */
+		profileId: text("profile_id").references(() => profiles.id, {
+			onDelete: "set null",
+		}),
 		name: text("name").notNull(),
 		icon: text("icon"),
 		position: integer("position").default(0).notNull(),
@@ -237,6 +262,10 @@ export const boardMembers = sqliteTable(
 		role: text("role", { enum: ["editor", "viewer"] })
 			.default("editor")
 			.notNull(),
+		/** Which of the member's own profiles shows this board (null: the first). */
+		profileId: text("profile_id").references(() => profiles.id, {
+			onDelete: "set null",
+		}),
 		createdAt: timestamps.createdAt,
 	},
 	(table) => [
@@ -437,3 +466,4 @@ export const browserOps = sqliteTable(
 	},
 	(table) => [index("browser_ops_user_idx").on(table.userId)],
 );
+export type Profile = typeof profiles.$inferSelect;

@@ -28,6 +28,7 @@ import {
 	Trash2,
 	Undo2,
 	Upload,
+	UserPlus,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -44,6 +45,7 @@ import { focusActive } from "#/lib/schedule";
 import { hostnameOf, normalizeUrl } from "#/lib/url";
 import { saveForLater, searchContent } from "#/server/home";
 import { useHomeContext } from "./context";
+import { ProfileIcon } from "./ProfileSwitcher";
 import {
 	type HomeBoard,
 	isLinksGroup,
@@ -144,8 +146,16 @@ export function CommandPalette({
 	initialQuery = "",
 	aiEnabled = false,
 }: Props) {
-	const { boards, settings, openDialog, openLink, isIncognito } =
-		useHomeContext();
+	const {
+		boards,
+		settings,
+		openDialog,
+		openLink,
+		isIncognito,
+		profiles,
+		profile,
+		switchProfile,
+	} = useHomeContext();
 	const [query, setQuery] = useState(initialQuery);
 	const newTab = useRef(false);
 
@@ -519,6 +529,35 @@ export function CommandPalette({
 								</Row>
 							</Command.Item>
 						))}
+					</Command.Group>
+
+					<Command.Group heading="Profiles">
+						{profiles
+							.filter((p) => p.id !== profile.id)
+							.map((p) => (
+								<Command.Item
+									key={p.id}
+									value={`profile switch ${p.name}`}
+									onSelect={() => run(() => switchProfile(p.id))}
+									className={itemClass}
+								>
+									<Row
+										icon={<ProfileIcon profile={p} />}
+										hint={profiles.length === 2 ? "P" : undefined}
+									>
+										Switch to {p.name}
+									</Row>
+								</Command.Item>
+							))}
+						<Command.Item
+							value="new profile add profile personal work"
+							onSelect={() =>
+								run(() => openDialog({ type: "settings", tab: "home" }))
+							}
+							className={itemClass}
+						>
+							<Row icon={<UserPlus className="size-4" />}>New profile…</Row>
+						</Command.Item>
 					</Command.Group>
 
 					<Command.Group heading="Actions">
