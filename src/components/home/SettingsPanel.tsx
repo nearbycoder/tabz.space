@@ -19,7 +19,7 @@ import {
 	Trash2,
 	Upload,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	ColorSwatches,
@@ -29,8 +29,8 @@ import {
 	Toggle,
 } from "#/components/ui/controls";
 import { Modal } from "#/components/ui/Modal";
-import { loadFont } from "#/lib/appearance";
-import { authClient } from "#/lib/auth-client";
+import { call, run } from "#/lib/api";
+import { loadFontPreview } from "#/lib/appearance";
 import { toBookmarkHtml } from "#/lib/bookmark-file";
 import { cn } from "#/lib/cn";
 import { homeKey, useHomeAction, useSaveSettings } from "#/lib/home-query";
@@ -41,6 +41,7 @@ import {
 	onExtensionStatus,
 	openHistorySettings,
 } from "#/lib/incognito";
+import { lazyNamed } from "#/lib/lazy";
 import { forgetOfflinePage } from "#/lib/offline";
 import {
 	ACCENTS,
@@ -56,17 +57,23 @@ import {
 	type UserSettings,
 	WALLPAPERS,
 } from "#/lib/preferences";
+import { clearVaultKey } from "#/lib/vault-session";
 import { type HomeData, importBookmarks, updateBoard } from "#/server/home";
 import type { SessionInfo } from "#/server/session";
+import { lockVault } from "#/server/vault";
 import { Backdrop } from "./Backdrop";
 import { CommunityThemes, CustomCssEditor } from "./CommunityThemes";
-import { ConnectAI } from "./ConnectAI";
 import { useHomeContext } from "./context";
-import { ApiTokens, Channels, Webhooks } from "./Developer";
 import { FocusSettings } from "./FocusSettings";
 import { ProfilesSettings } from "./ProfilesSettings";
 import type { HomeBoard } from "./types";
-import { VaultSettings, type VaultState } from "./Vault";
+import type { VaultState } from "./Vault";
+
+const VaultSettings = lazyNamed(() => import("./Vault"), "VaultSettings");
+const ConnectAI = lazyNamed(() => import("./ConnectAI"), "ConnectAI");
+const Channels = lazyNamed(() => import("./Developer"), "Channels");
+const ApiTokens = lazyNamed(() => import("./Developer"), "ApiTokens");
+const Webhooks = lazyNamed(() => import("./Developer"), "Webhooks");
 
 type Props = {
 	settings: UserSettings;
@@ -290,10 +297,10 @@ export function SettingsPanel({
 	const layout = board.layout;
 	const bg = settings.background;
 
-	// Preview every font in its own typeface.
+	// Preview every font in its own typeface using tiny text-subset Google Fonts.
 	useEffect(() => {
 		if (tab === "look")
-			for (const key of Object.keys(FONTS) as FontKey[]) loadFont(key);
+			for (const key of Object.keys(FONTS) as FontKey[]) loadFontPreview(key);
 	}, [tab]);
 
 	const onImport = async (file: File) => {
@@ -358,6 +365,7 @@ export function SettingsPanel({
 									/>
 									<span className="absolute inset-0 [&>div]:!absolute">
 										<Backdrop
+											preview
 											background={{
 												...preset.settings.background,
 												animate: false,
@@ -987,6 +995,9 @@ export function SettingsPanel({
 								type="button"
 								className="btn-outline"
 								onClick={async () => {
+									clearVaultKey();
+									await run(call(lockVault)).catch(() => {});
+									const { authClient } = await import("#/lib/auth-client");
 									await authClient.signOut();
 									await forgetOfflinePage();
 									window.location.assign("/");
@@ -1000,24 +1011,40 @@ export function SettingsPanel({
 			)}
 
 			{tab === "vault" && tabs.some((t) => t.id === "vault") && (
-				<VaultSettings vault={vault} settings={settings} />
+				<Suspense
+					fallback={
+						<div className="flex justify-center py-8 text-muted">
+							<Loader2 className="size-5 animate-spin" />
+						</div>
+					}
+				>
+					<VaultSettings vault={vault} settings={settings} />
+				</Suspense>
 			)}
 
 			{tab === "connect" && (
-				<div className="space-y-6">
-					<Section title="AI assistants (MCP)">
-						<ConnectAI />
-					</Section>
-					<Section title="Save from anywhere">
-						<Channels />
-					</Section>
-					<Section title="API tokens">
-						<ApiTokens />
-					</Section>
-					<Section title="Webhooks">
-						<Webhooks />
-					</Section>
-				</div>
+				<Suspense
+					fallback={
+						<div className="flex justify-center py-8 text-muted">
+							<Loader2 className="size-5 animate-spin" />
+						</div>
+					}
+				>
+					<div className="space-y-6">
+						<Section title="AI assistants (MCP)">
+							<ConnectAI />
+						</Section>
+						<Section title="Save from anywhere">
+							<Channels />
+						</Section>
+						<Section title="API tokens">
+							<ApiTokens />
+						</Section>
+						<Section title="Webhooks">
+							<Webhooks />
+						</Section>
+					</div>
+				</Suspense>
 			)}
 		</Modal>
 	);

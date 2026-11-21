@@ -25,7 +25,19 @@ const walk = (dir) => {
 };
 walk(root);
 
-const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+const rawManifest = JSON.parse(
+	readFileSync(join(root, "manifest.json"), "utf8"),
+);
+const isProdOrigin = (pattern) => !pattern.startsWith("http://localhost");
+// Production zips never grant permissions or inject the bridge on arbitrary localhost apps.
+const manifest = {
+	...rawManifest,
+	content_scripts: rawManifest.content_scripts?.map((script) => ({
+		...script,
+		matches: script.matches.filter(isProdOrigin),
+	})),
+	host_permissions: rawManifest.host_permissions?.filter(isProdOrigin),
+};
 const encode = (value) =>
 	new TextEncoder().encode(`${JSON.stringify(value, null, 2)}\n`);
 

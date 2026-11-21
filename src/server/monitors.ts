@@ -209,7 +209,9 @@ export const pollFeeds = (limit = 40) =>
 		const byFeed = new Map<string, Candidate[]>();
 		for (const row of rows) {
 			const feedUrl = row.meta.feedUrl as string;
-			byFeed.set(feedUrl, [...(byFeed.get(feedUrl) ?? []), row]);
+			const list = byFeed.get(feedUrl);
+			if (list) list.push(row);
+			else byFeed.set(feedUrl, [row]);
 		}
 		yield* Effect.forEach(
 			[...byFeed],

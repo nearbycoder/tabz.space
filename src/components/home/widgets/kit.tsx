@@ -27,13 +27,33 @@ export type WidgetProps<D> = {
 	readOnly: boolean;
 };
 
-/** The current time, ticking every `interval` ms. Null until mounted (no SSR mismatch). */
+/** The current time, ticking every `interval` ms (paused while hidden). Null until mounted. */
 export function useNow(interval = 1000) {
 	const [now, setNow] = useState<Date | null>(null);
 	useEffect(() => {
-		setNow(new Date());
-		const id = setInterval(() => setNow(new Date()), interval);
-		return () => clearInterval(id);
+		let id: ReturnType<typeof setInterval> | null = null;
+		const tick = () => setNow(new Date());
+		const start = () => {
+			if (id !== null || document.hidden) return;
+			tick();
+			id = setInterval(tick, interval);
+		};
+		const stop = () => {
+			if (id !== null) {
+				clearInterval(id);
+				id = null;
+			}
+		};
+		const onVisibility = () => {
+			if (document.hidden) stop();
+			else start();
+		};
+		start();
+		document.addEventListener("visibilitychange", onVisibility);
+		return () => {
+			stop();
+			document.removeEventListener("visibilitychange", onVisibility);
+		};
 	}, [interval]);
 	return now;
 }
@@ -188,8 +208,14 @@ export function Row({
 	);
 	const className =
 		"flex items-center gap-2 rounded-lg px-1.5 py-1.5 text-sm hover:bg-[color-mix(in_srgb,var(--ink)_5%,transparent)]";
-	return href ? (
-		<a href={href} target="_blank" rel="noreferrer" className={className}>
+	const safeHref = href && /^https?:\/\//i.test(href) ? href : undefined;
+	return safeHref ? (
+		<a
+			href={safeHref}
+			target="_blank"
+			rel="noopener noreferrer"
+			className={className}
+		>
 			{body}
 		</a>
 	) : (
@@ -221,11 +247,17 @@ export function formatDuration(ms: number, { tenths = false } = {}) {
 	return tenths ? `${base}.${Math.floor((total % 1000) / 100)}` : base;
 }
 
-/** Cryptographically random integer in [0, max). */
+/** Cryptographically random integer in [0, max), without modulo bias. */
 export function randomInt(max: number) {
+	if (max <= 1) return 0;
+	const limit = Math.floor(0x1_0000_0000 / max) * max;
 	const values = new Uint32Array(1);
-	crypto.getRandomValues(values);
-	return values[0] % max;
+	let value = 0;
+	do {
+		crypto.getRandomValues(values);
+		value = values[0];
+	} while (value >= limit);
+	return value % max;
 }
 
 export const randomId = () => crypto.randomUUID().slice(0, 8);

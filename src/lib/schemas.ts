@@ -1,14 +1,17 @@
 import { z } from "zod";
 import {
+	BACKGROUNDS,
 	DEFAULT_BOARD_LAYOUT,
 	DEFAULT_SETTINGS,
 	FONTS,
 	type FontKey,
 	GROUP_WIDTHS,
+	PATTERNS,
 	SEARCH_ENGINES,
 	type SearchEngine,
 	SMART_SORTS,
 	type SmartSort,
+	sanitizeCss,
 	TILE_STYLES,
 } from "./preferences";
 import { CATALOG_TYPES } from "./widget-catalog";
@@ -24,16 +27,57 @@ const searchEngineSchema = z.enum(
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i);
 
-export const backgroundSchema = z.object({
-	type: z.enum(["preset", "pattern", "color", "image"]),
-	value: z.string().max(2048),
-	/** Darken/lighten overlay strength, 0–90 (%). */
-	dim: z.number().min(0).max(90).default(0),
-	/** Image blur in px. */
-	blur: z.number().min(0).max(30).default(0),
-	/** Slowly drift gradients. */
-	animate: z.boolean().default(false),
-});
+const BACKGROUND_KEYS = new Set<string>(Object.keys(BACKGROUNDS));
+const PATTERN_KEYS = new Set<string>(PATTERNS);
+const SAFE_CSS_COLOR =
+	/^(#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla|oklch|oklab)\([0-9a-zA-Z.,%/\s+-]+\)|[a-z]{3,24})$/i;
+
+export const backgroundSchema = z
+	.object({
+		type: z.enum(["preset", "pattern", "color", "image"]),
+		value: z.string().max(2048),
+		/** Darken/lighten overlay strength, 0–90 (%). */
+		dim: z.number().min(0).max(90).default(0),
+		/** Image blur in px. */
+		blur: z.number().min(0).max(30).default(0),
+		/** Slowly drift gradients. */
+		animate: z.boolean().default(false),
+	})
+	.superRefine((bg, ctx) => {
+		if (bg.type === "preset" && !BACKGROUND_KEYS.has(bg.value)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["value"],
+				message: "Unknown background preset",
+			});
+		} else if (bg.type === "pattern" && !PATTERN_KEYS.has(bg.value)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["value"],
+				message: "Unknown background pattern",
+			});
+		} else if (
+			bg.type === "color" &&
+			bg.value !== "" &&
+			!SAFE_CSS_COLOR.test(bg.value.trim())
+		) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["value"],
+				message: "Invalid background color",
+			});
+		} else if (
+			bg.type === "image" &&
+			bg.value !== "" &&
+			!/^https:\/\/\S+$/i.test(bg.value.trim())
+		) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["value"],
+				message: "Background image must be an https:// URL",
+			});
+		}
+	});
 
 const focusTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
@@ -77,7 +121,7 @@ export const userSettingsSchema = z.object({
 	showTopSites: z.boolean().default(true),
 	showRediscover: z.boolean().default(true),
 	/** Extra CSS applied to the home page (Customize → Look → Custom CSS). */
-	customCss: z.string().max(20_000).default(""),
+	customCss: z.string().max(20_000).transform(sanitizeCss).default(""),
 	/** The browser's IANA time zone, so schedules work during server rendering. */
 	timeZone: z.string().max(64).optional(),
 	/** Last monthly report ("YYYY-MM") the user opened or dismissed. */
@@ -95,7 +139,10 @@ export const userSettingsSchema = z.object({
 	/** The profile on screen (null: the first). */
 	activeProfileId: z.string().nullable().default(null),
 	/** The board last open in each profile, to come back to when switching. */
-	profileBoards: z.record(z.string(), z.string()).default({}),
+	profileBoards: z
+		.record(z.string().max(64), z.string().max(64))
+		.refine((rec) => Object.keys(rec).length <= 50, "Too many profile entries")
+		.default({}),
 	focus: focusSettingsSchema.default({
 		enabled: false,
 		days: [1, 2, 3, 4, 5],

@@ -1,6 +1,19 @@
 import { FONTS, type FontKey, type UserSettings } from "./preferences";
 
 const loadedFonts = new Set<string>(["geist"]);
+const loadedPreviews = new Set<string>(["geist"]);
+
+/** Loads a tiny preview subset ("Aa" + label) for the font picker without pulling the whole family. */
+export function loadFontPreview(key: FontKey) {
+	if (loadedFonts.has(key) || loadedPreviews.has(key) || !FONTS[key].google)
+		return;
+	loadedPreviews.add(key);
+	const text = encodeURIComponent(`Aa ${FONTS[key].label}`);
+	const link = document.createElement("link");
+	link.rel = "stylesheet";
+	link.href = `https://fonts.googleapis.com/css2?family=${FONTS[key].google}&text=${text}&display=swap`;
+	document.head.appendChild(link);
+}
 
 /** Loads a Google font the first time it's needed. */
 export function loadFont(key: FontKey) {

@@ -60,6 +60,7 @@ function themeOf() {
 function documentFor(html: string, state: JsonValue | undefined) {
 	const theme = themeOf();
 	return `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:${theme.dark ? "dark" : "light"};--accent:${theme.accent};--ink:${theme.ink};--muted:${theme.muted}}
@@ -152,7 +153,12 @@ export function SandboxFrame({
 				const save = latest.current.onState;
 				if (!save)
 					return reply(message.id, { error: "This board is read-only" });
-				const size = JSON.stringify(payload.state ?? null).length;
+				let size = 0;
+				try {
+					size = JSON.stringify(payload.state ?? null).length;
+				} catch {
+					return reply(message.id, { error: "State must be plain JSON" });
+				}
 				if (size > MAX_STATE)
 					return reply(message.id, {
 						error: `State is too big (${size} of ${MAX_STATE} bytes)`,
@@ -210,7 +216,7 @@ export function SandboxFrame({
 			title="Custom widget"
 			srcDoc={srcDoc ?? ""}
 			// No allow-same-origin: the code can't read cookies or reach the page.
-			sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms"
+			sandbox="allow-scripts allow-popups allow-forms"
 			className="block w-full border-0"
 			style={{ height }}
 		/>

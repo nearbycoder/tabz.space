@@ -107,13 +107,19 @@ export function folderSummary(children: TreeItem[]) {
 		.join(" · ");
 }
 
-/** Tracks the cursor to tilt a tile in 3D. */
+/** Tracks the cursor to tilt a tile in 3D (caches bounds on hover entry). */
 function useTilt(enabled: boolean) {
 	const ref = useRef<HTMLSpanElement>(null);
+	const rectRef = useRef<DOMRect | null>(null);
+	const onMouseEnter = () => {
+		if (enabled && ref.current)
+			rectRef.current = ref.current.getBoundingClientRect();
+	};
 	const onMouseMove = (event: MouseEvent) => {
 		const node = ref.current;
 		if (!enabled || !node) return;
-		const rect = node.getBoundingClientRect();
+		const rect = rectRef.current ?? node.getBoundingClientRect();
+		rectRef.current = rect;
 		const x = (event.clientX - rect.left) / rect.width - 0.5;
 		const y = (event.clientY - rect.top) / rect.height - 0.5;
 		node.style.setProperty("--rx", `${(-y * 14).toFixed(2)}deg`);
@@ -121,11 +127,13 @@ function useTilt(enabled: boolean) {
 		node.style.setProperty("--lift", "-3px");
 	};
 	const onMouseLeave = () => {
+		rectRef.current = null;
 		for (const prop of ["--rx", "--ry", "--lift"])
 			ref.current?.style.removeProperty(prop);
 	};
 	return {
 		ref,
+		onMouseEnter,
 		onMouseMove,
 		onMouseLeave,
 		className: enabled ? "tilt" : undefined,
@@ -135,9 +143,11 @@ function useTilt(enabled: boolean) {
 function FolderMosaic({
 	folder,
 	compact,
+	inVault,
 }: {
 	folder: TileItem;
 	compact?: boolean;
+	inVault?: boolean;
 }) {
 	const children = folder.children ?? [];
 	if (children.length === 0)
@@ -164,7 +174,7 @@ function FolderMosaic({
 							url={child.url}
 							icon={child.icon}
 							favicon={child.meta.favicon}
-							sealed={Boolean(child.meta.sealed)}
+							sealed={inVault || Boolean(child.meta.sealed)}
 							title={child.title}
 							className="size-[70%] text-[0.7em]"
 						/>
@@ -211,7 +221,11 @@ function TileBodyView({
 }: Props & { drop: Drop }) {
 	const {
 		editing,
-		settings,
+		feedBadges,
+		tilt: tiltEnabled,
+		openInNewTab,
+		linkPreviews,
+		inVault,
 		openDialog,
 		onVisit,
 		isIncognito,
@@ -219,10 +233,12 @@ function TileBodyView({
 		readOnly,
 	} = useTileContext();
 	const incognito = isIncognito(item);
+	const sealed = inVault || Boolean(item.meta.sealed);
+	const privateLink = incognito || sealed;
 	const isFolder = item.kind === "folder";
 	// Folders add up the new posts of everything inside.
 	const unread =
-		!settings.feedBadges || incognito
+		!feedBadges || privateLink
 			? 0
 			: isFolder
 				? linksIn(item.children ?? []).reduce(
@@ -235,7 +251,7 @@ function TileBodyView({
 		(item.meta.health?.status === "broken" ||
 			item.meta.health?.status === "redirected");
 	const tilt = useTilt(
-		settings.tilt &&
+		tiltEnabled &&
 			!overlay &&
 			!editing &&
 			(style === "tile" || style === "icon" || style === "gallery"),
@@ -259,20 +275,20 @@ function TileBodyView({
 			openLink(item);
 			return;
 		}
-		onVisit(item, { leaving: leavesPage(event, settings.openInNewTab) });
+		if (!sealed) onVisit(item, { leaving: leavesPage(event, openInNewTab) });
 	};
 
 	const tint = item.color
 		? { background: `color-mix(in srgb, ${item.color} 16%, transparent)` }
 		: undefined;
 	const icon = isFolder ? (
-		<FolderMosaic folder={item} />
+		<FolderMosaic folder={item} inVault={inVault} />
 	) : (
 		<Favicon
 			url={item.url}
 			icon={item.icon}
 			favicon={item.meta.favicon}
-			sealed={Boolean(item.meta.sealed)}
+			sealed={sealed}
 			title={item.title}
 			color={item.color}
 			className={cn("shrink-0 rounded-md", iconSize[style][size])}
@@ -307,6 +323,7 @@ function TileBodyView({
 						tilt.ref.current = node;
 						drop.setNodeRef(node);
 					}}
+					onMouseEnter={tilt.onMouseEnter}
 					onMouseMove={tilt.onMouseMove}
 					onMouseLeave={tilt.onMouseLeave}
 					className={cn(
@@ -327,9 +344,9 @@ function TileBodyView({
 			</>
 		);
 	} else if (style === "gallery") {
-		// Private links don't send their URL to the screenshot service.
+		// Private and vault links never send their URL to third-party screenshot services.
 		const image =
-			isFolder || incognito
+			isFolder || privateLink
 				? null
 				: !imageFailed && item.meta.image
 					? item.meta.image
@@ -341,6 +358,7 @@ function TileBodyView({
 					tilt.ref.current = node;
 					drop.setNodeRef(node);
 				}}
+				onMouseEnter={tilt.onMouseEnter}
 				onMouseMove={tilt.onMouseMove}
 				onMouseLeave={tilt.onMouseLeave}
 				className={cn(
@@ -366,13 +384,13 @@ function TileBodyView({
 					) : (
 						<span className="grid size-2/3 place-items-center">
 							{isFolder ? (
-								<FolderMosaic folder={item} />
+								<FolderMosaic folder={item} inVault={inVault} />
 							) : (
 								<Favicon
 									url={item.url}
 									icon={item.icon}
 									favicon={item.meta.favicon}
-									sealed={Boolean(item.meta.sealed)}
+									sealed={sealed}
 									title={item.title}
 									color={item.color}
 									className="size-12 rounded-xl text-4xl"
@@ -447,8 +465,8 @@ function TileBodyView({
 		</button>
 	) : (
 		<a
-			href={targetUrl(item)}
-			target={settings.openInNewTab ? "_blank" : undefined}
+			href={targetUrl(item) || undefined}
+			target={openInNewTab ? "_blank" : undefined}
 			rel="noopener noreferrer"
 			draggable={false}
 			onClick={open}
@@ -475,7 +493,7 @@ function TileBodyView({
 			) : (
 				<LinkPreview
 					bookmark={item}
-					enabled={settings.linkPreviews && !editing && !incognito}
+					enabled={linkPreviews && !editing && !privateLink}
 				>
 					{link}
 				</LinkPreview>

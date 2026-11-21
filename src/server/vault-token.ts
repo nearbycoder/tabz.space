@@ -58,7 +58,13 @@ export async function readVaultToken(
 export function cookieValue(headers: Headers, name: string) {
 	for (const part of headers.get("cookie")?.split(";") ?? []) {
 		const [key, ...rest] = part.trim().split("=");
-		if (key === name) return decodeURIComponent(rest.join("="));
+		if (key === name) {
+			try {
+				return decodeURIComponent(rest.join("="));
+			} catch {
+				return undefined;
+			}
+		}
 	}
 	return undefined;
 }

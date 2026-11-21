@@ -9,7 +9,7 @@ export const TopSites = memo(function TopSites({
 }: {
 	links: LinkItem[];
 }) {
-	const { settings, onVisit, isIncognito } = useTileContext();
+	const { openInNewTab, onVisit, isIncognito } = useTileContext();
 	// One pass for the top eight (no sorting the whole library on each render).
 	const top = useMemo(() => {
 		const best: LinkItem[] = [];
@@ -22,7 +22,7 @@ export const TopSites = memo(function TopSites({
 		}
 		return best;
 	}, [links, isIncognito]);
-	if (!settings.showTopSites || top.length < 3) return null;
+	if (top.length < 3) return null;
 
 	return (
 		<nav
@@ -32,12 +32,12 @@ export const TopSites = memo(function TopSites({
 			{top.map((link) => (
 				<a
 					key={link.id}
-					href={targetUrl(link)}
-					target={settings.openInNewTab ? "_blank" : undefined}
+					href={targetUrl(link) || undefined}
+					target={openInNewTab ? "_blank" : undefined}
 					rel="noopener noreferrer"
 					onClick={(event) =>
 						onVisit(link, {
-							leaving: leavesPage(event, settings.openInNewTab),
+							leaving: leavesPage(event, openInNewTab),
 						})
 					}
 					title={link.title}

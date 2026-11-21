@@ -177,9 +177,11 @@ export function CommandPalette({
 				} else links.push({ bookmark: item, path });
 			}
 		};
-		for (const b of boards)
+		for (const b of boards) {
+			if (b.vault) continue;
 			for (const group of b.groups)
 				walk(group.bookmarks, `${b.name} / ${group.name}`);
+		}
 		links.sort((a, b) => b.bookmark.visitCount - a.bookmark.visitCount);
 		return { links, folders };
 	}, [boards]);

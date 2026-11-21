@@ -75,6 +75,8 @@ export function smartItems(boards: HomeBoard[], rules: SmartRules) {
 						.toLowerCase()
 						.includes(query)),
 		)
-		.sort((a, b) => order.score(b) - order.score(a))
-		.slice(0, rules.limit);
+		.map((link) => ({ link, score: order.score(link) }))
+		.sort((a, b) => b.score - a.score)
+		.slice(0, rules.limit)
+		.map((entry) => entry.link);
 }

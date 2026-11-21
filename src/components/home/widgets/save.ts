@@ -5,6 +5,7 @@ import { call, run } from "#/lib/api";
 import { homeKey } from "#/lib/home-query";
 import type { Widget } from "#/lib/preferences";
 import { type HomeData, saveWidget } from "#/server/home";
+import { patchGroup } from "../types";
 
 /**
  * Updates a widget in the cache right away and saves it to the server after a
@@ -38,17 +39,10 @@ export function useWidgetSaver(groupId: string, delay = 600) {
 		(widget: Widget, options: { now?: boolean } = {}) => {
 			queryClient.setQueryData<HomeData>(homeKey, (data) =>
 				data
-					? {
-							...data,
-							boards: data.boards.map((board) => ({
-								...board,
-								groups: board.groups.map((group) =>
-									group.id === groupId
-										? { ...group, options: { ...group.options, widget } }
-										: group,
-								),
-							})),
-						}
+					? patchGroup(data, groupId, (group) => ({
+							...group,
+							options: { ...group.options, widget },
+						}))
 					: data,
 			);
 			latest.current = widget;

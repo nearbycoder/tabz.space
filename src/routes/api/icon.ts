@@ -17,7 +17,9 @@ export const Route = createFileRoute("/api/icon")({
 				if (!scope) return new Response("Bad url", { status: 400 });
 				const origin = new URL(scope);
 				const client =
-					request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+					request.headers.get("cf-connecting-ip")?.trim() ??
+					request.headers.get("x-real-ip")?.trim() ??
+					request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ??
 					"local";
 				if (!allowLookup(client, origin))
 					return new Response("Slow down", {
@@ -38,6 +40,7 @@ export const Route = createFileRoute("/api/icon")({
 						"cache-control":
 							"public, max-age=604800, stale-while-revalidate=2592000",
 						"x-content-type-options": "nosniff",
+						"cross-origin-resource-policy": "same-origin",
 						// An SVG opened directly must not run scripts on our origin.
 						"content-security-policy":
 							"default-src 'none'; style-src 'unsafe-inline'; sandbox",

@@ -13,7 +13,7 @@ import {
 } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
 import { resolveLayout, resolveSettings } from "#/lib/schemas";
-import { faviconFor } from "#/lib/url";
+import { faviconFor, normalizeUrl } from "#/lib/url";
 import {
 	accessBoard,
 	created,
@@ -130,6 +130,8 @@ export const getPublicBoard = (slug: string) =>
 					.where(
 						and(
 							eq(groups.boardId, board.id),
+							eq(groups.kind, "links"),
+							isNull(groups.deletedAt),
 							isNull(bookmarks.deletedAt),
 							eq(bookmarks.incognito, false),
 						),
@@ -140,12 +142,18 @@ export const getPublicBoard = (slug: string) =>
 		);
 		// Nested folders, any depth (incognito folders and their contents stay out).
 		const byParent = new Map<string, Bookmark[]>();
-		for (const row of rows)
-			if (row.parentId)
-				byParent.set(row.parentId, [
-					...(byParent.get(row.parentId) ?? []),
-					row,
-				]);
+		const topByGroup = new Map<string, Bookmark[]>();
+		for (const row of rows) {
+			if (row.parentId) {
+				const list = byParent.get(row.parentId);
+				if (list) list.push(row);
+				else byParent.set(row.parentId, [row]);
+			} else {
+				const list = topByGroup.get(row.groupId);
+				if (list) list.push(row);
+				else topByGroup.set(row.groupId, [row]);
+			}
+		}
 		const build = (row: Bookmark, depth: number): PublicItem =>
 			publicItem(
 				row,
@@ -170,9 +178,7 @@ export const getPublicBoard = (slug: string) =>
 				name: group.name,
 				color: group.color,
 				tileStyle: group.options.tileStyle,
-				items: rows
-					.filter((row) => row.groupId === group.id && !row.parentId)
-					.map((row) => build(row, 0)),
+				items: (topByGroup.get(group.id) ?? []).map((row) => build(row, 0)),
 			})),
 		};
 	});
@@ -218,6 +224,9 @@ export const copyPublicBoard = (
 						parentId: string | null,
 					) => {
 						for (const [index, item] of items.entries()) {
+							const safeUrl =
+								item.kind === "link" ? normalizeUrl(item.url) : "";
+							if (item.kind === "link" && !safeUrl) continue;
 							const [row] = await tx
 								.insert(bookmarks)
 								.values({
@@ -226,7 +235,7 @@ export const copyPublicBoard = (
 									parentId,
 									kind: item.kind,
 									title: item.title,
-									url: item.url,
+									url: safeUrl ?? "",
 									description: item.description,
 									icon: item.icon,
 									color: item.color,
@@ -234,7 +243,7 @@ export const copyPublicBoard = (
 									meta:
 										item.kind === "link"
 											? {
-													favicon: item.favicon ?? faviconFor(item.url),
+													favicon: item.favicon ?? faviconFor(safeUrl ?? ""),
 													image: item.image,
 												}
 											: {},

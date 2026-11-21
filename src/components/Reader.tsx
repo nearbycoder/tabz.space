@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	Check,
@@ -63,6 +64,8 @@ function markText(root: HTMLElement, text: string, id: string) {
 
 export function Reader({ article }: { article: Article }) {
 	const body = useRef<HTMLDivElement>(null);
+	const bar = useRef<HTMLDivElement>(null);
+	const hadHighlights = useRef(article.highlights.length > 0);
 	const [highlights, setHighlights] = useState<Highlight[]>(article.highlights);
 	const [unread, setUnread] = useState(article.unread);
 	const [selection, setSelection] = useState<{
@@ -70,14 +73,23 @@ export function Reader({ article }: { article: Article }) {
 		x: number;
 		y: number;
 	} | null>(null);
-	const [progress, setProgress] = useState(article.progress);
+	const [status, setStatus] = useState(() => ({
+		done: article.progress >= 0.98,
+		minutesLeft: Math.max(
+			0,
+			Math.ceil(article.minutes * (1 - Math.min(article.progress, 1))),
+		),
+	}));
 
-	// Render the (server-sanitized) article, then paint saved highlights.
+	// Render saved highlights onto the (server-sanitized) article; skip initial innerHTML
+	// overwrite when there are no highlights so we don't double-parse SSR markup.
 	useLayoutEffect(() => {
 		const root = body.current;
 		if (!root) return;
+		if (highlights.length === 0 && !hadHighlights.current) return;
 		root.innerHTML = article.html;
 		for (const item of highlights) markText(root, item.text, item.id);
+		hadHighlights.current = highlights.length > 0;
 	}, [article.html, highlights]);
 
 	// Pick up where you left off.
@@ -88,33 +100,53 @@ export function Reader({ article }: { article: Article }) {
 		}
 	}, [article.progress]);
 
-	// Track progress as you scroll; save it every few seconds and on leave.
+	// Track progress as you scroll via rAF + ref (zero per-frame React re-renders).
 	const latest = useRef(article.progress);
 	useEffect(() => {
-		const onScroll = () => {
-			const max = document.documentElement.scrollHeight - window.innerHeight;
-			const value = max > 0 ? Math.min(1, window.scrollY / max) : 1;
-			latest.current = value;
-			setProgress(value);
-		};
 		let saved = article.progress;
+		let frame = 0;
+		let saveTimer: ReturnType<typeof setTimeout> | undefined;
 		const save = () => {
+			clearTimeout(saveTimer);
 			if (Math.abs(latest.current - saved) < 0.01) return;
 			saved = latest.current;
 			run(call(saveReadingProgress, { id: article.id, progress: saved })).catch(
 				() => {},
 			);
 		};
-		const timer = setInterval(save, 5000);
+		const applyScroll = () => {
+			frame = 0;
+			const max = document.documentElement.scrollHeight - window.innerHeight;
+			const value =
+				max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 1;
+			latest.current = value;
+			if (bar.current) bar.current.style.transform = `scaleX(${value})`;
+			const nextDone = value >= 0.98;
+			const nextMinutes = Math.max(
+				0,
+				Math.ceil(article.minutes * (1 - Math.min(value, 1))),
+			);
+			setStatus((prev) =>
+				prev.done === nextDone && prev.minutesLeft === nextMinutes
+					? prev
+					: { done: nextDone, minutesLeft: nextMinutes },
+			);
+			clearTimeout(saveTimer);
+			saveTimer = setTimeout(save, 3000);
+		};
+		const onScroll = () => {
+			if (!frame) frame = requestAnimationFrame(applyScroll);
+		};
 		window.addEventListener("scroll", onScroll, { passive: true });
 		window.addEventListener("pagehide", save);
 		return () => {
-			clearInterval(timer);
+			if (frame) cancelAnimationFrame(frame);
+			clearTimeout(saveTimer);
 			save();
 			window.removeEventListener("scroll", onScroll);
 			window.removeEventListener("pagehide", save);
 		};
-	}, [article.id, article.progress]);
+	}, [article.id, article.minutes, article.progress]);
 
 	// Selecting text in the article offers "Highlight".
 	useEffect(() => {
@@ -166,27 +198,27 @@ export function Reader({ article }: { article: Article }) {
 		onError: (error) => toast.error(error.message),
 	});
 
-	const minutesLeft = Math.max(
-		0,
-		Math.ceil(article.minutes * (1 - Math.min(progress, 1))),
-	);
-
 	return (
 		<div className="min-h-dvh bg-canvas text-ink">
 			<div
+				ref={bar}
 				className="fixed inset-x-0 top-0 z-30 h-0.5 origin-left bg-accent transition-transform"
-				style={{ transform: `scaleX(${progress})` }}
+				style={{ transform: `scaleX(${article.progress})` }}
 			/>
 			<header className="sticky top-0 z-20 border-b border-line bg-[color-mix(in_srgb,var(--canvas)_85%,transparent)] backdrop-blur">
 				<div className="mx-auto flex h-12 max-w-3xl items-center gap-2 px-4">
-					<a href="/read" className="icon-btn size-8" aria-label="Reading list">
+					<Link
+						to="/read"
+						className="icon-btn size-8"
+						aria-label="Reading list"
+					>
 						<ArrowLeft className="size-4" />
-					</a>
+					</Link>
 					<span className="truncate text-sm text-muted">
 						{article.siteName}
 					</span>
 					<span className="ml-auto shrink-0 text-xs text-muted tabular-nums">
-						{progress >= 0.98 ? "Done" : `${minutesLeft} min left`}
+						{status.done ? "Done" : `${status.minutesLeft} min left`}
 					</span>
 					<button
 						type="button"
@@ -247,7 +279,9 @@ export function Reader({ article }: { article: Article }) {
 										className="flex-1 text-left"
 										onClick={() =>
 											document
-												.querySelector(`[data-highlight="${item.id}"]`)
+												.querySelector(
+													`[data-highlight="${CSS.escape(item.id)}"]`,
+												)
 												?.scrollIntoView({
 													behavior: "smooth",
 													block: "center",

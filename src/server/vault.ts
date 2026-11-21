@@ -91,11 +91,12 @@ const verify = (userId: string, password: string) =>
 			hash
 				? Effect.promise(() => verifyPassword({ hash, password }))
 				: Effect.succeed(false);
-		const slot: VaultSlot | null = (yield* matches(vault.passwordHash))
-			? "main"
-			: (yield* matches(vault.decoyHash))
-				? "decoy"
-				: null;
+		// Evaluate both hashes without short-circuiting so timing doesn't distinguish main vs decoy.
+		const [isMain, isDecoy] = yield* Effect.all(
+			[matches(vault.passwordHash), matches(vault.decoyHash)],
+			{ concurrency: 2 },
+		);
+		const slot: VaultSlot | null = isMain ? "main" : isDecoy ? "decoy" : null;
 		if (!slot)
 			return yield* new Unauthorized({ message: "Wrong vault password" });
 		yield* clearAttempts(userId);
@@ -211,15 +212,20 @@ const applySealed = (userId: string, items: z.infer<typeof resealSchema>) =>
 /** What the browser needs before deriving keys. */
 export const getVaultInfo = createServerFn().handler(() =>
 	runAuthed((user) =>
-		findVault(user.id).pipe(
-			Effect.map((vault) => ({
+		Effect.gen(function* () {
+			const [vault, access] = yield* Effect.all([
+				findVault(user.id),
+				VaultAccess,
+			]);
+			return {
 				configured: Boolean(vault),
 				salt: vault?.kdfSalt ?? null,
 				legacy: Boolean(vault && !vault.kdfSalt),
-				hasDecoy: Boolean(vault?.decoyHash),
+				// Only reveal whether a decoy exists when the real vault is already unlocked.
+				hasDecoy: Boolean(access?.slot === "main" && vault?.decoyHash),
 				pinLength: (vault?.pinLength ?? null) as 4 | 6 | null,
-			})),
-		),
+			};
+		}),
 	),
 );
 

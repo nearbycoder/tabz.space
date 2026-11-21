@@ -15,31 +15,63 @@ const CANDIDATES = [
 	join(process.cwd(), "public/landing/demo.mp4"),
 ];
 
-async function locate() {
+type Located = { path: string; size: number; etag: string };
+let cachedFile: Located | null | undefined;
+
+async function locate(): Promise<Located | null> {
+	if (cachedFile !== undefined) return cachedFile;
 	for (const path of CANDIDATES) {
 		const info = await stat(path).catch(() => null);
-		if (info?.isFile()) return { path, size: info.size };
+		if (info?.isFile()) {
+			cachedFile = {
+				path,
+				size: info.size,
+				etag: `W/"${info.size}-${Math.trunc(info.mtimeMs)}"`,
+			};
+			return cachedFile;
+		}
 	}
+	cachedFile = null;
 	return null;
 }
 
 const stream = (path: string, start: number, end: number) =>
 	Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream;
 
+const baseHeaders = (file: Located) => ({
+	"content-type": "video/mp4",
+	"accept-ranges": "bytes",
+	"cache-control": "public, max-age=86400",
+	etag: file.etag,
+});
+
 export const Route = createFileRoute("/media/demo")({
 	server: {
 		handlers: {
+			HEAD: async ({ request }) => {
+				const file = await locate();
+				if (!file) return new Response(null, { status: 404 });
+				if (request.headers.get("if-none-match") === file.etag)
+					return new Response(null, {
+						status: 304,
+						headers: baseHeaders(file),
+					});
+				return new Response(null, {
+					headers: {
+						...baseHeaders(file),
+						"content-length": String(file.size),
+					},
+				});
+			},
 			GET: async ({ request }) => {
 				const file = await locate();
 				if (!file) return new Response("Not found", { status: 404 });
-				const headers = {
-					"content-type": "video/mp4",
-					"accept-ranges": "bytes",
-					"cache-control": "public, max-age=86400",
-				};
+				const headers = baseHeaders(file);
 				const range = request.headers
 					.get("range")
 					?.match(/^bytes=(\d*)-(\d*)$/);
+				if (!range && request.headers.get("if-none-match") === file.etag)
+					return new Response(null, { status: 304, headers });
 				if (!range)
 					return new Response(stream(file.path, 0, file.size - 1), {
 						headers: { ...headers, "content-length": String(file.size) },

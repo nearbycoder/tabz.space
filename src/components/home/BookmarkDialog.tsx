@@ -181,8 +181,8 @@ export function BookmarkForm({
 		const normalized = normalizeUrl(value);
 		if (!normalized || normalized === lookedUp) return;
 		setLookedUp(normalized);
-		setFavicon(faviconFor(normalized, 128));
 		if (sealedTarget) return;
+		setFavicon(faviconFor(normalized, 128));
 		setLooking(true);
 		try {
 			const meta = await run(call(lookupUrl, { url: normalized }));
@@ -224,7 +224,6 @@ export function BookmarkForm({
 					description: description.trim() || null,
 					tags: bookmark?.tags ?? [],
 					icon: icon.trim() || null,
-					favicon: favicon ?? faviconFor(normalized),
 				});
 				if (bookmark)
 					update.mutate({

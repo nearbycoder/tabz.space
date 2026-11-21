@@ -120,6 +120,10 @@ export function cleanArticleHtml(html: string, base: URL) {
 			},
 			img: (tagName, attribs) => {
 				const src = absolute(attribs.src || attribs["data-src"], base);
+				const dim = (value: string | undefined) =>
+					value && /^\d{1,5}$/.test(value.trim()) ? value.trim() : undefined;
+				const width = dim(attribs.width);
+				const height = dim(attribs.height);
 				return {
 					tagName: src ? tagName : "span",
 					attribs: src
@@ -128,8 +132,8 @@ export function cleanArticleHtml(html: string, base: URL) {
 								alt: attribs.alt ?? "",
 								loading: "lazy",
 								referrerpolicy: "no-referrer",
-								...(attribs.width ? { width: attribs.width } : {}),
-								...(attribs.height ? { height: attribs.height } : {}),
+								...(width ? { width } : {}),
+								...(height ? { height } : {}),
 							}
 						: {},
 				};
@@ -186,9 +190,9 @@ export const extractArticle = (rawUrl: string) =>
 	);
 
 /** A link you can read: yours (or shared with you), a link, and not in a vault. */
-const readable = (userId: string, id: string) =>
+const readable = (userId: string, id: string, options?: { write?: boolean }) =>
 	Effect.gen(function* () {
-		const found = yield* library.accessBookmark(userId, id);
+		const found = yield* library.accessBookmark(userId, id, options);
 		if (found.board.vault || found.bookmark.kind !== "link")
 			return yield* new InvalidInput({
 				message: "Reader view isn't available for this link",
@@ -274,7 +278,7 @@ export const saveProgress = (
 	data: z.infer<typeof progressInput>,
 ) =>
 	Effect.gen(function* () {
-		yield* readable(userId, data.id);
+		yield* readable(userId, data.id, { write: true });
 		yield* query((db) =>
 			db
 				.update(articles)
@@ -312,7 +316,7 @@ export const addHighlight = (
 	data: z.infer<typeof highlightInput>,
 ) =>
 	Effect.gen(function* () {
-		yield* readable(userId, data.id);
+		yield* readable(userId, data.id, { write: true });
 		const article = yield* stored(data.id);
 		if (!article) return yield* new InvalidInput({ message: "Open it first" });
 		const highlight: Highlight = {
@@ -341,7 +345,7 @@ export const removeHighlight = (
 	data: z.infer<typeof removeHighlightInput>,
 ) =>
 	Effect.gen(function* () {
-		yield* readable(userId, data.id);
+		yield* readable(userId, data.id, { write: true });
 		const article = yield* stored(data.id);
 		const highlights = (article?.highlights ?? []).filter(
 			(item) => item.id !== data.highlightId,

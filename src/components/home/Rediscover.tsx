@@ -1,5 +1,5 @@
 import { Shuffle, Sparkles, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { useHomeAction } from "#/lib/home-query";
 import { allLinks } from "#/lib/smart";
@@ -29,14 +29,17 @@ const ago = (value: Date | string) => {
 };
 
 /** Links you saved but haven't opened in a month or more, three a day. */
-export function Rediscover() {
-	const { boards, settings, isIncognito, openLink } = useHomeContext();
+export const Rediscover = memo(function Rediscover() {
+	const { settings } = useHomeContext();
+	if (!settings.showRediscover) return null;
+	return <RediscoverActive />;
+});
+
+function RediscoverActive() {
+	const { boards, isIncognito, openLink } = useHomeContext();
 	const [today, setToday] = useState<string | null>(null);
 	const [hidden, setHidden] = useState(true);
 	const [round, setRound] = useState(0);
-	const remove = useHomeAction(deleteBookmark, {
-		undoable: () => "Moved to trash",
-	});
 
 	// Day-dependent, so only decided in the browser.
 	useEffect(() => {
@@ -46,24 +49,60 @@ export function Rediscover() {
 	}, []);
 
 	const picks = useMemo(() => {
-		if (!today) return [];
+		if (!today || hidden) return [];
+		const cutoff = Date.now() - MONTH;
 		const pool = allLinks(boards).filter(
 			(link) =>
 				!isIncognito(link) &&
-				Date.now() - new Date(link.lastVisitedAt ?? link.createdAt).getTime() >
-					MONTH,
+				new Date(link.lastVisitedAt ?? link.createdAt).getTime() < cutoff,
 		);
 		let seed = round;
 		for (const char of today) seed = (seed * 31 + char.charCodeAt(0)) | 0;
 		const random = seeded(seed);
-		return pool
-			.map((link) => ({ link, order: random() }))
-			.sort((a, b) => a.order - b.order)
-			.slice(0, 3)
-			.map(({ link }) => link);
-	}, [boards, isIncognito, today, round]);
+		const best: { link: LinkItem; order: number }[] = [];
+		for (const link of pool) {
+			const order = random();
+			if (best.length < 3 || order < best[best.length - 1].order) {
+				best.push({ link, order });
+				best.sort((a, b) => a.order - b.order);
+				if (best.length > 3) best.pop();
+			}
+		}
+		return best.map(({ link }) => link);
+	}, [boards, isIncognito, today, hidden, round]);
 
-	if (!settings.showRediscover || hidden || picks.length === 0) return null;
+	if (hidden || picks.length === 0) return null;
+
+	return (
+		<RediscoverSection
+			picks={picks}
+			today={today}
+			openLink={openLink}
+			onShuffle={() => setRound((n) => n + 1)}
+			onHide={() => {
+				localStorage.setItem(HIDDEN_KEY, today ?? "");
+				setHidden(true);
+			}}
+		/>
+	);
+}
+
+function RediscoverSection({
+	picks,
+	today: _today,
+	openLink,
+	onShuffle,
+	onHide,
+}: {
+	picks: LinkItem[];
+	today: string | null;
+	openLink: (bookmark: LinkItem, options?: { newTab?: boolean }) => void;
+	onShuffle: () => void;
+	onHide: () => void;
+}) {
+	const remove = useHomeAction(deleteBookmark, {
+		undoable: () => "Moved to trash",
+	});
 
 	return (
 		<section
@@ -81,7 +120,7 @@ export function Rediscover() {
 					className="icon-btn ml-auto size-7"
 					aria-label="Shuffle"
 					title="Shuffle"
-					onClick={() => setRound((n) => n + 1)}
+					onClick={onShuffle}
 				>
 					<Shuffle className="size-3.5" />
 				</button>
@@ -90,10 +129,7 @@ export function Rediscover() {
 					className="icon-btn size-7"
 					aria-label="Hide for today"
 					title="Hide for today"
-					onClick={() => {
-						localStorage.setItem(HIDDEN_KEY, today ?? "");
-						setHidden(true);
-					}}
+					onClick={onHide}
 				>
 					<X className="size-3.5" />
 				</button>

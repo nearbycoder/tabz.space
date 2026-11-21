@@ -12,8 +12,18 @@ type Props = {
 	search: Record<string, unknown>;
 };
 
-const safeRedirect = (to?: string) =>
-	to?.startsWith("/") && !to.startsWith("//") ? to : "/";
+const safeRedirect = (to?: string) => {
+	if (!to?.startsWith("/") || to.startsWith("//") || to.startsWith("/\\"))
+		return "/";
+	try {
+		const parsed = new URL(to, "https://tabz.space");
+		return parsed.origin === "https://tabz.space"
+			? `${parsed.pathname}${parsed.search}${parsed.hash}`
+			: "/";
+	} catch {
+		return "/";
+	}
+};
 
 export function AuthForm({ mode, providers, redirectTo, search }: Props) {
 	const [pending, setPending] = useState(false);

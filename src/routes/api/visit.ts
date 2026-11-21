@@ -2,6 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as library from "#/server/library";
 import { runAuthed } from "#/server/runtime";
 
+const isSameOrigin = (request: Request) => {
+	const fetchSite = request.headers.get("sec-fetch-site");
+	if (fetchSite === "cross-site") return false;
+	const origin = request.headers.get("origin");
+	if (origin && origin !== new URL(request.url).origin) return false;
+	return true;
+};
+
 /**
  * POST /api/visit {"id": "<bookmark id>"}: records that a link was opened.
  * Sent with navigator.sendBeacon, which survives the page unloading as the
@@ -11,6 +19,7 @@ export const Route = createFileRoute("/api/visit")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
+				if (!isSameOrigin(request)) return new Response(null, { status: 403 });
 				const body = (await request.json().catch(() => null)) as {
 					id?: unknown;
 				} | null;

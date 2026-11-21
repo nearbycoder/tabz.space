@@ -3,10 +3,12 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import { apiTokens } from "#/db/schema";
-import { NotFound, Unauthorized } from "#/lib/effect/errors";
+import { InvalidInput, NotFound, Unauthorized } from "#/lib/effect/errors";
 import { query } from "./runtime";
 
 /* Tokens look like `tabz_<43 chars>`; the database only ever sees a SHA-256 hash. */
+
+const MAX_PERSONAL_TOKENS = 50;
 
 const hash = (token: string) =>
 	createHash("sha256").update(token).digest("hex");
@@ -45,6 +47,17 @@ export const createApiToken = (
 						),
 					),
 				);
+		} else {
+			const count = yield* query((db) =>
+				db.$count(
+					apiTokens,
+					and(eq(apiTokens.userId, userId), eq(apiTokens.kind, "personal")),
+				),
+			);
+			if (count >= MAX_PERSONAL_TOKENS)
+				return yield* new InvalidInput({
+					message: `You can have up to ${MAX_PERSONAL_TOKENS} API tokens`,
+				});
 		}
 		const [row] = yield* query((db) =>
 			db

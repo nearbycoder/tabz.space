@@ -1,4 +1,4 @@
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
 import { user } from "#/db/auth-schema";
@@ -16,6 +16,10 @@ import { query } from "./runtime";
  */
 
 const MAX_PER_USER = 20;
+const MAX_INSTALLED = 100;
+
+const escapeLike = (value: string) =>
+	value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
 export const listSharedInput = z.object({
 	sort: z.enum(["popular", "new"]).optional(),
@@ -25,8 +29,9 @@ export const listSharedInput = z.object({
 export const listShared = (
 	userId: string,
 	data: z.infer<typeof listSharedInput>,
-) =>
-	query((db) =>
+) => {
+	const pattern = data.search ? `%${escapeLike(data.search)}%` : null;
+	return query((db) =>
 		db
 			.select({
 				id: sharedWidgets.id,
@@ -42,10 +47,10 @@ export const listShared = (
 			.from(sharedWidgets)
 			.innerJoin(user, eq(user.id, sharedWidgets.userId))
 			.where(
-				data.search
+				pattern
 					? or(
-							like(sharedWidgets.name, `%${data.search}%`),
-							like(sharedWidgets.description, `%${data.search}%`),
+							sql`${sharedWidgets.name} LIKE ${pattern} ESCAPE '\\'`,
+							sql`${sharedWidgets.description} LIKE ${pattern} ESCAPE '\\'`,
 						)
 					: undefined,
 			)
@@ -64,6 +69,7 @@ export const listShared = (
 			})),
 		),
 	);
+};
 
 export const publishInput = z.object({
 	/** A widget from the caller's My widgets. */
@@ -122,6 +128,13 @@ export const sharedIdInput = z.object({ id: idSchema });
 /** Copies a shared widget into My widgets. */
 export const install = (userId: string, data: z.infer<typeof sharedIdInput>) =>
 	Effect.gen(function* () {
+		const count = yield* query((db) =>
+			db.$count(customWidgets, eq(customWidgets.userId, userId)),
+		);
+		if (count >= MAX_INSTALLED)
+			return yield* new InvalidInput({
+				message: `You can keep up to ${MAX_INSTALLED} widgets`,
+			});
 		const shared = yield* query((db) =>
 			db.query.sharedWidgets.findFirst({
 				where: eq(sharedWidgets.id, data.id),

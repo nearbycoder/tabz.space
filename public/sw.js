@@ -29,6 +29,8 @@ const MAX_ICONS = 800;
 const HOME = "/";
 const REFRESH_EVERY = 30_000;
 let lastRefresh = 0;
+let lastWarmSignature = "";
+const cacheWrites = new Map();
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -51,13 +53,19 @@ async function remember(response, previous, extend) {
 	const mode = response.headers.get("x-tabz-offline");
 	const cache = await caches.open(PAGES);
 	if (mode === "clear") {
-		await cache.delete(HOME);
+		await Promise.all([
+			cache.delete(HOME),
+			caches.delete(READS),
+			caches.delete(ICONS),
+		]);
 		return Boolean(previous);
 	}
 	const changed =
 		Boolean(previous) &&
 		previous.headers.get("x-tabz-viewer") !==
 			response.headers.get("x-tabz-viewer");
+	if (changed)
+		await Promise.all([caches.delete(READS), caches.delete(ICONS)]);
 	const html = (response.headers.get("content-type") || "").includes("text/html");
 	if (mode === "1" && response.ok && !response.redirected && html) {
 		const page = await response.clone().text();
@@ -81,12 +89,19 @@ const IN_CODE = /(?:assets\/|\.\/)[\w.-]+\.(?:js|css)/g;
  * by following each chunk's references, matched by name without the hash.
  */
 async function warm(page) {
+	const queue = [...new Set(page.match(IN_PAGE) ?? [])];
+	const signature = queue.join("|");
+	if (!signature || signature === lastWarmSignature) return;
 	const cache = await caches.open(ASSETS);
+	const initialHits = await Promise.all(queue.map((path) => cache.match(path)));
+	if (initialHits.every(Boolean)) {
+		lastWarmSignature = signature;
+		return;
+	}
 	const used = new Set(
 		(await cache.keys()).map((request) => baseName(new URL(request.url).pathname)),
 	);
 	const seen = new Set();
-	const queue = [...new Set(page.match(IN_PAGE) ?? [])];
 	while (queue.length) {
 		await Promise.all(
 			queue.splice(0, 8).map(async (path) => {
@@ -106,6 +121,7 @@ async function warm(page) {
 			}),
 		);
 	}
+	lastWarmSignature = signature;
 	const keys = await cache.keys();
 	for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS)))
 		await cache.delete(key);
@@ -157,6 +173,9 @@ async function cached(event, name = ASSETS, max = MAX_ASSETS) {
 		event.waitUntil(
 			(async () => {
 				await cache.put(event.request, copy);
+				const writes = (cacheWrites.get(name) ?? 0) + 1;
+				cacheWrites.set(name, writes);
+				if (writes % 20 !== 0) return;
 				const keys = await cache.keys();
 				for (const key of keys.slice(0, Math.max(0, keys.length - max)))
 					await cache.delete(key);
@@ -176,17 +195,40 @@ async function reading(event) {
 	key.search = "";
 	try {
 		const response = await fetch(event.request);
+		const mode = response.headers.get("x-tabz-offline");
+		const viewer = response.headers.get("x-tabz-viewer");
 		const html = (response.headers.get("content-type") || "").includes(
 			"text/html",
 		);
-		if (response.ok && !response.redirected && html) {
+		if (mode === "clear") {
+			event.waitUntil(
+				Promise.all([
+					caches.delete(PAGES),
+					caches.delete(READS),
+					caches.delete(ICONS),
+				]),
+			);
+		} else if (response.ok && !response.redirected && html && viewer) {
 			const copy = response.clone();
 			event.waitUntil(
 				(async () => {
-					await cache.put(key.toString(), copy);
-					const keys = await cache.keys();
+					const pages = await caches.open(PAGES);
+					const homeCached = await pages.match(HOME);
+					if (
+						homeCached &&
+						homeCached.headers.get("x-tabz-viewer") !== viewer
+					) {
+						await Promise.all([
+							pages.delete(HOME),
+							caches.delete(READS),
+							caches.delete(ICONS),
+						]);
+					}
+					const readCache = await caches.open(READS);
+					await readCache.put(key.toString(), copy);
+					const keys = await readCache.keys();
 					for (const old of keys.slice(0, Math.max(0, keys.length - MAX_READS)))
-						await cache.delete(old);
+						await readCache.delete(old);
 				})(),
 			);
 		}
@@ -241,7 +283,13 @@ self.addEventListener("message", (event) => {
 	const type = event.data && event.data.type;
 	if (type === "tabz:refresh") event.waitUntil(refresh());
 	if (type === "tabz:forget")
-		event.waitUntil(Promise.all([caches.delete(PAGES), caches.delete(READS)]));
+		event.waitUntil(
+			Promise.all([
+				caches.delete(PAGES),
+				caches.delete(READS),
+				caches.delete(ICONS),
+			]),
+		);
 	if (type === "tabz:check" && event.source) {
 		const pending = checks.get(event.source.id);
 		if (pending)

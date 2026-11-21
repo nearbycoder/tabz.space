@@ -106,8 +106,10 @@ const deliver = (
 				},
 				body,
 			});
-			if (response.status >= 500) throw new Error(`HTTP ${response.status}`);
-			return response.status;
+			const status = response.status;
+			response.body?.cancel().catch(() => {});
+			if (status >= 500) throw new Error(`HTTP ${status}`);
+			return status;
 		},
 		catch: (error) => error,
 	}).pipe(

@@ -11,6 +11,31 @@ export default defineConfig({
 	server: {
 		port: 3000,
 	},
+	environments: {
+		client: {
+			build: {
+				rolldownOptions: {
+					output: {
+						codeSplitting: {
+							groups: [
+								{
+									name: "vendor-react",
+									test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+									priority: 30,
+								},
+								{
+									name: "icons",
+									test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+									minShareCount: 2,
+									priority: 20,
+								},
+							],
+						},
+					},
+				},
+			},
+		},
+	},
 	plugins: [
 		nitro({
 			// One server bundle: Rolldown's lib-chunk splitting produced a circular

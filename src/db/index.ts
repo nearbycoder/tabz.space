@@ -79,9 +79,9 @@ function wrapTransaction(result: unknown) {
 	});
 }
 
-// WAL keeps reads fast while writes happen; foreign keys power cascading deletes.
+// WAL + NORMAL sync keeps reads and writes fast; foreign keys power cascading deletes.
 await client.executeMultiple(
-	"PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;",
+	"PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA cache_size = -16000; PRAGMA temp_store = MEMORY;",
 );
 
 export const db = drizzle(client, {

@@ -24,6 +24,7 @@ export function lazyNamed<M, K extends keyof M>(
 	const Lazy = lazy(() =>
 		fetchModule().then((component) => ({ default: component })),
 	);
+	// biome-ignore lint/correctness/noComponentHookFactories: module-level lazy component factory
 	function Component(props: React.ComponentProps<C>) {
 		// Decided once per mount, so an open dialog never remounts (and loses
 		// its state) when its code arrives.
