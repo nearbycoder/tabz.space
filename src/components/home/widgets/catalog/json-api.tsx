@@ -29,7 +29,9 @@ export function readPath(
 		.filter(Boolean)
 		.reduce<JsonValue | undefined>(
 			(current, key) =>
-				current !== null && typeof current === "object"
+				current !== null &&
+				typeof current === "object" &&
+				Object.hasOwn(current, key)
 					? (current as Record<string, JsonValue>)[key]
 					: undefined,
 			value,

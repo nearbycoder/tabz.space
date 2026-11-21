@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 const greetingFor = (hour: number) =>
 	hour < 5
@@ -21,7 +21,7 @@ const hourIn = (date: Date, timeZone?: string) =>
 			)
 		: date.getHours();
 
-export function Clock({
+export const Clock = memo(function Clock({
 	name,
 	showClock,
 	showGreeting,
@@ -35,6 +35,7 @@ export function Clock({
 	/** The user's saved zone: lets the server render the right time up front. */
 	timeZone?: string;
 }) {
+	const visible = showClock || showGreeting;
 	// With a known time zone the server renders the clock too (no empty gap
 	// while loading); otherwise it appears after mount.
 	const [now, setNow] = useState<Date | null>(() =>
@@ -42,11 +43,29 @@ export function Clock({
 	);
 	const [local, setLocal] = useState(false);
 	useEffect(() => {
-		setNow(new Date());
+		if (!visible) return;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const schedule = () => {
+			clearTimeout(timer);
+			if (document.hidden) return;
+			const current = new Date();
+			setNow(current);
+			// Align the next redraw to the start of the next minute.
+			const delay = 60_000 - (current.getTime() % 60_000) + 50;
+			timer = setTimeout(schedule, delay);
+		};
 		setLocal(true);
-		const timer = setInterval(() => setNow(new Date()), 10_000);
-		return () => clearInterval(timer);
-	}, []);
+		schedule();
+		const onVisibility = () => {
+			if (document.hidden) clearTimeout(timer);
+			else schedule();
+		};
+		document.addEventListener("visibilitychange", onVisibility);
+		return () => {
+			clearTimeout(timer);
+			document.removeEventListener("visibilitychange", onVisibility);
+		};
+	}, [visible]);
 	// After mount, the browser's own zone is the source of truth.
 	const zone = local ? undefined : timeZone;
 	// The server's text is kept as-is while the page comes alive (it may be
@@ -54,7 +73,7 @@ export function Clock({
 	// once mounted redraws it with the real time right away.
 	const pass = local ? "local" : "server";
 
-	if (!showClock && !showGreeting) return null;
+	if (!visible) return null;
 	const firstName = name.split(" ")[0];
 
 	return (
@@ -91,4 +110,4 @@ export function Clock({
 			)}
 		</div>
 	);
-}
+});

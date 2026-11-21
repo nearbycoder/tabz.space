@@ -12,12 +12,16 @@ export function useVisibleArea(active = true) {
 	const [area, setArea] = useState<VisibleArea | null>(null);
 	useEffect(() => {
 		const viewport = window.visualViewport;
-		if (!active || !viewport) return;
+		if (!active || !viewport || !matchMedia("(pointer: coarse)").matches)
+			return;
 		const update = () => {
 			// A keyboard takes well over 100px; smaller changes are browser chrome.
 			const keyboard = window.innerHeight - viewport.height > 120;
-			setArea(
-				keyboard ? { top: viewport.offsetTop, height: viewport.height } : null,
+			const next = keyboard
+				? { top: viewport.offsetTop, height: viewport.height }
+				: null;
+			setArea((prev) =>
+				prev?.top === next?.top && prev?.height === next?.height ? prev : next,
 			);
 		};
 		update();

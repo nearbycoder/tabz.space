@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { cn } from "#/lib/cn";
 import {
 	BACKGROUNDS,
@@ -6,20 +7,32 @@ import {
 } from "#/lib/preferences";
 
 /** Full-page background layer: gradient, pattern, solid color or photo, plus dim. */
-export function Backdrop({
+export const Backdrop = memo(function Backdrop({
 	background,
+	preview = false,
 }: {
 	background: UserSettings["background"];
+	preview?: boolean;
 }) {
 	const { type, value, dim, blur, animate } = background;
+	const safeImage =
+		type === "image" && /^https:\/\//i.test(value) ? value : null;
+	const imageSrc =
+		safeImage && preview ? unsplashSized(safeImage, 400) : safeImage;
 	return (
 		<div
 			aria-hidden
-			className="pointer-events-none fixed inset-0 overflow-hidden"
+			className={cn(
+				"pointer-events-none inset-0 overflow-hidden",
+				preview ? "absolute" : "fixed",
+			)}
 		>
 			{type === "preset" && (
 				<div
-					className={cn("absolute inset-0", animate && "bg-drift")}
+					className={cn(
+						"absolute",
+						animate && !preview ? "bg-drift" : "inset-0",
+					)}
 					style={{
 						backgroundImage:
 							value in BACKGROUNDS
@@ -43,14 +56,16 @@ export function Backdrop({
 			{type === "color" && (
 				<div className="absolute inset-0" style={{ background: value }} />
 			)}
-			{type === "image" && (
+			{imageSrc && (
 				<img
 					alt=""
-					src={value}
-					srcSet={wallpaperSrcSet(value)}
-					sizes="100vw"
+					src={imageSrc}
+					srcSet={preview ? undefined : wallpaperSrcSet(imageSrc)}
+					sizes={preview ? "200px" : "100vw"}
+					loading={preview ? "lazy" : undefined}
 					decoding="async"
-					fetchPriority="high"
+					fetchPriority={preview ? "low" : "high"}
+					referrerPolicy="no-referrer"
 					className="absolute -inset-8 size-[calc(100%+4rem)] max-w-none object-cover"
 					style={{ filter: blur ? `blur(${blur}px)` : undefined }}
 				/>
@@ -63,9 +78,21 @@ export function Backdrop({
 			)}
 		</div>
 	);
-}
+});
 
 const WIDTHS = [640, 1080, 1600, 2400];
+
+function unsplashSized(url: string, width: number) {
+	if (!url.startsWith("https://images.unsplash.com/")) return url;
+	try {
+		const sized = new URL(url);
+		sized.searchParams.set("w", String(width));
+		sized.searchParams.set("q", "65");
+		return sized.toString();
+	} catch {
+		return url;
+	}
+}
 
 /** Unsplash photos can be resized on the fly, so phones get a phone-sized file. */
 function wallpaperSrcSet(url: string) {

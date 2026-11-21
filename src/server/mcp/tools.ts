@@ -473,15 +473,14 @@ export function createTabzMcpServer(userId: string) {
 				home.boards
 					.flatMap((board) =>
 						board.groups.flatMap((group) =>
-							group.bookmarks.flatMap((item) =>
-								(item.kind === "folder" ? item.children : [item]).map(
-									(bookmark) => ({
-										bookmark,
-										board: board.name,
-										group: group.name,
-									}),
-								),
-							),
+							library
+								.walkTree(group.bookmarks)
+								.filter(({ item }) => item.kind === "link")
+								.map(({ item: bookmark }) => ({
+									bookmark,
+									board: board.name,
+									group: group.name,
+								})),
 						),
 					)
 					.filter(({ bookmark }) => bookmark.tags.length === 0)

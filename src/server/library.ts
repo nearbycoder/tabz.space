@@ -275,6 +275,32 @@ const cantMove = () =>
 			"Links can only be dragged between boards with the same owner. To move one in or out of the vault, edit it.",
 	});
 
+/** Descendants grouped by which of the given root folder IDs they sit under. */
+const descendantsByRoot = (folderIds: string[]) =>
+	folderIds.length === 0
+		? Effect.succeed(new Map<string, string[]>())
+		: query((db) =>
+				db.all<{ rootId: string; id: string }>(
+					sql`WITH RECURSIVE tree(root_id, id) AS (
+						SELECT parent_id, id FROM bookmarks WHERE parent_id IN (${sql.join(
+							folderIds.map((id) => sql`${id}`),
+							sql`, `,
+						)})
+						UNION SELECT t.root_id, b.id FROM bookmarks b JOIN tree t ON b.parent_id = t.id
+					) SELECT root_id AS rootId, id FROM tree`,
+				),
+			).pipe(
+				Effect.map((rows) => {
+					const byRoot = new Map<string, string[]>();
+					for (const row of rows) {
+						const list = byRoot.get(row.rootId);
+						if (list) list.push(row.id);
+						else byRoot.set(row.rootId, [row.id]);
+					}
+					return byRoot;
+				}),
+			);
+
 /** Every folder/link nested anywhere inside the given folders (any depth). */
 export const descendantIds = (folderIds: string[]) =>
 	folderIds.length === 0
@@ -430,11 +456,11 @@ export const record = (
 				// Webhooks leave the server; vault activity never does.
 				if (vaultSlot) return;
 				const byTable = new Map<Snapshot["table"], string[]>();
-				for (const snap of snapshots)
-					byTable.set(snap.table, [
-						...(byTable.get(snap.table) ?? []),
-						snap.id,
-					]);
+				for (const snap of snapshots) {
+					const list = byTable.get(snap.table);
+					if (list) list.push(snap.id);
+					else byTable.set(snap.table, [snap.id]);
+				}
 				for (const [table, ids] of byTable) {
 					// Boards and groups only "update" when reordered; links "move".
 					const verb =
@@ -534,13 +560,19 @@ export function walkTree(
 	items: TreeItem[],
 	path: string[] = [],
 ): { item: TreeItem; path: string[] }[] {
-	return items.flatMap((item) => [
-		{ item, path },
-		...walkTree(
-			item.children,
-			item.kind === "folder" ? [...path, item.title] : path,
-		),
-	]);
+	const out: { item: TreeItem; path: string[] }[] = [];
+	const visit = (nodes: TreeItem[], currentPath: string[]) => {
+		for (const item of nodes) {
+			out.push({ item, path: currentPath });
+			if (item.children.length > 0)
+				visit(
+					item.children,
+					item.kind === "folder" ? [...currentPath, item.title] : currentPath,
+				);
+		}
+	};
+	visit(items, path);
+	return out;
 }
 
 /** Meta the browser actually uses (drops bookkeeping like index and sync state). */
@@ -738,6 +770,12 @@ const loadHomeFresh = (userId: string) =>
 					])
 				: [],
 		);
+		const groupsByBoard = new Map<string, Group[]>();
+		for (const group of groupRows) {
+			const list = groupsByBoard.get(group.boardId);
+			if (list) list.push(group);
+			else groupsByBoard.set(group.boardId, [group]);
+		}
 		return {
 			userId,
 			vault: {
@@ -771,12 +809,10 @@ const loadHomeFresh = (userId: string) =>
 				ownerName:
 					board.userId === userId ? null : (owners.get(board.userId) ?? null),
 				layout: resolveLayout(board.layout),
-				groups: groupRows
-					.filter((group) => group.boardId === board.id)
-					.map((group) => ({
-						...group,
-						bookmarks: byGroup.get(group.id) ?? [],
-					})),
+				groups: (groupsByBoard.get(board.id) ?? []).map((group) => ({
+					...group,
+					bookmarks: byGroup.get(group.id) ?? [],
+				})),
 			})),
 		};
 	});
@@ -1046,6 +1082,23 @@ export const updateBoard = (
 					: row.meta.sealed && !items.get(row.id)?.plain,
 			);
 			if (missing) return yield* mustSeal();
+			const normalizedPlain = new Map<string, string>();
+			if (!data.vault) {
+				for (const row of rows) {
+					const plain = items.get(row.id)?.plain;
+					if (!plain) continue;
+					if (row.kind === "link") {
+						const safeUrl = normalizeUrl(plain.url);
+						if (!safeUrl)
+							return yield* new InvalidInput({
+								message: "Links must use an http(s) address",
+							});
+						normalizedPlain.set(row.id, safeUrl);
+					} else {
+						normalizedPlain.set(row.id, "");
+					}
+				}
+			}
 			yield* query((db) =>
 				db.transaction(async (tx) => {
 					for (const row of rows) {
@@ -1055,19 +1108,20 @@ export const updateBoard = (
 								.update(bookmarks)
 								.set(sealedColumns(item.sealed, row.kind))
 								.where(eq(bookmarks.id, row.id));
-						else if (!data.vault && item?.plain)
+						else if (!data.vault && item?.plain) {
+							const safeUrl = normalizedPlain.get(row.id) ?? "";
 							await tx
 								.update(bookmarks)
 								.set({
 									...item.plain,
+									url: safeUrl,
 									description: item.plain.description ?? null,
 									icon: item.plain.icon ?? null,
 									meta:
-										row.kind === "link"
-											? { favicon: faviconFor(item.plain.url) }
-											: {},
+										row.kind === "link" ? { favicon: faviconFor(safeUrl) } : {},
 								})
 								.where(eq(bookmarks.id, row.id));
+						}
 					}
 				}),
 			);
@@ -1142,10 +1196,32 @@ export const reorderBoards = (
 	data: z.infer<typeof reorderInput>,
 ) =>
 	Effect.gen(function* () {
-		const before = yield* snapshot("boards", data.ids);
+		const unique = [...new Set(data.ids)];
+		if (unique.length === 0) return { ok: true };
+		const access = yield* VaultAccess;
+		const rows = yield* query((db) =>
+			db
+				.select({ id: boards.id, vault: boards.vault, decoy: boards.decoy })
+				.from(boards)
+				.where(
+					and(
+						inArray(boards.id, unique),
+						eq(boards.userId, userId),
+						isNull(boards.deletedAt),
+					),
+				),
+		);
+		const allowedIds = new Set(
+			rows
+				.filter((board) => !board.vault || opensWith(board, access))
+				.map((board) => board.id),
+		);
+		const ordered = unique.filter((id) => allowedIds.has(id));
+		if (ordered.length === 0) return { ok: true };
+		const before = yield* snapshot("boards", ordered);
 		yield* query((db) =>
 			db.transaction(async (tx) => {
-				for (const [position, id] of data.ids.entries()) {
+				for (const [position, id] of ordered.entries()) {
 					await tx
 						.update(boards)
 						.set({ position })
@@ -1221,9 +1297,14 @@ export const updateGroup = (
 		});
 		if (data.boardId && data.boardId !== group.boardId) {
 			const target = yield* accessBoard(userId, data.boardId, { write: true });
-			if (target.board.userId !== board.userId)
+			if (
+				target.board.userId !== board.userId ||
+				target.board.vault !== board.vault ||
+				target.board.decoy !== board.decoy
+			)
 				return yield* new InvalidInput({
-					message: "Groups can only move between boards with the same owner",
+					message:
+						"Groups can only move between boards with the same owner on the same side of the vault",
 				});
 		}
 		const before = yield* snapshot("groups", [group.id]);
@@ -2035,10 +2116,10 @@ export const arrangeBookmarks = (
 		const ids = data.groups.flatMap((group) => group.ids);
 		yield* accessMoving(userId, ids, destinations);
 		const owner = destinations[0].userId;
-		const childIds = yield* descendantIds(ids);
-		const insideOf = new Map<string, string[]>();
-		for (const id of ids) insideOf.set(id, yield* descendantIds([id]));
-		const before = yield* snapshot("bookmarks", [...ids, ...childIds]);
+		const uniqueIds = [...new Set(ids)];
+		const insideOf = yield* descendantsByRoot(uniqueIds);
+		const childIds = [...new Set([...insideOf.values()].flat())];
+		const before = yield* snapshot("bookmarks", [...uniqueIds, ...childIds]);
 		yield* query((db) =>
 			db.transaction(async (tx) => {
 				for (const group of data.groups) {
@@ -2122,8 +2203,16 @@ export const arrangeFolder = (
 /** Re-fetches a link's title/description/preview image, e.g. for the hover preview. */
 export const refreshPreview = (userId: string, data: z.infer<typeof idInput>) =>
 	Effect.gen(function* () {
-		const { bookmark, board } = yield* accessBookmark(userId, data.id);
-		if (bookmark.kind === "folder") return bookmark;
+		const { bookmark, board } = yield* accessBookmark(userId, data.id, {
+			write: true,
+		});
+		if (
+			bookmark.kind === "folder" ||
+			board.vault ||
+			bookmark.incognito ||
+			bookmark.meta.sealed
+		)
+			return bookmark;
 		const meta = yield* fetchPageMetadata(bookmark.url);
 		yield* Effect.forkDetach(
 			afterFetch(
@@ -2155,20 +2244,22 @@ export const refreshPreview = (userId: string, data: z.infer<typeof idInput>) =>
 
 export const recordVisit = (userId: string, data: z.infer<typeof idInput>) =>
 	accessBookmark(userId, data.id).pipe(
-		Effect.flatMap(({ bookmark }) =>
-			query((db) =>
-				db.batch([
-					db
-						.update(bookmarks)
-						.set({
-							visitCount: sql`${bookmarks.visitCount} + 1`,
-							lastVisitedAt: new Date(),
-							updatedAt: sql`${bookmarks.updatedAt}`,
-						})
-						.where(eq(bookmarks.id, bookmark.id)),
-					db.insert(visits).values({ userId, bookmarkId: bookmark.id }),
-				]),
-			),
+		Effect.flatMap(({ bookmark, board }) =>
+			board.vault || bookmark.incognito
+				? Effect.void
+				: query((db) =>
+						db.batch([
+							db
+								.update(bookmarks)
+								.set({
+									visitCount: sql`${bookmarks.visitCount} + 1`,
+									lastVisitedAt: new Date(),
+									updatedAt: sql`${bookmarks.updatedAt}`,
+								})
+								.where(eq(bookmarks.id, bookmark.id)),
+							db.insert(visits).values({ userId, bookmarkId: bookmark.id }),
+						]),
+					),
 		),
 		Effect.as({ ok: true }),
 	);
@@ -2457,11 +2548,12 @@ export const listDuplicates = (userId: string) =>
 	libraryLinks(userId).pipe(
 		Effect.map((links) => {
 			const byKey = new Map<string, typeof links>();
-			for (const link of links)
-				byKey.set(canonicalUrl(link.url), [
-					...(byKey.get(canonicalUrl(link.url)) ?? []),
-					link,
-				]);
+			for (const link of links) {
+				const key = canonicalUrl(link.url);
+				const list = byKey.get(key);
+				if (list) list.push(link);
+				else byKey.set(key, [link]);
+			}
 			return [...byKey.entries()]
 				.filter(([, items]) => items.length > 1)
 				.map(([key, items]) => ({
@@ -2506,13 +2598,28 @@ const boardOfRow = (snap: Snapshot) =>
 		return row[0]?.boardId ?? null;
 	});
 
+/** Destination board of a snapshot's restored values (if it moves the row). */
+const targetBoardOfSnapshot = (snap: Snapshot) =>
+	Effect.gen(function* () {
+		if (snap.table === "groups" && typeof snap.values.boardId === "string")
+			return snap.values.boardId;
+		if (snap.table === "bookmarks" && typeof snap.values.groupId === "string") {
+			const groupId = snap.values.groupId;
+			const row = yield* query((db) =>
+				db.query.groups.findFirst({ where: eq(groups.id, groupId) }),
+			);
+			return row?.boardId ?? null;
+		}
+		return null;
+	});
+
 const applySnapshots = (userId: string, snapshots: Snapshot[]) =>
 	Effect.gen(function* () {
 		const allowed = new Map<string, boolean>();
-		for (const snap of [...snapshots].reverse()) {
-			const boardId = yield* boardOfRow(snap);
-			if (!boardId) continue;
-			if (!allowed.has(boardId)) {
+		const canWrite = (boardId: string) =>
+			Effect.gen(function* () {
+				const cached = allowed.get(boardId);
+				if (cached !== undefined) return cached;
 				const ok = yield* accessBoard(userId, boardId, {
 					write: true,
 					includeDeleted: true,
@@ -2521,16 +2628,33 @@ const applySnapshots = (userId: string, snapshots: Snapshot[]) =>
 					Effect.catch(() => Effect.succeed(false)),
 				);
 				allowed.set(boardId, ok);
-			}
-			if (!allowed.get(boardId)) continue;
-			const table = tableOf[snap.table];
-			yield* query((db) =>
-				db
-					.update(table)
-					.set(restoreValues(snap.values))
-					.where(eq(table.id, snap.id)),
-			);
+				return ok;
+			});
+		const permitted: Snapshot[] = [];
+		for (const snap of [...snapshots].reverse()) {
+			const boardId = yield* boardOfRow(snap);
+			if (!boardId || !(yield* canWrite(boardId))) continue;
+			const targetBoardId = yield* targetBoardOfSnapshot(snap);
+			if (
+				targetBoardId &&
+				targetBoardId !== boardId &&
+				!(yield* canWrite(targetBoardId))
+			)
+				continue;
+			permitted.push(snap);
 		}
+		if (permitted.length === 0) return;
+		yield* query((db) =>
+			db.transaction(async (tx) => {
+				for (const snap of permitted) {
+					const table = tableOf[snap.table];
+					await tx
+						.update(table)
+						.set(restoreValues(snap.values))
+						.where(eq(table.id, snap.id));
+				}
+			}),
+		);
 	});
 
 export const activityInput = z.object({

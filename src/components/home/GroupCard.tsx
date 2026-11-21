@@ -15,7 +15,7 @@ import {
 	Settings2,
 	Sparkles,
 } from "lucide-react";
-import { Suspense, useMemo, useRef, useState } from "react";
+import { memo, Suspense, useMemo, useRef, useState } from "react";
 import { cn } from "#/lib/cn";
 import { useHomeAction } from "#/lib/home-query";
 import {
@@ -31,13 +31,13 @@ import { useStableIds } from "#/lib/stable";
 import { updateGroup } from "#/server/home";
 import { BookmarkTile, TileBody } from "./BookmarkTile";
 import { useHomeContext } from "./context";
-import { type HomeGroup, linksIn } from "./types";
+import { type HomeGroup, linksIn, patchGroup } from "./types";
 import { WidgetFrame } from "./widgets/loaders";
 
 type Props = {
 	group: HomeGroup;
 	layout: BoardLayout;
-	onToggle: () => void;
+	onToggle: (id: string, collapsed: boolean) => void;
 };
 
 export const gridFor = (style: TileStyle, size: BoardLayout["tileSize"]) => {
@@ -76,7 +76,11 @@ const WIDTH_LABEL: Record<string, string> = {
 	"1": "Full",
 };
 
-export function GroupCard({ group, layout, onToggle }: Props) {
+export const GroupCard = memo(function GroupCard({
+	group,
+	layout,
+	onToggle,
+}: Props) {
 	const { editing, openDialog, openAll, boards, readOnly } = useHomeContext();
 	const smart = group.kind === "smart" ? group.options.smart : undefined;
 	const widget = group.kind === "widget" ? group.options.widget : undefined;
@@ -93,17 +97,13 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		: groupFraction(group.options, layout.columns);
 	const card = useRef<HTMLElement | null>(null);
 	const resize = useHomeAction(updateGroup, {
-		optimistic: (data, input) => ({
-			...data,
-			boards: data.boards.map((board) => ({
-				...board,
-				groups: board.groups.map((g) =>
-					g.id === input.id && input.options
-						? { ...g, options: { ...g.options, ...input.options } }
-						: g,
-				),
-			})),
-		}),
+		optimistic: (data, input) =>
+			input.options
+				? patchGroup(data, input.id, (g) => ({
+						...g,
+						options: { ...g.options, ...input.options },
+					}))
+				: data,
 	});
 	const startResize = (event: React.PointerEvent) => {
 		const node = card.current;
@@ -140,7 +140,11 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 		id: `drop:${group.id}`,
 		data: { type: "drop", groupId: group.id },
 	});
-	const links = smart ? smartLinks : linksIn(group.bookmarks);
+	const ownLinks = useMemo(
+		() => (smart || widget ? [] : linksIn(group.bookmarks)),
+		[smart, widget, group.bookmarks],
+	);
+	const links = smart ? smartLinks : ownLinks;
 	const total = links.length;
 	const square = style === "tile" || style === "icon";
 
@@ -277,7 +281,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 							type="button"
 							className="icon-btn size-7 pointer-coarse:size-9"
 							aria-label={group.collapsed ? "Expand" : "Collapse"}
-							onClick={onToggle}
+							onClick={() => onToggle(group.id, !group.collapsed)}
 						>
 							<ChevronDown
 								className={cn(
@@ -370,7 +374,7 @@ export function GroupCard({ group, layout, onToggle }: Props) {
 			)}
 		</section>
 	);
-}
+});
 
 /** The group's name; click it to rename in place (Enter saves, Escape cancels). */
 function GroupName({
@@ -382,15 +386,11 @@ function GroupName({
 }) {
 	const [draft, setDraft] = useState<string | null>(null);
 	const rename = useHomeAction(updateGroup, {
-		optimistic: (data, input) => ({
-			...data,
-			boards: data.boards.map((board) => ({
-				...board,
-				groups: board.groups.map((g) =>
-					g.id === input.id ? { ...g, name: input.name ?? g.name } : g,
-				),
+		optimistic: (data, input) =>
+			patchGroup(data, input.id, (g) => ({
+				...g,
+				name: input.name ?? g.name,
 			})),
-		}),
 	});
 	const save = () => {
 		const name = draft?.trim();
@@ -401,7 +401,6 @@ function GroupName({
 	if (draft !== null)
 		return (
 			<input
-				// biome-ignore lint/a11y/noAutofocus: opened by clicking the name
 				autoFocus
 				value={draft}
 				onChange={(event) => setDraft(event.target.value)}

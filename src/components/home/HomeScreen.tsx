@@ -40,7 +40,7 @@ import {
 } from "#/lib/incognito";
 import { lazyNamed, whenIdle } from "#/lib/lazy";
 import { showLeaving } from "#/lib/leaving";
-import { BACKGROUNDS, type GradientKey } from "#/lib/preferences";
+import { BACKGROUNDS, type GradientKey, sanitizeCss } from "#/lib/preferences";
 import {
 	activeProfileOf,
 	inProfile,
@@ -72,18 +72,17 @@ import { Backdrop } from "./Backdrop";
 import { BoardGrid } from "./BoardGrid";
 import { Clock } from "./Clock";
 import { HomeContext, TileContext } from "./context";
-import { ReportBanner } from "./MonthlyReport";
 import { ProfileSwitcher } from "./ProfileSwitcher";
 import { Rediscover } from "./Rediscover";
+import { ReportBanner } from "./ReportBanner";
 import { SearchBar } from "./SearchBar";
 import { TopSites } from "./TopSites";
 import {
 	type DialogState,
 	type HomeBoard,
-	type HomeGroup,
 	isLinksGroup,
 	type LinkItem,
-	mapTree,
+	patchBookmark,
 	type TreeItem,
 	targetUrl,
 } from "./types";
@@ -240,16 +239,14 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	// (tabs, search, ⌘K, top sites, widgets) works on those.
 	const profiles = useMemo(() => profileList(home.profiles), [home.profiles]);
 	const profile = activeProfileOf(profiles, home.settings.activeProfileId);
-	const data = useMemo(
-		() => ({
-			...home,
-			boards: home.boards.filter((b) => inProfile(b, profile.id, profiles)),
-		}),
-		[home, profile.id, profiles],
+	// Filter boards on `home.boards` (not `home`) so settings tweaks don't rebuild the board list.
+	const boards = useMemo(
+		() => home.boards.filter((b) => inProfile(b, profile.id, profiles)),
+		[home.boards, profile.id, profiles],
 	);
 	const queryClient = useQueryClient();
 	const vaultKeyReady = useVaultKeyReady();
-	const { settings, boards, vault } = data;
+	const { settings, vault } = home;
 	const [now, setNow] = useState(() => Date.now());
 	// A scheduled board takes over during its window unless you pick another.
 	const scheduledId = scheduledBoardId(boards, now, settings.timeZone);
@@ -262,13 +259,22 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		boards.find((b) => b.id === settings.profileBoards[profile.id]) ??
 		boards.find((b) => !b.vault) ??
 		boards[0];
-	// The board on screen: fetch its widgets' code now, all at once, rather
-	// than as the page reaches each one (no-op on the server and once loaded).
-	preloadWidgetCode(
-		board?.groups.flatMap((g) =>
-			g.options.widget ? [g.options.widget.type] : [],
-		) ?? [],
+	const firstLinksGroup = useMemo(
+		() => board?.groups.find(isLinksGroup),
+		[board],
 	);
+	// The board on screen: fetch its widgets' code after render, all at once.
+	const currentBoardWidgets = useMemo(
+		() =>
+			board?.groups
+				.flatMap((g) => (g.options.widget ? [g.options.widget.type] : []))
+				.sort()
+				.join(",") ?? "",
+		[board],
+	);
+	useEffect(() => {
+		if (currentBoardWidgets) preloadWidgetCode(currentBoardWidgets.split(","));
+	}, [currentBoardWidgets]);
 	const [editingState, setEditing] = useState(false);
 	const readOnly = board?.role === "viewer";
 	const editing = editingState && !readOnly;
@@ -309,10 +315,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		startVaultSync();
 		const refresh = () => queryClient.invalidateQueries({ queryKey: homeKey });
 		const resume = () =>
-			resumeVault(data.userId).then((reopened) => {
+			resumeVault(home.userId).then((reopened) => {
 				if (reopened) void refresh();
 			});
-		if (data.vault.configured && !data.vault.unlocked) void resume();
+		if (home.vault.configured && !home.vault.unlocked) void resume();
 		const onShow = (event: PageTransitionEvent) => event.persisted && resume();
 		window.addEventListener("tabz:vault-locked", refresh);
 		window.addEventListener("pageshow", onShow);
@@ -405,34 +411,35 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	// Fetch the common dialogs in the background so they open instantly.
+	// Preload only ⌘K in the background (when not on Save-Data); other dialogs
+	// preload on hover/focus of their trigger buttons, avoiding ~200 KB of idle downloads.
 	useEffect(() => {
+		const conn = (
+			navigator as Navigator & { connection?: { saveData?: boolean } }
+		).connection;
+		if (conn?.saveData) return;
 		whenIdle(() => {
 			CommandPalette.preload();
-			BookmarkDialog.preload();
-			FolderDialog.preload();
-			SettingsPanel.preload();
-			GroupDialog.preload();
-			BoardDialog.preload();
-			NewFolderDialog.preload();
-			BulkAddDialog.preload();
-			ShortcutsDialog.preload();
 			if (vault.configured) VaultUnlockDialog.preload();
 		});
 	}, [vault.configured]);
 
 	// Widgets used on any board load in the background, so switching boards is instant.
-	const widgetTypes = [
-		...new Set(
-			home.boards.flatMap((b) =>
-				b.groups.flatMap((g) =>
-					g.options.widget ? [g.options.widget.type] : [],
+	const widgetTypes = useMemo(
+		() =>
+			[
+				...new Set(
+					home.boards.flatMap((b) =>
+						b.groups.flatMap((g) =>
+							g.options.widget ? [g.options.widget.type] : [],
+						),
+					),
 				),
-			),
-		),
-	]
-		.sort()
-		.join(",");
+			]
+				.sort()
+				.join(","),
+		[home.boards],
+	);
 	useEffect(() => {
 		if (!widgetTypes) return;
 		whenIdle(() => preloadWidgetCode(widgetTypes.split(",")), 5000);
@@ -548,16 +555,38 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 		return () => window.removeEventListener("keydown", onKey);
 	}, [profiles.length, cycleProfile]);
 
-	// Re-check schedules every half minute, only if any board has one.
+	// Re-check schedules and vault countdown every half minute (single timer, paused while hidden).
 	const hasSchedules =
 		boards.some((b) => b.layout.schedule) ||
 		settings.focus.enabled ||
 		Boolean(settings.focus.until);
+	const needsClockTick =
+		hasSchedules || (vault.unlocked && Boolean(vault.expiresAt));
 	useEffect(() => {
-		if (!hasSchedules) return;
-		const tick = setInterval(() => setNow(Date.now()), 30_000);
-		return () => clearInterval(tick);
-	}, [hasSchedules]);
+		if (!needsClockTick) return;
+		let tick: ReturnType<typeof setInterval> | null = null;
+		const start = () => {
+			if (tick !== null || document.hidden) return;
+			setNow(Date.now());
+			tick = setInterval(() => setNow(Date.now()), 30_000);
+		};
+		const stop = () => {
+			if (tick !== null) {
+				clearInterval(tick);
+				tick = null;
+			}
+		};
+		const onVisibility = () => {
+			if (document.hidden) stop();
+			else start();
+		};
+		start();
+		document.addEventListener("visibilitychange", onVisibility);
+		return () => {
+			stop();
+			document.removeEventListener("visibilitychange", onVisibility);
+		};
+	}, [needsClockTick]);
 
 	// Remember the browser's time zone so schedules also apply while rendering on the server.
 	useEffect(() => {
@@ -704,11 +733,11 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					?.querySelector<HTMLButtonElement>('button[aria-label^="Edit "]')
 					?.click();
 			} else if (event.key === "e") setEditing((value) => !value);
-			else if (event.key === "n" && board?.groups.find(isLinksGroup)) {
+			else if (event.key === "n" && firstLinksGroup) {
 				event.preventDefault();
 				setDialog({
 					type: "bookmark",
-					groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+					groupId: firstLinksGroup.id,
 				});
 			} else if (/^[1-9]$/.test(event.key)) {
 				// The nth tile on this board, as if clicked.
@@ -731,6 +760,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	}, [
 		board,
 		boards,
+		firstLinksGroup,
 		dialog,
 		paletteOpen,
 		selectBoard,
@@ -744,19 +774,15 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 	// Auto-lock: the cookie expires server-side; drop the boards client-side at the same moment.
 	useEffect(() => {
 		if (!vault.unlocked || !vault.expiresAt) return;
-		setNow(Date.now());
-		const tick = setInterval(() => setNow(Date.now()), 30_000);
 		const timer = setTimeout(
 			() => lockVault(),
 			Math.max(0, vault.expiresAt - Date.now()),
 		);
-		return () => {
-			clearInterval(tick);
-			clearTimeout(timer);
-		};
+		return () => clearTimeout(timer);
 	}, [vault.unlocked, vault.expiresAt, lockVault]);
 
-	// Every link with where it lives ("Group / Folder / Subfolder"), in one walk.
+	// Every non-vault link with where it lives ("Group / Folder / Subfolder"), in one walk.
+	// Vault links stay out of SearchBar and TopSites.
 	const links = useMemo(() => {
 		const out: { bookmark: LinkItem; group: string }[] = [];
 		const walk = (items: TreeItem[], where: string) => {
@@ -765,17 +791,36 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 					walk(item.children, `${where} / ${item.title}`);
 				else out.push({ bookmark: item, group: where });
 		};
-		for (const b of boards)
+		for (const b of boards) {
+			if (b.vault) continue;
 			for (const group of b.groups) walk(group.bookmarks, group.name);
+		}
 		return out;
 	}, [boards]);
 	const linkItems = useMemo(
 		() => links.map((entry) => entry.bookmark),
 		[links],
 	);
+	const vaultLinkIds = useMemo(() => {
+		const ids = new Set<string>();
+		if (!vault.unlocked) return ids;
+		const walk = (items: TreeItem[]) => {
+			for (const item of items) {
+				ids.add(item.id);
+				if (item.children.length) walk(item.children);
+			}
+		};
+		for (const b of boards) {
+			if (!b.vault) continue;
+			for (const group of b.groups) walk(group.bookmarks);
+		}
+		return ids;
+	}, [boards, vault.unlocked]);
 
 	const onVisit = useCallback(
 		(bookmark: LinkItem, options?: { leaving?: boolean }) => {
+			// Vault and sealed links never record visits on the server.
+			if (bookmark.meta.sealed || vaultLinkIds.has(bookmark.id)) return;
 			// Visit counts power search ranking and the most-visited strip. A beacon
 			// survives this page unloading, however fast the next one arrives.
 			const sent = navigator.sendBeacon?.(
@@ -787,31 +832,17 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			if (!sent) run(call(recordVisit, { id: bookmark.id })).catch(() => {});
 			// This tab is leaving: don't spend the moment re-rendering everything.
 			if (options?.leaving) return;
-			// Clear "new posts" badges right away when the link opens in another tab.
-			const visited = <T extends LinkItem>(item: T): T =>
-				item.id === bookmark.id
-					? {
-							...item,
-							visitCount: item.visitCount + 1,
+			// Clear "new posts" badges right away without churning untouched boards/groups.
+			queryClient.setQueryData<HomeData>(homeKey, (current) =>
+				current
+					? patchBookmark(current, bookmark.id, {
+							visitCount: bookmark.visitCount + 1,
 							lastVisitedAt: new Date(),
-						}
-					: item;
-			queryClient.setQueryData<HomeData>(homeKey, (data) =>
-				data
-					? {
-							...data,
-							boards: data.boards.map((b) => ({
-								...b,
-								groups: b.groups.map((g) => ({
-									...g,
-									bookmarks: mapTree(g.bookmarks, visited),
-								})),
-							})),
-						}
-					: data,
+						})
+					: current,
 			);
 		},
-		[queryClient],
+		[queryClient, vaultLinkIds],
 	);
 
 	// Folders that are private themselves or sit inside a private folder.
@@ -846,17 +877,19 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	const openLink = useCallback(
 		(bookmark: LinkItem, options?: { newTab?: boolean }) => {
+			const url = targetUrl(bookmark);
+			if (!url) return;
 			// Private links skip visit tracking so they never surface in "most visited".
 			if (isIncognito(bookmark)) {
-				openIncognito([bookmark.url]);
+				openIncognito([url]);
 				return;
 			}
 			const newTab = options?.newTab || settings.openInNewTab;
 			onVisit(bookmark, { leaving: !newTab });
-			if (newTab) window.open(targetUrl(bookmark), "_blank", "noopener");
+			if (newTab) window.open(url, "_blank", "noopener");
 			else {
 				showLeaving();
-				window.location.assign(targetUrl(bookmark));
+				window.location.assign(url);
 			}
 		},
 		[isIncognito, onVisit, settings.openInNewTab],
@@ -864,8 +897,14 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	const openAll = useCallback(
 		(bookmarks: LinkItem[]) => {
-			const privateUrls = bookmarks.filter(isIncognito).map(targetUrl);
-			const urls = bookmarks.filter((b) => !isIncognito(b)).map(targetUrl);
+			const privateUrls = bookmarks
+				.filter(isIncognito)
+				.map(targetUrl)
+				.filter(Boolean);
+			const urls = bookmarks
+				.filter((b) => !isIncognito(b))
+				.map(targetUrl)
+				.filter(Boolean);
 			if (privateUrls.length) openIncognito(privateUrls);
 			if (urls.length) openTabs(urls);
 		},
@@ -904,9 +943,14 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 
 	const starterBoard = useHomeAction(createBoard);
 
+	const inVault = Boolean(board?.vault);
 	const tileContext = useMemo(
 		() => ({
-			settings,
+			feedBadges: settings.feedBadges,
+			tilt: settings.tilt,
+			openInNewTab: settings.openInNewTab,
+			linkPreviews: settings.linkPreviews,
+			inVault,
 			editing,
 			openDialog: setDialog,
 			onVisit,
@@ -914,7 +958,18 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			openLink,
 			readOnly,
 		}),
-		[settings, editing, onVisit, isIncognito, openLink, readOnly],
+		[
+			settings.feedBadges,
+			settings.tilt,
+			settings.openInNewTab,
+			settings.linkPreviews,
+			inVault,
+			editing,
+			onVisit,
+			isIncognito,
+			openLink,
+			readOnly,
+		],
 	);
 
 	// A profile whose boards all moved elsewhere.
@@ -956,8 +1011,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 			<TileContext.Provider value={tileContext}>
 				<div className="relative min-h-dvh" data-board={board.name}>
 					{settings.customCss && (
-						// User-authored styles for their own page; can't close the tag.
-						<style>{settings.customCss.replace(/<\/?\s*style/gi, "")}</style>
+						<style>{sanitizeCss(settings.customCss)}</style>
 					)}
 					<Backdrop background={settings.background} />
 
@@ -971,10 +1025,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							<Logo className="mr-2 hidden text-base sm:inline-flex" />
 							{profiles.length > 1 && <ProfileSwitcher />}
 							<nav className="glass flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]">
-								{[
-									...boards.filter((b) => !b.vault),
-									...boards.filter((b) => b.vault),
-								].map((b: HomeBoard, index, list) => (
+								{tabOrder.map((b: HomeBoard, index, list) => (
 									<button
 										key={b.id}
 										type="button"
@@ -1019,6 +1070,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									type="button"
 									className="icon-btn size-8"
 									aria-label="New board"
+									onMouseEnter={() => void BoardDialog.preload()}
 									onClick={() => setDialog({ type: "board" })}
 								>
 									<Plus className="size-4" />
@@ -1077,13 +1129,13 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									className="icon-btn"
 									aria-label="Add bookmark"
 									title="Add bookmark (N)"
-									disabled={readOnly || !board.groups.find(isLinksGroup)}
+									disabled={readOnly || !firstLinksGroup}
+									onMouseEnter={() => void BookmarkDialog.preload()}
 									onClick={() =>
-										board.groups.find(isLinksGroup) &&
+										firstLinksGroup &&
 										setDialog({
 											type: "bookmark",
-											groupId: (board.groups.find(isLinksGroup) as HomeGroup)
-												.id,
+											groupId: firstLinksGroup.id,
 										})
 									}
 								>
@@ -1094,6 +1146,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									className="icon-btn"
 									aria-label="Customize"
 									title="Customize"
+									onMouseEnter={() => void SettingsPanel.preload()}
 									onClick={() => setDialog({ type: "settings" })}
 								>
 									<SlidersHorizontal className="size-4" />
@@ -1137,7 +1190,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 									openInNewTab={settings.openInNewTab}
 								/>
 							)}
-							<TopSites links={linkItems} />
+							{settings.showTopSites && <TopSites links={linkItems} />}
 							<ReportBanner
 								onOpen={(month) => setDialog({ type: "report", month })}
 							/>
@@ -1194,10 +1247,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 						vaultUnlocked={vault.unlocked}
 						onSearch={() => setPaletteOpen(true)}
 						onAdd={() =>
-							board.groups.find(isLinksGroup) &&
+							firstLinksGroup &&
 							setDialog({
 								type: "bookmark",
-								groupId: (board.groups.find(isLinksGroup) as HomeGroup).id,
+								groupId: firstLinksGroup.id,
 							})
 						}
 						onEdit={() => setEditing((value) => !value)}
@@ -1224,7 +1277,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								onLockVault={vault.unlocked ? () => lockVault() : undefined}
 								onUndo={() => undoLast()}
 								initialQuery={paletteQuery}
-								aiEnabled={data.features.ai}
+								aiEnabled={home.features.ai}
 							/>
 						)}
 
@@ -1261,13 +1314,10 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 							<MonthlyReportDialog month={dialog.month} onClose={close} />
 						)}
 						{dialog?.type === "bulk-add" &&
-							(dialog.groupId ?? board.groups.find(isLinksGroup)?.id) && (
+							(dialog.groupId ?? firstLinksGroup?.id) && (
 								<BulkAddDialog
 									boards={boards}
-									groupId={
-										(dialog.groupId ??
-											board.groups.find(isLinksGroup)?.id) as string
-									}
+									groupId={(dialog.groupId ?? firstLinksGroup?.id) as string}
 									initialText={dialog.text}
 									festive={settings.celebrate}
 									onClose={close}
@@ -1306,7 +1356,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 											.length > 1)
 								}
 								vaultUnlocked={vault.unlocked}
-								userId={data.userId}
+								userId={home.userId}
 								onClose={close}
 							/>
 						)}
@@ -1326,7 +1376,7 @@ export function HomeScreen({ session }: { session: SessionInfo }) {
 								board={board}
 								boards={boards}
 								session={session}
-								aiAvailable={data.features.ai}
+								aiAvailable={home.features.ai}
 								initialTab={dialog.tab}
 								onClose={close}
 							/>

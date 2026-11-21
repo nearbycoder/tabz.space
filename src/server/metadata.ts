@@ -29,8 +29,11 @@ for (const [network, prefix] of [
 	["169.254.0.0", 16],
 	["172.16.0.0", 12],
 	["192.0.0.0", 24],
+	["192.0.2.0", 24],
 	["192.168.0.0", 16],
 	["198.18.0.0", 15],
+	["198.51.100.0", 24],
+	["203.0.113.0", 24],
 	["224.0.0.0", 4],
 	["240.0.0.0", 4],
 ] as const)
@@ -38,8 +41,13 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
 	["::", 128],
 	["::1", 128],
+	["::ffff:0:0:0", 96],
 	["64:ff9b::", 96],
+	["64:ff9b:1::", 48],
 	["100::", 64],
+	["2001::", 32],
+	["2001:db8::", 32],
+	["2002::", 16],
 	["fc00::", 7],
 	["fe80::", 10],
 	["ff00::", 8],
@@ -88,13 +96,27 @@ export const publicFetch = (url: URL | string, init: RequestInit = {}) =>
 export const assertPublicHost = (url: URL) =>
 	Effect.tryPromise({
 		try: async () => {
-			const host = url.hostname.replace(/^\[|\]$/g, "");
-			if (host === "localhost" || host.endsWith(".internal"))
+			if (url.protocol !== "http:" && url.protocol !== "https:")
+				throw new Error("unsupported protocol");
+			const host = url.hostname
+				.replace(/^\[|\]$/g, "")
+				.replace(/\.+$/, "")
+				.toLowerCase();
+			if (
+				!host ||
+				host === "localhost" ||
+				host.endsWith(".localhost") ||
+				host.endsWith(".internal") ||
+				host.endsWith(".local")
+			)
 				throw new Error("private host");
 			const addresses = isIP(host)
 				? [{ address: host }]
 				: await lookup(host, { all: true });
-			if (addresses.some(({ address }) => isPrivateAddress(address)))
+			if (
+				addresses.length === 0 ||
+				addresses.some(({ address }) => isPrivateAddress(address))
+			)
 				throw new Error("private address");
 		},
 		catch: (error) =>
@@ -109,8 +131,11 @@ const readLimited = async (response: Response, max = MAX_BYTES) => {
 	while (size < max) {
 		const { done, value } = await reader.read();
 		if (done) break;
-		chunks.push(value);
-		size += value.byteLength;
+		const remaining = max - size;
+		const slice =
+			value.byteLength > remaining ? value.subarray(0, remaining) : value;
+		chunks.push(slice);
+		size += slice.byteLength;
 	}
 	await reader.cancel().catch(() => {});
 	return new TextDecoder().decode(Buffer.concat(chunks));
@@ -158,7 +183,21 @@ const follow = (
 				permanent =
 					(permanent ?? true) &&
 					(response.status === 301 || response.status === 308);
-				url = new URL(location, url);
+				let next: URL;
+				try {
+					next = new URL(location, url);
+				} catch {
+					return yield* new FetchError({
+						url: url.toString(),
+						reason: "invalid redirect",
+					});
+				}
+				if (next.protocol !== "http:" && next.protocol !== "https:")
+					return yield* new FetchError({
+						url: url.toString(),
+						reason: "unsupported redirect protocol",
+					});
+				url = next;
 				continue;
 			}
 			return { url, response, permanent: permanent === true };
@@ -220,11 +259,13 @@ export const fetchText = (
 ) =>
 	Effect.gen(function* () {
 		const { url, response } = yield* follow(start, accept);
-		if (!response.ok)
+		if (!response.ok) {
+			response.body?.cancel().catch(() => {});
 			return yield* new FetchError({
 				url: url.toString(),
 				reason: `HTTP ${response.status}`,
 			});
+		}
 		if (!accepts.test(response.headers.get("content-type") ?? "")) {
 			response.body?.cancel().catch(() => {});
 			return { url, body: "" };
@@ -412,7 +453,10 @@ export const parseFeed = (xml: string, base: URL) => {
 			tagText(block, "link");
 		let url: string | undefined;
 		try {
-			url = href ? new URL(href, base).toString() : undefined;
+			if (href) {
+				const parsed = new URL(href, base);
+				if (/^https?:$/i.test(parsed.protocol)) url = parsed.toString();
+			}
 		} catch {
 			url = undefined;
 		}

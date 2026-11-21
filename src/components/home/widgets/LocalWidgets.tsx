@@ -211,6 +211,7 @@ export function PomodoroWidget({
 	});
 	const [now, setNow] = useState(Date.now());
 	const ring = useRef<HTMLDivElement>(null);
+	const hydrated = useRef(false);
 
 	useEffect(() => {
 		try {
@@ -219,15 +220,36 @@ export function PomodoroWidget({
 			) as TimerState | null;
 			if (saved) setState(saved);
 		} catch {}
+		hydrated.current = true;
 	}, [key]);
-	useEffect(
-		() => localStorage.setItem(key, JSON.stringify(state)),
-		[key, state],
-	);
+	useEffect(() => {
+		if (!hydrated.current) return;
+		localStorage.setItem(key, JSON.stringify(state));
+	}, [key, state]);
 	useEffect(() => {
 		if (!state.endsAt) return;
-		const tick = setInterval(() => setNow(Date.now()), 250);
-		return () => clearInterval(tick);
+		let tick: ReturnType<typeof setInterval> | null = null;
+		const start = () => {
+			if (tick !== null || document.hidden) return;
+			setNow(Date.now());
+			tick = setInterval(() => setNow(Date.now()), 1000);
+		};
+		const stop = () => {
+			if (tick !== null) {
+				clearInterval(tick);
+				tick = null;
+			}
+		};
+		const onVisibility = () => {
+			if (document.hidden) stop();
+			else start();
+		};
+		start();
+		document.addEventListener("visibilitychange", onVisibility);
+		return () => {
+			stop();
+			document.removeEventListener("visibilitychange", onVisibility);
+		};
 	}, [state.endsAt]);
 
 	const left = state.endsAt ? Math.max(0, state.endsAt - now) : state.remaining;
@@ -237,12 +259,12 @@ export function PomodoroWidget({
 		if (!state.endsAt || left > 0) return;
 		const finished = state.mode;
 		const mode = finished === "work" ? "rest" : "work";
-		setState({
+		setState((prev) => ({
 			mode,
 			endsAt: null,
-			remaining: length(mode),
-			rounds: state.rounds + (finished === "work" ? 1 : 0),
-		});
+			remaining: (mode === "work" ? widget.work : widget.rest) * 60_000,
+			rounds: prev.rounds + (finished === "work" ? 1 : 0),
+		}));
 		chime();
 		if (finished === "work" && settings.celebrate) celebrate(ring.current);
 		if ("Notification" in window && Notification.permission === "granted")
@@ -255,7 +277,14 @@ export function PomodoroWidget({
 							: "Back to it!",
 				},
 			);
-	});
+	}, [
+		left,
+		settings.celebrate,
+		state.endsAt,
+		state.mode,
+		widget.rest,
+		widget.work,
+	]);
 
 	const start = () => {
 		if ("Notification" in window && Notification.permission === "default")

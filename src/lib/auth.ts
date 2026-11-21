@@ -37,7 +37,9 @@ export const enabledProviders = { github: Boolean(github) };
 export const auth = betterAuth({
 	secret,
 	baseURL: baseUrl,
-	trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(","),
+	trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",")
+		.map((origin) => origin.trim())
+		.filter(Boolean),
 	database: drizzleAdapter(db, { provider: "sqlite", schema: authSchema }),
 	// The JWT plugin's session-to-JWT endpoint isn't needed; MCP tokens come from /oauth2/token.
 	disabledPaths: ["/token"],

@@ -67,91 +67,80 @@ export const monthlyReport = (
 		const { start, end, days } = monthRange(data.month, zone);
 		const before = monthRange(previousMonth(data.month), zone);
 
-		const monthVisits = yield* query((db) =>
-			db
-				.select({
-					at: visits.at,
-					bookmarkId: visits.bookmarkId,
-					title: bookmarks.title,
-					url: bookmarks.url,
-					meta: bookmarks.meta,
-				})
-				.from(visits)
-				.innerJoin(bookmarks, eq(bookmarks.id, visits.bookmarkId))
-				.innerJoin(groups, eq(groups.id, bookmarks.groupId))
-				.innerJoin(boards, eq(boards.id, groups.boardId))
-				.where(
-					and(
-						eq(visits.userId, userId),
-						gte(visits.at, start),
-						lt(visits.at, end),
-						visibleLink(userId),
+		const [monthVisits, previousVisits, added, actions, library] = yield* query(
+			(db) =>
+				Promise.all([
+					db
+						.select({
+							at: visits.at,
+							bookmarkId: visits.bookmarkId,
+							title: bookmarks.title,
+							url: bookmarks.url,
+							meta: bookmarks.meta,
+						})
+						.from(visits)
+						.innerJoin(bookmarks, eq(bookmarks.id, visits.bookmarkId))
+						.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+						.innerJoin(boards, eq(boards.id, groups.boardId))
+						.where(
+							and(
+								eq(visits.userId, userId),
+								gte(visits.at, start),
+								lt(visits.at, end),
+								visibleLink(userId),
+							),
+						),
+					db.$count(
+						visits,
+						and(
+							eq(visits.userId, userId),
+							gte(visits.at, before.start),
+							lt(visits.at, before.end),
+						),
 					),
-				),
-		);
-		const previousVisits = yield* query((db) =>
-			db.$count(
-				visits,
-				and(
-					eq(visits.userId, userId),
-					gte(visits.at, before.start),
-					lt(visits.at, before.end),
-				),
-			),
-		);
-		const added = yield* query((db) =>
-			db
-				.select({ url: bookmarks.url })
-				.from(bookmarks)
-				.innerJoin(groups, eq(groups.id, bookmarks.groupId))
-				.innerJoin(boards, eq(boards.id, groups.boardId))
-				.where(
-					and(
-						eq(bookmarks.kind, "link"),
-						gte(bookmarks.createdAt, start),
-						lt(bookmarks.createdAt, end),
-						visibleLink(userId),
-					),
-				),
-		);
-		const actions = yield* query((db) =>
-			db
-				.select({ action: activity.action, count: sql<number>`count(*)` })
-				.from(activity)
-				.where(
-					and(
-						eq(activity.userId, userId),
-						isNull(activity.vaultSlot),
-						gte(activity.createdAt, start),
-						lt(activity.createdAt, end),
-					),
-				)
-				.groupBy(activity.action),
-		);
-		const library = yield* query((db) =>
-			db
-				.select({
-					links: sql<number>`count(*)`,
-					broken: sql<number>`sum(case when json_extract(${bookmarks.meta}, '$.health.status') = 'broken' then 1 else 0 end)`,
-				})
-				.from(bookmarks)
-				.innerJoin(groups, eq(groups.id, bookmarks.groupId))
-				.innerJoin(boards, eq(boards.id, groups.boardId))
-				.where(and(eq(bookmarks.kind, "link"), visibleLink(userId))),
+					db
+						.select({ url: bookmarks.url })
+						.from(bookmarks)
+						.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+						.innerJoin(boards, eq(boards.id, groups.boardId))
+						.where(
+							and(
+								eq(bookmarks.kind, "link"),
+								gte(bookmarks.createdAt, start),
+								lt(bookmarks.createdAt, end),
+								visibleLink(userId),
+							),
+						),
+					db
+						.select({ action: activity.action, count: sql<number>`count(*)` })
+						.from(activity)
+						.where(
+							and(
+								eq(activity.userId, userId),
+								isNull(activity.vaultSlot),
+								gte(activity.createdAt, start),
+								lt(activity.createdAt, end),
+							),
+						)
+						.groupBy(activity.action),
+					db
+						.select({
+							links: sql<number>`count(*)`,
+							broken: sql<number>`sum(case when json_extract(${bookmarks.meta}, '$.health.status') = 'broken' then 1 else 0 end)`,
+						})
+						.from(bookmarks)
+						.innerJoin(groups, eq(groups.id, bookmarks.groupId))
+						.innerJoin(boards, eq(boards.id, groups.boardId))
+						.where(and(eq(bookmarks.kind, "link"), visibleLink(userId))),
+				]),
 		);
 
-		// Per-day and per-hour buckets in the viewer's zone.
-		const dayFormat = new Intl.DateTimeFormat("en-US", {
+		// Per-day and per-hour buckets in the viewer's zone (single formatter pass).
+		const partsFormat = new Intl.DateTimeFormat("en-US", {
 			timeZone: zone,
 			day: "numeric",
-		});
-		const hourFormat = new Intl.DateTimeFormat("en-US", {
-			timeZone: zone,
 			hour: "numeric",
 			hourCycle: "h23",
-		});
-		const weekdayFormat = new Intl.DateTimeFormat("en-US", {
-			timeZone: zone,
 			weekday: "long",
 		});
 		const perDay = Array.from({ length: days }, () => 0);
@@ -162,10 +151,17 @@ export const monthlyReport = (
 			{ title: string; url: string; favicon?: string; count: number }
 		>();
 		for (const visit of monthVisits) {
-			perDay[Number(dayFormat.format(visit.at)) - 1]++;
-			perHour[Number(hourFormat.format(visit.at)) % 24]++;
-			const weekday = weekdayFormat.format(visit.at);
-			perWeekday.set(weekday, (perWeekday.get(weekday) ?? 0) + 1);
+			let day = 1;
+			let hour = 0;
+			let weekday = "";
+			for (const part of partsFormat.formatToParts(visit.at)) {
+				if (part.type === "day") day = Number(part.value);
+				else if (part.type === "hour") hour = Number(part.value);
+				else if (part.type === "weekday") weekday = part.value;
+			}
+			perDay[day - 1]++;
+			perHour[hour % 24]++;
+			if (weekday) perWeekday.set(weekday, (perWeekday.get(weekday) ?? 0) + 1);
 			const entry = perLink.get(visit.bookmarkId) ?? {
 				title: visit.title,
 				url: visit.url,
@@ -176,8 +172,10 @@ export const monthlyReport = (
 			perLink.set(visit.bookmarkId, entry);
 		}
 		const hosts = new Map<string, number>();
-		for (const { url } of added)
-			hosts.set(hostnameOf(url), (hosts.get(hostnameOf(url)) ?? 0) + 1);
+		for (const { url } of added) {
+			const host = hostnameOf(url);
+			hosts.set(host, (hosts.get(host) ?? 0) + 1);
+		}
 		const top = <K>(map: Map<K, number>) =>
 			[...map.entries()].sort((a, b) => b[1] - a[1])[0];
 		const busiestHour = perHour.indexOf(Math.max(...perHour));

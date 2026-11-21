@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { Cause, Effect, Exit } from "effect";
 import { type Database, db } from "#/db";
@@ -13,6 +14,40 @@ import { cookieValue, readVaultToken, VAULT_COOKIE } from "./vault-token";
 
 export type SessionUser = typeof auth.$Infer.Session.user;
 
+type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>;
+type VaultResult = Awaited<ReturnType<typeof readVaultToken>>;
+type RequestCache = {
+	session?: Promise<SessionResult>;
+	vault?: Promise<VaultResult>;
+};
+
+const requestStore = new AsyncLocalStorage<RequestCache>();
+
+/** Memoizes session + vault cookie verification across a single HTTP request. */
+export const withRequestCache = <T>(fn: () => Promise<T>) =>
+	requestStore.run({}, fn);
+
+export const getRequestSession = (headers: Headers): Promise<SessionResult> => {
+	const store = requestStore.getStore();
+	if (store) {
+		store.session ??= auth.api.getSession({ headers }).catch(() => null);
+		return store.session;
+	}
+	return auth.api.getSession({ headers }).catch(() => null);
+};
+
+export const getRequestVault = (
+	headers: Headers,
+	userId: string,
+): Promise<VaultResult> => {
+	const store = requestStore.getStore();
+	if (store) {
+		store.vault ??= readVaultToken(cookieValue(headers, VAULT_COOKIE), userId);
+		return store.vault;
+	}
+	return readVaultToken(cookieValue(headers, VAULT_COOKIE), userId);
+};
+
 /** Wraps a Drizzle call so failures become a typed `DatabaseError`. */
 export const query = <A>(run: (database: Database) => Promise<A>) =>
 	Effect.tryPromise({
@@ -22,10 +57,7 @@ export const query = <A>(run: (database: Database) => Promise<A>) =>
 
 const sessionUser = (headers: Headers) =>
 	Effect.gen(function* () {
-		const session = yield* Effect.tryPromise({
-			try: () => auth.api.getSession({ headers }),
-			catch: () => new Unauthorized({}),
-		});
+		const session = yield* Effect.promise(() => getRequestSession(headers));
 		if (!session) return yield* new Unauthorized({});
 		return session.user;
 	});
@@ -76,7 +108,7 @@ export function runAuthed<A>(
 		Effect.gen(function* () {
 			const user = yield* sessionUser(headers);
 			const access = yield* Effect.promise(() =>
-				readVaultToken(cookieValue(headers, VAULT_COOKIE), user.id),
+				getRequestVault(headers, user.id),
 			);
 			return yield* program(user).pipe(
 				Effect.provideService(VaultAccess, access),

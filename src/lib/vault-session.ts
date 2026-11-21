@@ -58,12 +58,35 @@ const readStored = (): Session | null => {
 	return null;
 };
 
+let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+const startHeartbeat = () => {
+	if (heartbeat || typeof window === "undefined") return;
+	heartbeat = setInterval(() => {
+		if (!key) {
+			stopHeartbeat();
+			return;
+		}
+		post({ type: "here", tab: tabId });
+		for (const [tab, seen] of peers)
+			if (Date.now() - seen > 25_000) peers.delete(tab);
+	}, 10_000);
+};
+
+const stopHeartbeat = () => {
+	if (heartbeat) {
+		clearInterval(heartbeat);
+		heartbeat = null;
+	}
+};
+
 const adopt = async (next: Session) => {
 	sessionStorage.setItem(STORAGE, JSON.stringify(next));
 	session = next;
 	key = await importVaultKey(next.raw);
 	loadedFor = next.userId;
 	opened.clear();
+	startHeartbeat();
 	notify();
 	// Let other tabs know right away, so closing one doesn't lock this one.
 	post({ type: "here", tab: tabId });
@@ -80,6 +103,7 @@ const forget = () => {
 	sessionStorage.removeItem(STORAGE);
 	key = null;
 	session = null;
+	stopHeartbeat();
 	opened.clear();
 	notify();
 };
@@ -124,18 +148,22 @@ export function startVaultSync() {
 			)
 				post({ type: "key", to: data.tab, session });
 		} else if (data.type === "key") {
-			if (data.to === tabId && !key) void adopt(data.session);
+			if (
+				data.to === tabId &&
+				!key &&
+				data.session &&
+				(!loadedFor || data.session.userId === loadedFor) &&
+				typeof data.session.expiresAt === "number" &&
+				data.session.expiresAt > Date.now()
+			)
+				void adopt(data.session);
 		} else if (data.type === "locked") {
 			forget();
 			window.dispatchEvent(new Event("tabz:vault-locked"));
 		}
 	};
 	post({ type: "hello", tab: tabId });
-	setInterval(() => {
-		if (key) post({ type: "here", tab: tabId });
-		for (const [tab, seen] of peers)
-			if (Date.now() - seen > 25_000) peers.delete(tab);
-	}, 10_000);
+	if (key) startHeartbeat();
 	window.addEventListener("pagehide", () => {
 		post({ type: "bye", tab: tabId });
 		// Last tab with the vault open: lock it. A reload re-opens it from
@@ -201,6 +229,9 @@ export const sealContents = (contents: SealedContents) =>
 
 type Row = HomeData["boards"][number]["groups"][number]["bookmarks"][number];
 
+const safeVaultUrl = (url: string | undefined) =>
+	url && /^https?:\/\//i.test(url) ? url : "";
+
 const reveal = <T extends Omit<Row, "children">>(row: T): T => {
 	const sealed = row.meta.sealed;
 	if (!sealed) return row;
@@ -209,7 +240,7 @@ const reveal = <T extends Omit<Row, "children">>(row: T): T => {
 	return {
 		...row,
 		title: plain.title,
-		url: plain.url ?? "",
+		url: safeVaultUrl(plain.url),
 		description: plain.description ?? null,
 		tags: plain.tags ?? [],
 		icon: plain.icon ?? null,

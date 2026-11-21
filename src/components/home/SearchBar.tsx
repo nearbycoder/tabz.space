@@ -1,5 +1,12 @@
 import { ArrowUpRight, Globe, History, Search } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Favicon } from "#/components/ui/Favicon";
 import { cn } from "#/lib/cn";
 import {
@@ -27,13 +34,17 @@ type Props = {
 	openInNewTab: boolean;
 };
 
-const score = (bookmark: LinkItem, terms: string[]) => {
-	const title = bookmark.title.toLowerCase();
-	const haystack = `${title} ${bookmark.url.toLowerCase()} ${bookmark.tags.join(" ").toLowerCase()}`;
-	if (!terms.every((term) => haystack.includes(term))) return 0;
+type IndexedEntry = {
+	entry: { bookmark: LinkItem; group: string };
+	title: string;
+	haystack: string;
+};
+
+const scoreIndexed = (item: IndexedEntry, terms: string[]) => {
+	if (!terms.every((term) => item.haystack.includes(term))) return 0;
 	return (
-		(title.startsWith(terms[0]) ? 3 : 1) +
-		Math.min(bookmark.visitCount, 50) / 50
+		(item.title.startsWith(terms[0]) ? 3 : 1) +
+		Math.min(item.entry.bookmark.visitCount, 50) / 50
 	);
 };
 
@@ -54,7 +65,11 @@ const pageKey = (url: string) =>
  */
 const FOCUS_NOW = `(function(){var i=document.getElementById("tabz-search"),a=document.activeElement;if(i&&matchMedia("(pointer: fine)").matches&&(!a||a===document.body))i.focus({preventScroll:true})})()`;
 
-export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
+export const SearchBar = memo(function SearchBar({
+	bookmarks,
+	engine,
+	openInNewTab,
+}: Props) {
 	const { openLink } = useHomeContext();
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
@@ -127,17 +142,26 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 		};
 	}, [query, historyOn]);
 
-	const saved = useMemo(
-		() => new Set(bookmarks.map((entry) => pageKey(entry.bookmark.url))),
-		[bookmarks],
-	);
+	const { saved, indexed } = useMemo(() => {
+		const savedSet = new Set<string>();
+		const list: IndexedEntry[] = bookmarks.map((entry) => {
+			savedSet.add(pageKey(entry.bookmark.url));
+			const title = entry.bookmark.title.toLowerCase();
+			return {
+				entry,
+				title,
+				haystack: `${title} ${entry.bookmark.url.toLowerCase()} ${entry.bookmark.tags.join(" ").toLowerCase()}`,
+			};
+		});
+		return { saved: savedSet, indexed: list };
+	}, [bookmarks]);
 
 	const results = useMemo<Result[]>(() => {
 		const trimmed = query.trim();
 		if (!trimmed) return [];
 		const terms = trimmed.toLowerCase().split(/\s+/);
-		const matches = bookmarks
-			.map((entry) => ({ entry, score: score(entry.bookmark, terms) }))
+		const matches = indexed
+			.map((item) => ({ entry: item.entry, score: scoreIndexed(item, terms) }))
 			.filter((match) => match.score > 0)
 			.sort((a, b) => b.score - a.score)
 			.slice(0, 6)
@@ -171,10 +195,11 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 			...(url ? [{ kind: "url", url } as Result] : []),
 			{ kind: "search", query: trimmed },
 		];
-	}, [query, bookmarks, history, historyOn, saved]);
+	}, [query, indexed, history, historyOn, saved]);
 	const current = Math.min(active, results.length - 1);
 
 	const open = (href: string, newTab: boolean) => {
+		if (!/^https?:\/\//i.test(href)) return;
 		if (newTab) window.open(href, "_blank", "noopener");
 		else {
 			showLeaving();
@@ -322,4 +347,4 @@ export function SearchBar({ bookmarks, engine, openInNewTab }: Props) {
 			)}
 		</div>
 	);
-}
+});

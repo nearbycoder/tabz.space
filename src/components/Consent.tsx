@@ -74,10 +74,12 @@ export function Consent() {
 					<>
 						<div className="flex items-center gap-3">
 							<div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-surface-2 text-lg font-semibold">
-								{details.client.icon ? (
+								{details.client.icon &&
+								/^https?:\/\//i.test(details.client.icon) ? (
 									<img
 										src={details.client.icon}
 										alt=""
+										referrerPolicy="no-referrer"
 										className="size-full object-cover"
 									/>
 								) : (

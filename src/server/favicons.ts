@@ -87,6 +87,22 @@ const isThirdPartyService = (url: string) =>
 		url,
 	);
 
+/** Same host, subdomain, or sibling subdomain under the same site (prevents cache poisoning via ?hint=). */
+function sameSiteHint(hint: string, scope: URL) {
+	try {
+		const parsed = new URL(hint);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+			return false;
+		const a = parsed.hostname.toLowerCase();
+		const b = scope.hostname.toLowerCase();
+		if (a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`)) return true;
+		const tail = (host: string) => host.split(".").slice(-2).join(".");
+		return a.includes(".") && b.includes(".") && tail(a) === tail(b);
+	} catch {
+		return false;
+	}
+}
+
 const resolve = (scope: URL, hint?: string) =>
 	Effect.gen(function* () {
 		const page = yield* fetchText(scope, HTML, /html/i).pipe(
@@ -109,7 +125,7 @@ const resolve = (scope: URL, hint?: string) =>
 			.filter((icon) => !icon.touch)
 			.map((icon) => icon.url);
 		const savedHint =
-			hint && /^https?:\/\//i.test(hint) && !isThirdPartyService(hint)
+			hint && !isThirdPartyService(hint) && sameSiteHint(hint, scope)
 				? [hint]
 				: [];
 		const at = (path: string, base: URL) => new URL(path, base).toString();
@@ -150,13 +166,32 @@ const resolve = (scope: URL, hint?: string) =>
 		return null;
 	});
 
+function freshHit(host: string) {
+	const hit = cache.get(host);
+	if (!hit) return null;
+	if (Date.now() - hit.at >= (hit.icon ? FOUND_FOR : MISSING_FOR)) {
+		cachedBytes -= hit.icon?.body.byteLength ?? 0;
+		cache.delete(host);
+		return null;
+	}
+	return hit;
+}
+
 function remember(host: string, icon: Icon | null) {
-	if (cachedBytes > MAX_CACHED_BYTES) {
-		cache.clear();
-		cachedBytes = 0;
+	const prev = cache.get(host);
+	if (prev) {
+		cachedBytes -= prev.icon?.body.byteLength ?? 0;
+		cache.delete(host);
+	}
+	const size = icon?.body.byteLength ?? 0;
+	// Evict least-recently-used entries instead of flushing the entire cache.
+	while (cachedBytes + size > MAX_CACHED_BYTES && cache.size > 0) {
+		const oldest = cache.keys().next().value as string;
+		cachedBytes -= cache.get(oldest)?.icon?.body.byteLength ?? 0;
+		cache.delete(oldest);
 	}
 	cache.set(host, { at: Date.now(), icon });
-	cachedBytes += icon?.body.byteLength ?? 0;
+	cachedBytes += size;
 }
 
 /** The icon for a site (by origin), from cache or freshly found. */
@@ -165,9 +200,13 @@ export async function siteIcon(origin: URL, hint?: string) {
 	// The scope: origin (lowercased host) plus any project path, e.g.
 	// "you.github.io/Game/" (paths are case-sensitive on GitHub Pages).
 	const host = `${origin.host.toLowerCase()}${origin.pathname}`;
-	const hit = cache.get(host);
-	if (hit && Date.now() - hit.at < (hit.icon ? FOUND_FOR : MISSING_FOR))
+	const hit = freshHit(host);
+	if (hit) {
+		// Refresh LRU position.
+		cache.delete(host);
+		cache.set(host, hit);
 		return { icon: hit.icon, cached: true };
+	}
 	let lookup = pending.get(host);
 	if (!lookup) {
 		lookup = Effect.runPromise(resolve(origin, hint)).finally(() =>
@@ -185,8 +224,7 @@ const recent = new Map<string, number[]>();
 const LOOKUPS_PER_MINUTE = 120;
 
 export function allowLookup(client: string, origin: URL) {
-	const hit = cache.get(`${origin.host.toLowerCase()}${origin.pathname}`);
-	if (hit) return true;
+	if (freshHit(`${origin.host.toLowerCase()}${origin.pathname}`)) return true;
 	const now = Date.now();
 	const times = (recent.get(client) ?? []).filter((at) => now - at < 60_000);
 	if (times.length >= LOOKUPS_PER_MINUTE) return false;

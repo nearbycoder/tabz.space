@@ -40,14 +40,14 @@ export function useHomeContext() {
  */
 export type TileContextValue = Pick<
 	HomeContextValue,
-	| "settings"
-	| "editing"
-	| "openDialog"
-	| "onVisit"
-	| "isIncognito"
-	| "openLink"
-	| "readOnly"
->;
+	"editing" | "openDialog" | "onVisit" | "isIncognito" | "openLink" | "readOnly"
+> & {
+	feedBadges: boolean;
+	tilt: boolean;
+	openInNewTab: boolean;
+	linkPreviews: boolean;
+	inVault: boolean;
+};
 
 export const TileContext = createContext<TileContextValue | null>(null);
 

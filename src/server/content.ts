@@ -19,9 +19,13 @@ export const monitoredLinks = and(
 	eq(boards.vault, false),
 );
 
+const SAFE_META_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 /** Sets one key of a bookmark's meta JSON in place, leaving the rest alone. */
-export const setMeta = (id: string, key: string, value: unknown) =>
-	query((db) =>
+export const setMeta = (id: string, key: string, value: unknown) => {
+	if (!SAFE_META_KEY.test(key))
+		return Effect.die(new Error(`Invalid meta key: ${key}`));
+	return query((db) =>
 		db
 			.update(bookmarks)
 			.set({
@@ -30,6 +34,7 @@ export const setMeta = (id: string, key: string, value: unknown) =>
 			})
 			.where(eq(bookmarks.id, id)),
 	);
+};
 
 export const indexText = (id: string, title: string, body: string) =>
 	query((db) =>
@@ -103,12 +108,25 @@ export const searchText = (text: string, visible: Set<string>, limit = 20) =>
 	Effect.gen(function* () {
 		const match = ftsQuery(text);
 		if (!match || visible.size === 0) return [] as ContentHit[];
-		const rows = yield* query((db) =>
-			db.all<{ id: string; snippet: string }>(
+		const rows = yield* query((db) => {
+			if (visible.size <= 500) {
+				const ids = [...visible];
+				return db.all<{ id: string; snippet: string }>(
+					sql`SELECT bookmark_id AS id, snippet(bookmark_text, 2, '«', '»', '…', 14) AS snippet
+						FROM bookmark_text
+						WHERE bookmark_text MATCH ${match}
+							AND bookmark_id IN (${sql.join(
+								ids.map((id) => sql`${id}`),
+								sql`, `,
+							)})
+						ORDER BY bm25(bookmark_text, 0, 4, 1) LIMIT ${limit}`,
+				);
+			}
+			return db.all<{ id: string; snippet: string }>(
 				sql`SELECT bookmark_id AS id, snippet(bookmark_text, 2, '«', '»', '…', 14) AS snippet
 					FROM bookmark_text WHERE bookmark_text MATCH ${match}
 					ORDER BY bm25(bookmark_text, 0, 4, 1) LIMIT 500`,
-			),
-		).pipe(Effect.catch(() => Effect.succeed([] as ContentHit[])));
+			);
+		}).pipe(Effect.catch(() => Effect.succeed([] as ContentHit[])));
 		return rows.filter((row) => visible.has(row.id)).slice(0, limit);
 	});

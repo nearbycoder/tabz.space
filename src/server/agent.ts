@@ -17,6 +17,34 @@ import { VaultAccess } from "./vault-access";
 
 const MODEL = () => process.env.TABZ_AGENT_MODEL ?? "claude-opus-5-5";
 const MAX_TURNS = 10;
+const COMMAND_LIMIT_PER_HOUR = 20;
+const commandBudget = new Map<string, { count: number; resetAt: number }>();
+
+let cachedClient: { key: string; client: Anthropic } | null = null;
+const anthropicClient = () => {
+	const key = process.env.ANTHROPIC_API_KEY ?? "";
+	if (!cachedClient || cachedClient.key !== key)
+		cachedClient = { key, client: new Anthropic({ apiKey: key }) };
+	return cachedClient.client;
+};
+
+const consumeCommandBudget = (userId: string) => {
+	const now = Date.now();
+	const entry = commandBudget.get(userId);
+	if (!entry || entry.resetAt <= now) {
+		if (commandBudget.size >= 500) {
+			for (const [k, v] of commandBudget)
+				if (v.resetAt <= now) commandBudget.delete(k);
+			if (commandBudget.size >= 500)
+				commandBudget.delete(commandBudget.keys().next().value as string);
+		}
+		commandBudget.set(userId, { count: 1, resetAt: now + 3_600_000 });
+		return true;
+	}
+	if (entry.count >= COMMAND_LIMIT_PER_HOUR) return false;
+	entry.count++;
+	return true;
+};
 
 type Home = Effect.Success<ReturnType<typeof library.loadHome>>;
 
@@ -299,7 +327,7 @@ const runTool = (userId: string, name: string, input: Input) =>
 				let tagged = 0;
 				for (const id of targets) {
 					const item = byId.get(id);
-					if (!item || item.kind !== "link") continue;
+					if (item?.kind !== "link") continue;
 					const tags = [
 						...new Set([...item.tags.filter((t) => !remove.has(t)), ...add]),
 					].slice(0, 20);
@@ -369,7 +397,9 @@ export async function runCommand(
 ) {
 	if (!aiEnabled())
 		throw new Error("AI commands need ANTHROPIC_API_KEY on the server");
-	const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+	if (!consumeCommandBudget(userId))
+		throw new Error("Too many AI commands right now; try again in a bit");
+	const client = anthropicClient();
 	const messages: Anthropic.Beta.BetaMessageParam[] = [
 		{ role: "user", content: data.text },
 	];

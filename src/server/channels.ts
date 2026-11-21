@@ -1,4 +1,9 @@
-import { createHmac, randomBytes } from "node:crypto";
+import {
+	createHash,
+	createHmac,
+	randomBytes,
+	timingSafeEqual,
+} from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { integrations } from "#/db/schema";
@@ -16,8 +21,24 @@ import { query } from "./runtime";
  */
 
 const INBOX = "Inbox";
-const secret = () =>
-	process.env.BETTER_AUTH_SECRET ?? "tabz-space-dev-secret-change-me";
+const secret = () => {
+	const value = process.env.BETTER_AUTH_SECRET;
+	if (value) return value;
+	if (process.env.NODE_ENV === "production")
+		throw new Error("BETTER_AUTH_SECRET must be set in production");
+	return "tabz-space-dev-secret-change-me";
+};
+
+/** Constant-time string comparison (hashes both inputs to fixed-length buffers). */
+export const secretEqual = (
+	given: string | null | undefined,
+	expected: string | null | undefined,
+) => {
+	if (!given || !expected) return false;
+	const a = createHash("sha256").update(given).digest();
+	const b = createHash("sha256").update(expected).digest();
+	return timingSafeEqual(a, b);
+};
 
 export const channelFeatures = () => ({
 	telegram: Boolean(
@@ -95,7 +116,7 @@ const readStartCode = (code: string) => {
 	const parts = code.split("_");
 	if (parts.length !== 3) return null;
 	const [userId, expires, signature] = parts;
-	if (sign(`${userId}_${expires}`) !== signature) return null;
+	if (!secretEqual(signature, sign(`${userId}_${expires}`))) return null;
 	if (Number.parseInt(expires, 36) * 1000 < Date.now()) return null;
 	return userId;
 };
@@ -131,13 +152,15 @@ type TelegramUpdate = {
 };
 
 /** Handles a webhook update from Telegram. */
-export const handleTelegram = (update: TelegramUpdate) =>
+export const handleTelegram = (update: TelegramUpdate | null | undefined) =>
 	Effect.gen(function* () {
-		const message = update.message;
-		if (!message) return;
+		const message =
+			update && typeof update === "object" ? update.message : undefined;
+		if (!message || typeof message.chat?.id !== "number") return;
 		const chatId = message.chat.id;
+		const entities = Array.isArray(message.entities) ? message.entities : [];
 		const text =
-			`${message.text ?? message.caption ?? ""} ${(message.entities ?? []).map((e) => e.url ?? "").join(" ")}`.trim();
+			`${typeof message.text === "string" ? message.text : typeof message.caption === "string" ? message.caption : ""} ${entities.map((e) => (typeof e?.url === "string" ? e.url : "")).join(" ")}`.trim();
 		if (text.startsWith("/start")) {
 			const userId = readStartCode(text.split(/\s+/)[1] ?? "");
 			if (!userId)
@@ -232,7 +255,7 @@ export const emailAddress = (userId: string, rotate = false) =>
 				),
 			}),
 		);
-		const token = existing?.externalId ?? randomBytes(6).toString("hex");
+		const token = existing?.externalId ?? randomBytes(8).toString("hex");
 		if (!existing)
 			yield* query((db) =>
 				db
@@ -249,7 +272,7 @@ export const emailAddress = (userId: string, rotate = false) =>
 export const handleInboundEmail = (body: Record<string, unknown>) =>
 	Effect.gen(function* () {
 		const to = String(body.To ?? body.to ?? "");
-		const token = to.match(/save-([a-f0-9]{12})@/i)?.[1]?.toLowerCase();
+		const token = to.match(/save-([a-f0-9]{12,32})@/i)?.[1]?.toLowerCase();
 		if (!token) return { saved: 0 };
 		const link = yield* query((db) =>
 			db.query.integrations.findFirst({

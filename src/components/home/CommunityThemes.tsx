@@ -85,6 +85,7 @@ export function CommunityThemes() {
 								<div className="relative h-16 bg-[var(--canvas)]">
 									<span className="absolute inset-0 [&>div]:!absolute">
 										<Backdrop
+											preview
 											background={{ ...look.background, animate: false }}
 										/>
 									</span>

@@ -7,6 +7,8 @@ import { whenIdle } from "./lazy";
  */
 
 const PAGES = "tabz-pages-v1";
+const READS = "tabz-reads-v1";
+const ICONS = "tabz-icons-v1";
 
 export function startOffline() {
 	if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
@@ -47,8 +49,12 @@ export function startOffline() {
 	});
 }
 
-/** Drops the saved home page, e.g. when signing out. */
+/** Drops the saved home page, cached reader copies, and icons on sign-out. */
 export async function forgetOfflinePage() {
 	navigator.serviceWorker?.controller?.postMessage({ type: "tabz:forget" });
-	await globalThis.caches?.delete(PAGES).catch(() => false);
+	await Promise.all([
+		globalThis.caches?.delete(PAGES).catch(() => false),
+		globalThis.caches?.delete(READS).catch(() => false),
+		globalThis.caches?.delete(ICONS).catch(() => false),
+	]);
 }

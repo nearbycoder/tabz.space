@@ -474,15 +474,33 @@ export const THEME_KEYS = [
 	"customCss",
 ] as const satisfies readonly (keyof UserSettings)[];
 
+const SAFE_DATA_IMAGE_URL =
+	/^url\(\s*(?:"data:image\/(?:png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+"|'data:image\/(?:png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+'|data:image\/(?:png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+)\s*\)/i;
+
 /**
  * Custom CSS can restyle the page but must not phone home or break out of
  * its <style> tag: no @import, no external url(), no closing tags.
  */
 export function sanitizeCss(css: string) {
-	return css
-		.replace(/<\/?\s*style/gi, "")
-		.replace(/@import[^;]*;?/gi, "")
-		.replace(/url\(\s*(['"]?)(?!data:)[^)]*\)/gi, "none")
-		.replace(/expression\s*\(/gi, "")
-		.slice(0, 20_000);
+	let out = css.slice(0, 20_000).replace(/[\0<>]/g, "");
+	for (let pass = 0; pass < 5; pass++) {
+		const next = out
+			// Remove comments and backslash escapes that could hide @import or url(.
+			.replace(/\/\*[\s\S]*?\*\//g, " ")
+			.replace(/\\[0-9a-f]{1,6}\s?|\\[^\r\n\f]/gi, "")
+			.replace(/[\0<>]/g, "")
+			// Neutralize at-rule keywords unconditionally (immune to { } in strings or EOF).
+			.replace(/@\s*(?:import|namespace|charset)\b/gi, "blocked-at-")
+			// Neutralize external URL / image-set / src functions, even if unclosed at EOF.
+			.replace(
+				/(?:url|image-set|-webkit-image-set|src)\s*\(/gi,
+				(match, offset: number, full: string) =>
+					SAFE_DATA_IMAGE_URL.test(full.slice(offset)) ? match : "blocked-fn(",
+			)
+			.replace(/expression\s*\(/gi, "blocked-fn(")
+			.replace(/(?:behavior|-moz-binding)\s*:/gi, "invalid:");
+		if (next === out) break;
+		out = next;
+	}
+	return out.slice(0, 20_000);
 }

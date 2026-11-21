@@ -22,8 +22,22 @@ export function BulkAddDialog({
 	festive?: boolean;
 	onClose: () => void;
 }) {
+	const availableBoards = useMemo(
+		() => boards.filter((board) => !board.vault && board.role !== "viewer"),
+		[boards],
+	);
+	const fallbackGroupId = useMemo(() => {
+		const valid = availableBoards.some((b) =>
+			b.groups.some((g) => g.kind === "links" && g.id === groupId),
+		);
+		if (valid) return groupId;
+		return (
+			availableBoards.flatMap((b) => b.groups).find((g) => g.kind === "links")
+				?.id ?? ""
+		);
+	}, [availableBoards, groupId]);
 	const [text, setText] = useState(initialText);
-	const [target, setTarget] = useState(groupId);
+	const [target, setTarget] = useState(fallbackGroupId);
 	const [skipDuplicates, setSkipDuplicates] = useState(true);
 	const urls = useMemo(() => extractUrls(text), [text]);
 	const add = useHomeAction(bulkCreateBookmarks, {
@@ -83,7 +97,7 @@ export function BulkAddDialog({
 						value={target}
 						onChange={(event) => setTarget(event.target.value)}
 					>
-						{boards.map((board) => (
+						{availableBoards.map((board) => (
 							<optgroup
 								key={board.id}
 								label={`${board.icon ?? ""} ${board.name}`.trim()}
@@ -111,7 +125,7 @@ export function BulkAddDialog({
 					<button
 						type="button"
 						className="btn-primary"
-						disabled={!urls.length || add.isPending}
+						disabled={!urls.length || !target || add.isPending}
 						onClick={() =>
 							add.mutate({
 								groupId: target,

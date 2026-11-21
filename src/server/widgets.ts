@@ -7,7 +7,12 @@ import {
 	utcToZoned,
 	zonedToUtc,
 } from "./ics";
-import { fetchFeed, fetchPageMetadata, fetchText } from "./metadata";
+import {
+	fetchFeed,
+	fetchPageMetadata,
+	fetchText,
+	publicFetch,
+} from "./metadata";
 
 /*
  * Data behind the home-page widgets. Everything is fetched server-side (so
@@ -15,34 +20,56 @@ import { fetchFeed, fetchPageMetadata, fetchText } from "./metadata";
  * memory, shared across users.
  */
 
+const MAX_CACHE = 2000;
 const cache = new Map<string, { at: number; value: unknown }>();
+const pending = new Map<string, Promise<unknown>>();
 
 const cached = <A, E>(key: string, ttlMs: number, load: Effect.Effect<A, E>) =>
 	Effect.suspend(() => {
 		const hit = cache.get(key);
-		if (hit && Date.now() - hit.at < ttlMs)
+		if (hit && Date.now() - hit.at < ttlMs) {
+			// Refresh LRU position.
+			cache.delete(key);
+			cache.set(key, hit);
 			return Effect.succeed(hit.value as A);
-		return load.pipe(
-			Effect.tap((value) =>
-				Effect.sync(() => {
-					if (cache.size > 2000) cache.clear();
-					cache.set(key, { at: Date.now(), value });
-				}),
-			),
-		);
+		}
+		// Deduplicate concurrent fetches for the same key to prevent thundering herds.
+		let inflight = pending.get(key);
+		if (!inflight) {
+			inflight = Effect.runPromise(
+				load.pipe(
+					Effect.tap((value) =>
+						Effect.sync(() => {
+							cache.delete(key);
+							if (cache.size >= MAX_CACHE)
+								cache.delete(cache.keys().next().value as string);
+							cache.set(key, { at: Date.now(), value });
+						}),
+					),
+				),
+			).finally(() => pending.delete(key));
+			pending.set(key, inflight);
+		}
+		return Effect.tryPromise({
+			try: () => inflight as Promise<A>,
+			catch: (error) => error as E,
+		});
 	});
 
 const getJson = <T>(url: string) =>
 	Effect.tryPromise({
 		try: async (signal) => {
-			const response = await fetch(url, {
+			const response = await publicFetch(url, {
 				signal,
 				headers: {
 					"user-agent":
 						"Mozilla/5.0 (compatible; TabzBot/1.0; +https://tabz.space)",
 				},
 			});
-			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			if (!response.ok) {
+				response.body?.cancel().catch(() => {});
+				throw new Error(`HTTP ${response.status}`);
+			}
 			return (await response.json()) as T;
 		},
 		catch: (error) => new FetchError({ url, reason: String(error) }),
@@ -321,13 +348,20 @@ export const jsonInput = z.object({
 
 const segment = /^([^[\]]*)(?:\[(\d*)\])?$/;
 
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 /** Copies `path` from `source` into `target` (see jsonInput.pick). */
 const copyPath = (source: Json, target: Json, parts: string[]): Json => {
 	if (parts.length === 0 || source === null || typeof source !== "object")
 		return source;
 	const [key, limit] = (parts[0].match(segment) ?? []).slice(1);
+	if (key && UNSAFE_KEYS.has(key)) return target;
 	const rest = parts.slice(1);
-	const value = key ? (source as Record<string, Json>)[key] : source;
+	const value = key
+		? Object.hasOwn(source, key)
+			? (source as Record<string, Json>)[key]
+			: undefined
+		: source;
 	if (value === undefined) return target;
 	const into = (current: Json | undefined) =>
 		limit === undefined
@@ -348,7 +382,10 @@ const copyPath = (source: Json, target: Json, parts: string[]): Json => {
 		target && typeof target === "object" && !Array.isArray(target)
 			? target
 			: {};
-	return { ...base, [key]: into(base[key]) };
+	return {
+		...base,
+		[key]: into(Object.hasOwn(base, key) ? base[key] : undefined),
+	};
 };
 
 export const pickJson = (value: Json, paths: string[]) =>
@@ -361,9 +398,9 @@ export const pickJson = (value: Json, paths: string[]) =>
 const recent = new Map<string, number[]>();
 const FETCHES_PER_MINUTE = 60;
 
-const allowFetch = (userId: string, url: string) => {
+const allowFetch = (userId: string, url: string, ttlMs: number) => {
 	const hit = cache.get(`json:${url}`);
-	if (hit) return true;
+	if (hit && Date.now() - hit.at < ttlMs) return true;
 	const now = Date.now();
 	const times = (recent.get(userId) ?? []).filter((at) => now - at < 60_000);
 	if (times.length >= FETCHES_PER_MINUTE) return false;
@@ -374,8 +411,9 @@ const allowFetch = (userId: string, url: string) => {
 };
 
 /** Any public JSON API, fetched server-side (no CORS) and cached briefly. */
-export const json = (userId: string, data: z.infer<typeof jsonInput>) =>
-	!allowFetch(userId, data.url)
+export const json = (userId: string, data: z.infer<typeof jsonInput>) => {
+	const ttlMs = (data.ttl ?? 300) * 1000;
+	return !allowFetch(userId, data.url, ttlMs)
 		? Effect.fail(
 				new InvalidInput({
 					message: "Too many requests; try again in a minute",
@@ -383,7 +421,7 @@ export const json = (userId: string, data: z.infer<typeof jsonInput>) =>
 			)
 		: cached(
 				`json:${data.url}`,
-				(data.ttl ?? 300) * 1000,
+				ttlMs,
 				fetchText(new URL(data.url), "application/json", /./).pipe(
 					Effect.flatMap(({ body }) =>
 						Effect.try({
@@ -409,3 +447,4 @@ export const json = (userId: string, data: z.infer<typeof jsonInput>) =>
 					),
 				),
 			);
+};

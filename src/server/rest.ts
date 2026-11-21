@@ -108,10 +108,15 @@ route("GET", "/bookmarks", ({ userId, search }) => {
 	const q = search.get("q");
 	if (!q)
 		return Effect.fail(new InvalidInput({ message: "Pass ?q= to search" }));
+	const rawLimit = Number(search.get("limit"));
+	const limit =
+		Number.isFinite(rawLimit) && rawLimit > 0
+			? Math.min(100, Math.floor(rawLimit))
+			: 25;
 	return library
 		.searchBookmarks(userId, {
 			query: q,
-			limit: Number(search.get("limit")) || 25,
+			limit,
 		})
 		.pipe(
 			Effect.map((results) =>
@@ -231,18 +236,30 @@ route("GET", "/activity", ({ userId }) =>
 export async function handleRest(request: Request) {
 	if (request.method === "OPTIONS")
 		return new Response(null, { status: 204, headers: corsHeaders });
-	const path = new URL(request.url).pathname.replace(/^\/api\/v1/, "") || "/";
-	const search = new URL(request.url).searchParams;
+	const url = new URL(request.url);
+	const path = url.pathname.replace(/^\/api\/v1/, "") || "/";
+	const search = url.searchParams;
 	for (const candidate of routes) {
 		if (candidate.method !== request.method) continue;
 		const match = path.match(candidate.pattern);
 		if (!match) continue;
-		const params = Object.fromEntries(
-			candidate.keys.map((key, index) => [
-				key,
-				decodeURIComponent(match[index + 1]),
-			]),
-		);
+		let params: Record<string, string>;
+		try {
+			params = Object.fromEntries(
+				candidate.keys.map((key, index) => [
+					key,
+					decodeURIComponent(match[index + 1]),
+				]),
+			);
+		} catch {
+			return new Response(
+				JSON.stringify({ error: "Invalid percent-encoding in URL" }),
+				{
+					status: 400,
+					headers: { "content-type": "application/json", ...corsHeaders },
+				},
+			);
+		}
 		const body = ["POST", "PATCH", "PUT"].includes(request.method)
 			? await request.json().catch(() => ({}))
 			: undefined;

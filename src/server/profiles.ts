@@ -4,7 +4,7 @@ import { z } from "zod";
 import { boardMembers, boards, profiles, userSettings } from "#/db/schema";
 import { InvalidInput, NotFound } from "#/lib/effect/errors";
 import { resolveSettings } from "#/lib/schemas";
-import { createBoard, idSchema, saveSettings } from "./library";
+import { accessBoard, createBoard, idSchema, saveSettings } from "./library";
 import { query } from "./runtime";
 
 /*
@@ -181,12 +181,7 @@ export const placeBoard = (
 ) =>
 	Effect.gen(function* () {
 		yield* owned(userId, data.profileId);
-		const board = yield* query((db) =>
-			db.query.boards.findFirst({
-				where: and(eq(boards.id, data.boardId), isNull(boards.deletedAt)),
-			}),
-		);
-		if (!board) return yield* new NotFound({ entity: "board" });
+		const { board } = yield* accessBoard(userId, data.boardId);
 		if (board.vault)
 			return yield* new InvalidInput({
 				message: "Vault boards show in every profile",
@@ -200,7 +195,7 @@ export const placeBoard = (
 			);
 			return { ok: true };
 		}
-		const moved = yield* query((db) =>
+		yield* query((db) =>
 			db
 				.update(boardMembers)
 				.set({ profileId: data.profileId })
@@ -209,9 +204,7 @@ export const placeBoard = (
 						eq(boardMembers.boardId, board.id),
 						eq(boardMembers.userId, userId),
 					),
-				)
-				.returning({ boardId: boardMembers.boardId }),
+				),
 		);
-		if (!moved.length) return yield* new NotFound({ entity: "board" });
 		return { ok: true };
 	});

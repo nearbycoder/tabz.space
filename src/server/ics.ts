@@ -67,16 +67,22 @@ const zoneOffset = (utc: number, zone: string) => {
 		});
 		formatters.set(zone, format);
 	}
-	const get = (type: string) =>
-		Number(format?.formatToParts(utc).find((p) => p.type === type)?.value);
-	const asUtc = Date.UTC(
-		get("year"),
-		get("month") - 1,
-		get("day"),
-		get("hour"),
-		get("minute"),
-		get("second"),
-	);
+	const parts = format.formatToParts(utc);
+	let year = 0;
+	let month = 1;
+	let day = 1;
+	let hour = 0;
+	let minute = 0;
+	let second = 0;
+	for (const part of parts) {
+		if (part.type === "year") year = Number(part.value);
+		else if (part.type === "month") month = Number(part.value);
+		else if (part.type === "day") day = Number(part.value);
+		else if (part.type === "hour") hour = Number(part.value);
+		else if (part.type === "minute") minute = Number(part.value);
+		else if (part.type === "second") second = Number(part.value);
+	}
+	const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
 	return asUtc - Math.floor(utc / 1000) * 1000;
 };
 
@@ -105,7 +111,16 @@ type Property = { name: string; params: Record<string, string>; value: string };
 const unfold = (text: string) => text.replace(/\r?\n[ \t]/g, "");
 
 const parseLine = (line: string): Property | null => {
-	const colon = line.search(/:(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+	let colon = -1;
+	let inQuotes = false;
+	for (let i = 0; i < line.length; i++) {
+		const ch = line[i];
+		if (ch === '"') inQuotes = !inQuotes;
+		else if (ch === ":" && !inQuotes) {
+			colon = i;
+			break;
+		}
+	}
 	if (colon < 0) return null;
 	const [name, ...rawParams] = line.slice(0, colon).split(";");
 	const params: Record<string, string> = {};

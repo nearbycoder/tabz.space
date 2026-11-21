@@ -3,11 +3,22 @@ import { Hint, type WidgetProps } from "../kit";
 type Data = { url: string; height: number };
 
 export default function Embed({ data }: WidgetProps<Data>) {
-	if (!/^https:\/\//i.test(data.url))
-		return <Hint>Add an https:// link in the widget's settings</Hint>;
+	let safeUrl: string | null = null;
+	if (/^https:\/\//i.test(data.url)) {
+		try {
+			const parsed = new URL(data.url);
+			if (
+				typeof window === "undefined" ||
+				parsed.origin !== window.location.origin
+			)
+				safeUrl = parsed.toString();
+		} catch {}
+	}
+	if (!safeUrl)
+		return <Hint>Add an external https:// link in the widget's settings</Hint>;
 	return (
 		<iframe
-			src={data.url}
+			src={safeUrl}
 			title="Embedded page"
 			loading="lazy"
 			// The page keeps its own origin; it can't reach tabz or navigate this tab.

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { cn } from "#/lib/cn";
-import { faviconFor, hostnameOf, iconScope } from "#/lib/url";
+import { hostnameOf, iconScope } from "#/lib/url";
 
 type Props = {
 	url: string;
@@ -53,7 +53,7 @@ const isEmoji = (value: string) =>
 	!/^https?:\/\//.test(value) && value.length <= 8;
 
 /** Custom emoji/image icon → the site's icon (found by tabz) → letter avatar. */
-export function Favicon({
+export const Favicon = memo(function Favicon({
 	url,
 	icon,
 	favicon,
@@ -63,12 +63,16 @@ export function Favicon({
 	sealed,
 }: Props) {
 	const custom = icon && !isEmoji(icon) ? icon : null;
-	const sources = (
-		sealed
-			? [custom, favicon, faviconFor(url, 128)]
-			: [custom, iconUrl(url, favicon)]
-	).filter((source): source is string => Boolean(source));
-	const [index, setIndex] = useState(0);
+	// Sealed vault links never phone home to tabz's icon endpoint or Google's favicon service.
+	const sources = (sealed ? [custom] : [custom, iconUrl(url, favicon)]).filter(
+		(source): source is string => Boolean(source),
+	);
+	const sourceKey = sources.join("\u0000");
+	const [failed, setFailed] = useState<{ key: string; index: number }>({
+		key: sourceKey,
+		index: 0,
+	});
+	const index = failed.key === sourceKey ? failed.index : 0;
 
 	if (icon && isEmoji(icon)) {
 		return (
@@ -101,8 +105,13 @@ export function Favicon({
 			loading="lazy"
 			referrerPolicy="no-referrer"
 			draggable={false}
-			onError={() => setIndex((current) => current + 1)}
+			onError={() =>
+				setFailed((current) => ({
+					key: sourceKey,
+					index: (current.key === sourceKey ? current.index : 0) + 1,
+				}))
+			}
 			className={cn("object-contain", className)}
 		/>
 	);
-}
+});

@@ -1,4 +1,4 @@
-import { DEFAULT_BASE_URL, getToken } from "./config.js";
+import { DEFAULT_BASE_URL, getToken, normalizeBaseUrl } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const flash = (text) => {
@@ -72,6 +72,20 @@ if (local.lastSync)
 		`Last synced ${new Date(local.lastSync).toLocaleString()} (${local.lastSyncCount} links).`;
 
 $("save").addEventListener("click", async () => {
+	const nextBase = normalizeBaseUrl($("baseUrl").value);
+	if (!nextBase) {
+		flash("Server URL must use https:// (or http://localhost)");
+		return;
+	}
+	$("baseUrl").value = nextBase;
+	const prevBase = normalizeBaseUrl(stored.baseUrl) ?? DEFAULT_BASE_URL;
+	const baseChanged = nextBase !== prevBase;
+	if (baseChanged) {
+		await chrome.storage.local.remove(["token", "tokenOrigin"]);
+		stored.baseUrl = nextBase;
+		$("connection").textContent =
+			"Server changed. Open your tabz server while signed in to reconnect.";
+	}
 	if (
 		$("syncBookmarks").checked &&
 		!(await chrome.permissions.contains({ permissions: ["bookmarks"] }))
@@ -79,14 +93,14 @@ $("save").addEventListener("click", async () => {
 		await chrome.permissions.request({ permissions: ["bookmarks"] });
 	}
 	await chrome.storage.sync.set({
-		baseUrl: $("baseUrl").value.trim(),
+		baseUrl: nextBase,
 		newTab: $("newTab").checked,
 		focusPage: $("focusPage").checked,
 		syncBookmarks: $("syncBookmarks").checked,
 		autoArchive: $("autoArchive").value,
 	});
 	flash("Saved");
-	if ($("syncBookmarks").checked)
+	if ($("syncBookmarks").checked && !baseChanged)
 		chrome.runtime.sendMessage({ type: "sync-now" });
 });
 
@@ -100,6 +114,6 @@ $("syncNow").addEventListener("click", async () => {
 });
 
 $("disconnect").addEventListener("click", async () => {
-	await chrome.storage.local.remove("token");
+	await chrome.storage.local.remove(["token", "tokenOrigin"]);
 	$("connection").textContent = "Disconnected.";
 });

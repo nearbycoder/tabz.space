@@ -69,29 +69,74 @@ export const mapTree = (
 	return changed ? out : items;
 };
 
-/** The home data with one link's fields changed (everything else untouched). */
+/** Updates one group in place while keeping untouched boards and groups reference-identical. */
+export const patchGroup = <D extends { boards: HomeBoard[] }>(
+	data: D,
+	groupId: string,
+	updater: (group: HomeGroup) => HomeGroup,
+): D => {
+	let boardChanged = false;
+	const boards = data.boards.map((board) => {
+		let groupChanged = false;
+		const groups = board.groups.map((group) => {
+			if (group.id !== groupId) return group;
+			const next = updater(group);
+			if (next === group) return group;
+			groupChanged = true;
+			return next;
+		});
+		if (!groupChanged) return board;
+		boardChanged = true;
+		return { ...board, groups };
+	});
+	return boardChanged ? { ...data, boards } : data;
+};
+
+/** The home data with one link's fields changed (everything else keeps its identity). */
 export const patchBookmark = <D extends { boards: HomeBoard[] }>(
 	data: D,
 	id: string,
 	patch: Partial<LinkItem>,
-): D => ({
-	...data,
-	boards: data.boards.map((board) => ({
-		...board,
-		groups: board.groups.map((group) => {
+): D => {
+	let boardChanged = false;
+	const boards = data.boards.map((board) => {
+		let groupChanged = false;
+		const groups = board.groups.map((group) => {
 			const bookmarks = mapTree(group.bookmarks, (item) =>
 				item.id === id ? { ...item, ...patch } : item,
 			);
-			return bookmarks === group.bookmarks ? group : { ...group, bookmarks };
-		}),
-	})),
-});
+			if (bookmarks === group.bookmarks) return group;
+			groupChanged = true;
+			return { ...group, bookmarks };
+		});
+		if (!groupChanged) return board;
+		boardChanged = true;
+		return { ...board, groups };
+	});
+	return boardChanged ? { ...data, boards } : data;
+};
 
 /** Drops an item (and what's inside it) from a tree, at any depth. */
-export const removeFromTree = (items: TreeItem[], id: string): TreeItem[] =>
-	items
-		.filter((item) => item.id !== id)
-		.map((item) => ({ ...item, children: removeFromTree(item.children, id) }));
+export const removeFromTree = (items: TreeItem[], id: string): TreeItem[] => {
+	let changed = false;
+	const out: TreeItem[] = [];
+	for (const item of items) {
+		if (item.id === id) {
+			changed = true;
+			continue;
+		}
+		const children = item.children.length
+			? removeFromTree(item.children, id)
+			: item.children;
+		if (children !== item.children) {
+			changed = true;
+			out.push({ ...item, children });
+		} else {
+			out.push(item);
+		}
+	}
+	return changed ? out : items;
+};
 
 /** Finds an item by id along with the folders above it (outermost first). */
 export function findInTree(
@@ -107,11 +152,14 @@ export function findInTree(
 	return null;
 }
 
-/** The address to open: past any permanent redirects the link checker found. */
+/** The address to open: past any permanent redirects the link checker found (strictly http(s)). */
 export const targetUrl = (item: {
 	url: string;
 	meta: { go?: string | null };
-}) => item.meta.go || item.url;
+}) => {
+	const candidate = item.meta.go || item.url;
+	return /^https?:\/\//i.test(candidate) ? candidate : "";
+};
 
 /** A plain left click that navigates this tab (no new-tab modifiers). */
 export const leavesPage = (

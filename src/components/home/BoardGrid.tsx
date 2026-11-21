@@ -15,7 +15,7 @@ import {
 	SortableContext,
 } from "@dnd-kit/sortable";
 import { FolderPlus } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "#/lib/cn";
 import { buzz, useDragSensors } from "#/lib/dnd-sensors";
 import { useHomeAction } from "#/lib/home-query";
@@ -33,7 +33,12 @@ import { useHomeContext } from "./context";
 const NO_SENSORS: ReturnType<typeof useDragSensors> = [];
 
 import { GROUP_WIDTH_CLASS, GroupCard, groupWidthStyle } from "./GroupCard";
-import type { HomeBoard, HomeGroup } from "./types";
+import { type HomeBoard, type HomeGroup, patchGroup } from "./types";
+
+const DROP_ANIMATION = {
+	duration: 180,
+	easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+};
 
 const groupKey = (id: string) => `group:${id}`;
 
@@ -73,10 +78,14 @@ export const BoardGrid = memo(function BoardGrid({
 	const firstPaint = shownAll ? items.length : initialGroups(items);
 	useEffect(() => {
 		if (shownAll || firstPaint >= items.length) return;
-		const frame = requestAnimationFrame(() =>
-			setTimeout(() => setShownAll(true), 0),
-		);
-		return () => cancelAnimationFrame(frame);
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const frame = requestAnimationFrame(() => {
+			timer = setTimeout(() => setShownAll(true), 0);
+		});
+		return () => {
+			cancelAnimationFrame(frame);
+			clearTimeout(timer);
+		};
 	}, [shownAll, firstPaint, items.length]);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const dragOrigin = useRef<string | null>(null);
@@ -121,18 +130,17 @@ export const BoardGrid = memo(function BoardGrid({
 		optimistic: (data) => withBoardGroups(data, itemsRef.current),
 	});
 	const toggleGroup = useHomeAction(updateGroup, {
-		optimistic: (data, input) => ({
-			...data,
-			boards: data.boards.map((b) => ({
-				...b,
-				groups: b.groups.map((g) =>
-					g.id === input.id
-						? { ...g, collapsed: input.collapsed ?? g.collapsed }
-						: g,
-				),
+		optimistic: (data, input) =>
+			patchGroup(data, input.id, (g) => ({
+				...g,
+				collapsed: input.collapsed ?? g.collapsed,
 			})),
-		}),
 	});
+	const toggleRef = useRef(toggleGroup.mutate);
+	toggleRef.current = toggleGroup.mutate;
+	const handleToggle = useCallback((id: string, collapsed: boolean) => {
+		toggleRef.current({ id, collapsed });
+	}, []);
 
 	const sensors = useDragSensors();
 
@@ -155,7 +163,7 @@ export const BoardGrid = memo(function BoardGrid({
 		);
 		if (activeIsGroup)
 			return closestCenter({ ...args, droppableContainers: candidates });
-		const draggingFolder = findItem(activeKey)?.kind === "folder";
+		const draggingFolder = args.active.data.current?.kind === "folder";
 		const within = pointerWithin({ ...args, droppableContainers: candidates });
 		const folderHit =
 			!draggingFolder &&
@@ -352,12 +360,7 @@ export const BoardGrid = memo(function BoardGrid({
 							key={group.id}
 							group={group}
 							layout={board.layout}
-							onToggle={() =>
-								toggleGroup.mutate({
-									id: group.id,
-									collapsed: !group.collapsed,
-								})
-							}
+							onToggle={handleToggle}
 						/>
 					))}
 					{items.length === 0 && !editing && !readOnly && (
@@ -420,12 +423,7 @@ export const BoardGrid = memo(function BoardGrid({
 					)}
 				</div>
 			</SortableContext>
-			<DragOverlay
-				dropAnimation={{
-					duration: 180,
-					easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-				}}
-			>
+			<DragOverlay dropAnimation={DROP_ANIMATION}>
 				{activeItem && (
 					<div className="relative rotate-3 scale-110 drop-shadow-2xl">
 						<TileBody

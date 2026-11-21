@@ -20,7 +20,10 @@ export function registerJob(job: Job) {
 }
 
 function schedule(job: Job) {
-	const tick = () =>
+	let running = false;
+	const tick = () => {
+		if (running) return;
+		running = true;
 		Effect.runPromise(
 			job
 				.run()
@@ -29,7 +32,12 @@ function schedule(job: Job) {
 						Effect.logWarning(`job ${job.name} failed`, cause),
 					),
 				),
-		).catch(() => {});
+		)
+			.catch(() => {})
+			.finally(() => {
+				running = false;
+			});
+	};
 	setTimeout(tick, 30_000).unref?.();
 	setInterval(tick, job.everyMs).unref?.();
 }

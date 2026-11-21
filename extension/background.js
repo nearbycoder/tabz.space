@@ -588,16 +588,45 @@ const HISTORY = { permissions: ["history"] };
 const hasHistory = () =>
 	chrome.permissions.contains(HISTORY).catch(() => false);
 
-/** Only tabz itself may read history: the bridge also runs on any localhost page. */
-async function fromTabz(sender) {
+/** Verified origin of a sender tab, or null if not a web tab. */
+function senderOrigin(sender) {
 	const url = sender.origin ?? sender.url ?? "";
-	let origin;
 	try {
-		origin = new URL(url).origin;
+		return new URL(url).origin;
 	} catch {
-		return false;
+		return null;
 	}
+}
+
+/** Only tabz itself may call page-bridge actions (the bridge may also load on localhost in dev). */
+async function fromTabz(sender) {
+	const origin = senderOrigin(sender);
+	if (!origin) return false;
 	return origin === (await getBaseUrl()) || OFFICIAL.has(origin);
+}
+
+/** Sanitizes the background look shared by tabz for the new-tab splash screen. */
+async function rememberLook(look) {
+	if (!look || typeof look !== "object") return;
+	const color = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i;
+	const gradient = /^[\w\s#%(),.-]+$/;
+	const clean = {
+		canvas: color.test(look.canvas ?? "") ? look.canvas : "#0b0c10",
+		gradient:
+			typeof look.gradient === "string" &&
+			look.gradient.length < 600 &&
+			gradient.test(look.gradient)
+				? look.gradient
+				: undefined,
+		image:
+			typeof look.image === "string" &&
+			/^https:\/\/[^\s"'()\\]+$/.test(look.image) &&
+			look.image.length < 2048
+				? look.image
+				: undefined,
+		dim: Number.isFinite(look.dim) ? Math.min(90, Math.max(0, look.dim)) : 0,
+	};
+	await chrome.storage.local.set({ look: clean });
 }
 
 /**
@@ -650,69 +679,98 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		);
 		return true;
 	};
+	// Content-script messages come with `sender.tab`; extension UI (popup/options) does not.
+	const isPage = Boolean(sender.tab);
+	const fromAllowedOrigin = (fn) =>
+		reply(
+			(async () => {
+				if (isPage && !(await fromTabz(sender))) return { ok: false };
+				return await fn();
+			})(),
+		);
+	const fromExtensionUi = (fn) => {
+		if (isPage) return false;
+		return reply(fn());
+	};
 	switch (message?.type) {
 		case "status":
-			return reply(
-				(async () => ({
-					installed: true,
-					incognitoAllowed: await chrome.extension.isAllowedIncognitoAccess(),
-					hasToken: Boolean(await getToken()),
-					historyAllowed: await hasHistory(),
-					baseUrl: await getBaseUrl(),
-					version: chrome.runtime.getManifest().version,
-				}))(),
-			);
+			return fromAllowedOrigin(async () => ({
+				installed: true,
+				incognitoAllowed: await chrome.extension.isAllowedIncognitoAccess(),
+				hasToken: Boolean(await getToken()),
+				historyAllowed: await hasHistory(),
+				baseUrl: await getBaseUrl(),
+				version: chrome.runtime.getManifest().version,
+			}));
 		case "set-token":
 			// Sent by the bridge on tabz.space after the signed-in page minted a token.
-			return reply(
-				(async () => {
-					if (
-						typeof message.token !== "string" ||
-						!message.token.startsWith("tabz_")
-					)
-						return { ok: false };
-					// Only the server you've pointed the extension at (options page),
-					// or tabz.space itself, can connect it. Otherwise any page on
-					// localhost could redirect your bookmark sync to itself.
-					const origin = String(message.baseUrl ?? "").replace(/\/+$/, "");
-					if (origin !== (await getBaseUrl()) && !OFFICIAL.has(origin))
-						return { ok: false };
-					await chrome.storage.local.set({ token: message.token });
-					await chrome.storage.sync.set({ baseUrl: origin });
-					scheduleSync(1000);
-					refreshFocus();
-					return { ok: true };
-				})(),
-			);
+			return fromAllowedOrigin(async () => {
+				if (
+					typeof message.token !== "string" ||
+					!message.token.startsWith("tabz_")
+				)
+					return { ok: false };
+				// Trust the sender's verified tab origin, never the message payload.
+				const origin = senderOrigin(sender);
+				if (
+					!origin ||
+					(origin !== (await getBaseUrl()) && !OFFICIAL.has(origin))
+				)
+					return { ok: false };
+				await chrome.storage.local.set({
+					token: message.token,
+					tokenOrigin: origin,
+				});
+				await chrome.storage.sync.set({ baseUrl: origin });
+				scheduleSync(1000);
+				refreshFocus();
+				return { ok: true };
+			});
+		case "set-look":
+			return fromAllowedOrigin(async () => {
+				await rememberLook(message.look);
+				return { ok: true };
+			});
 		case "open-incognito":
-			return reply(openIncognito(message.urls).then((ok) => ({ ok })));
+			return fromAllowedOrigin(async () => ({
+				ok: await openIncognito(message.urls),
+			}));
 		case "open-tabs":
-			return reply(openTabs(message.urls).then((ok) => ({ ok })));
+			return fromAllowedOrigin(async () => ({
+				ok: await openTabs(message.urls),
+			}));
 		case "open-settings":
-			return reply(openExtensionSettings().then((ok) => ({ ok })));
+			return fromAllowedOrigin(async () => ({
+				ok: await openExtensionSettings(),
+			}));
 		case "history-search":
-			return reply(
-				searchHistory(message.text, sender).then((items) => ({
-					ok: true,
-					items,
-				})),
-			);
+			return fromAllowedOrigin(async () => ({
+				ok: true,
+				items: await searchHistory(message.text, sender),
+			}));
 		case "history-settings":
-			return reply(
-				chrome.tabs
-					.create({ url: chrome.runtime.getURL("options.html#history") })
-					.then(() => ({ ok: true })),
-			);
+			return fromAllowedOrigin(async () => {
+				await chrome.tabs.create({
+					url: chrome.runtime.getURL("options.html#history"),
+				});
+				return { ok: true };
+			});
 		case "focus-settings":
-			return reply(
-				storeFocus(message.focus, message.timeZone).then(() => ({ ok: true })),
-			);
+			return fromAllowedOrigin(async () => {
+				await storeFocus(message.focus, message.timeZone);
+				return { ok: true };
+			});
 		case "focus-snooze":
-			return reply(
-				snoozeFocus(message.urls, sender.tab?.id).then((ok) => ({ ok })),
-			);
+			return fromAllowedOrigin(async () => ({
+				ok: await snoozeFocus(message.urls, sender.tab?.id),
+			}));
+		case "pull-ops":
+			return fromAllowedOrigin(async () => {
+				await pullRemoteOps();
+				return { ok: true };
+			});
 		case "save-page":
-			return reply(
+			return fromExtensionUi(() =>
 				api("/bookmarks", {
 					method: "POST",
 					body: {
@@ -723,18 +781,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 				}).then((bookmark) => ({ ok: true, bookmark })),
 			);
 		case "read-later":
-			return reply(
+			return fromExtensionUi(() =>
 				readLater(message.url, message.title).then((bookmark) => ({
 					ok: true,
 					bookmark,
 				})),
 			);
 		case "open-add":
-			return reply(
+			return fromExtensionUi(() =>
 				openAdd(message.url, message.title).then(() => ({ ok: true })),
 			);
 		case "save-tabs":
-			return reply(
+			return fromExtensionUi(() =>
 				saveWindowTabs({
 					windowId: message.windowId,
 					close: message.close,
@@ -742,23 +800,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 				}).then((result) => ({ ok: true, ...result })),
 			);
 		case "idle-count":
-			return reply(
+			return fromExtensionUi(() =>
 				idleTabs(message.days).then((tabs) => ({
 					ok: true,
 					count: tabs.length,
 				})),
 			);
 		case "archive-idle":
-			return reply(
+			return fromExtensionUi(() =>
 				archiveIdleTabs(message.days).then((result) => ({
 					ok: true,
 					...result,
 				})),
 			);
-		case "pull-ops":
-			return reply(pullRemoteOps().then(() => ({ ok: true })));
 		case "sync-now":
-			return reply(syncBookmarks().then((result) => ({ ok: true, ...result })));
+			return fromExtensionUi(() =>
+				syncBookmarks().then((result) => ({ ok: true, ...result })),
+			);
 		default:
 			return false;
 	}

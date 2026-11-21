@@ -730,6 +730,7 @@ export function VaultSettings({
 								disabled={resetText !== "RESET"}
 								onClick={async () => {
 									await run(call(resetVault, { confirm: "RESET" }));
+									clearVaultKey();
 									toast("Vault reset");
 									setResetText("");
 									await refresh();

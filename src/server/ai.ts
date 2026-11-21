@@ -116,6 +116,7 @@ export const autoTag = (
 				if (
 					!row ||
 					row.vault ||
+					row.bookmark.incognito ||
 					row.bookmark.kind !== "link" ||
 					row.bookmark.tags.length > 0
 				)

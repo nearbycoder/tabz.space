@@ -100,24 +100,26 @@ function fromOpml(text: string): ParsedGroup[] {
 	const body = doc.querySelector("body");
 	if (!body) return [];
 	let count = 0;
-	const toItems = (outline: Element): ImportItem[] =>
-		[...outline.children]
-			.filter((child) => child.tagName.toLowerCase() === "outline")
-			.flatMap((child): ImportItem[] => {
-				if (count >= MAX_ITEMS) return [];
-				const title =
-					child.getAttribute("title") || child.getAttribute("text") || "";
-				const href =
-					child.getAttribute("url") ||
-					child.getAttribute("htmlUrl") ||
-					child.getAttribute("xmlUrl");
-				if (isWeb(href)) {
-					count++;
-					return [{ title: title || href, url: href }];
-				}
-				const items = toItems(child);
-				return items.length ? [{ title: title || "Folder", items }] : [];
-			});
+	const toItems = (outline: Element, depth = 0): ImportItem[] =>
+		depth > 32
+			? []
+			: [...outline.children]
+					.filter((child) => child.tagName.toLowerCase() === "outline")
+					.flatMap((child): ImportItem[] => {
+						if (count >= MAX_ITEMS) return [];
+						const title =
+							child.getAttribute("title") || child.getAttribute("text") || "";
+						const href =
+							child.getAttribute("url") ||
+							child.getAttribute("htmlUrl") ||
+							child.getAttribute("xmlUrl");
+						if (isWeb(href)) {
+							count++;
+							return [{ title: title || href, url: href }];
+						}
+						const items = toItems(child, depth + 1);
+						return items.length ? [{ title: title || "Folder", items }] : [];
+					});
 	const top = toItems(body);
 	const loose = top.filter((item) => item.url);
 	return [
@@ -158,8 +160,8 @@ const asLink = (value: Json): ImportItem | null => {
 function fromJson(data: Json): ParsedGroup[] {
 	const groups: ParsedGroup[] = [];
 	let count = 0;
-	const visit = (value: Json, name: string, prefix: string) => {
-		if (count >= MAX_ITEMS) return;
+	const visit = (value: Json, name: string, prefix: string, depth = 0) => {
+		if (count >= MAX_ITEMS || depth > 32) return;
 		if (Array.isArray(value)) {
 			const links = value
 				.map(asLink)
@@ -173,7 +175,7 @@ function fromJson(data: Json): ParsedGroup[] {
 			}
 			for (const item of value)
 				if (record(item) && !asLink(item))
-					visit(item, label(item) ?? name, prefix);
+					visit(item, label(item) ?? name, prefix, depth + 1);
 			return;
 		}
 		if (!record(value)) return;
@@ -185,6 +187,7 @@ function fromJson(data: Json): ParsedGroup[] {
 					here ?? (key === "cards" || key === "links" ? name : key),
 					// Toby groups hold lists: keep the group name as a prefix.
 					key === "lists" && here ? here : prefix,
+					depth + 1,
 				);
 	};
 	visit(data, "Imported", "");

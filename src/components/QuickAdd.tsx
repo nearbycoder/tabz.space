@@ -34,9 +34,12 @@ export function QuickAdd({
 
 	useEffect(() => {
 		if (!saved) return;
-		const timer = setTimeout(close, 900);
+		const timer = setTimeout(() => {
+			if (popup) window.close();
+			else window.location.assign("/");
+		}, 900);
 		return () => clearTimeout(timer);
-	});
+	}, [saved, popup]);
 
 	const groupId =
 		board?.groups.find(isLinksGroup)?.id ??

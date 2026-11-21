@@ -8,7 +8,13 @@
 const ITERATIONS = 310_000;
 const encoder = new TextEncoder();
 
-const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const toBase64 = (bytes: Uint8Array) => {
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += 0x8000) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+	}
+	return btoa(binary);
+};
 const fromBase64 = (text: string) =>
 	Uint8Array.from(atob(text), (char) => char.charCodeAt(0));
 const toHex = (bytes: Uint8Array) =>
